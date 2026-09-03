@@ -413,7 +413,8 @@ onUnmounted(() => {
       <div class="bar-left">
         <h1 class="system-title">国策树画布中枢</h1>
         <div class="lit-badge font-mono" title="已点亮国策统计">
-          🟢 {{ litStats.lit }}/{{ litStats.total }} 已点亮
+          <span class="badge-dot"></span>
+          <span>{{ litStats.lit }}/{{ litStats.total }} 已点亮</span>
         </div>
       </div>
 
@@ -424,8 +425,8 @@ onUnmounted(() => {
           :class="{ 'is-editing': isEditMode }"
           @click="toggleEditMode"
         >
-          <span v-if="!isEditMode">👁️ 展示模式 (单击点亮 · 双击规范)</span>
-          <span v-else>✏️ 编辑模式 (拖拽排版 · 点击连线)</span>
+          <span v-if="!isEditMode">展示模式 (单击点亮 · 双击规范)</span>
+          <span v-else>编辑模式 (拖拽排版 · 点击连线)</span>
         </button>
       </div>
 
@@ -439,7 +440,7 @@ onUnmounted(() => {
             + 新建分组
           </button>
           <button class="btn-action-tool btn-save-layout" @click="saveLayoutChanges">
-            💾 保存排版
+            保存排版
           </button>
           <button class="btn-action-tool btn-cancel-layout" @click="cancelLayoutChanges" title="按 Esc 键放弃排版修改">
             放弃排版 (Esc)
@@ -448,10 +449,10 @@ onUnmounted(() => {
         <!-- 展示模式快捷项 -->
         <template v-else>
           <button class="btn-action-tool" @click="fitView({ padding: 0.2 })" title="自适应居中对齐">
-            🎯 居中全景
+            居中全景
           </button>
           <button class="btn-action-tool" @click="store.fetchTree" title="重新从数据库拉取最新国策树">
-            🔄 刷新
+            刷新
           </button>
         </template>
       </div>
@@ -591,14 +592,25 @@ onUnmounted(() => {
 }
 
 .lit-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   font-size: 12px;
   font-weight: 600;
-  background: rgba(16, 185, 129, 0.12);
-  border: 1px solid rgba(16, 185, 129, 0.35);
+  background: rgba(16, 185, 129, 0.1);
+  border: 1px solid rgba(16, 185, 129, 0.28);
   color: #10B981;
   padding: 3px 10px;
   border-radius: var(--radius-full);
   white-space: nowrap;
+}
+
+.badge-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #10B981;
+  box-shadow: 0 0 6px rgba(16, 185, 129, 0.8);
 }
 
 .bar-center {
@@ -648,31 +660,33 @@ onUnmounted(() => {
 }
 
 .btn-action-tool:hover {
-  border-color: var(--color-lit);
-  color: var(--color-lit);
+  background: var(--bg-tertiary);
+  border-color: var(--border-focus);
 }
 
 .btn-save-layout {
-  background: var(--color-lit);
-  color: #050508;
-  font-weight: 700;
-  border: none;
+  background: var(--text-primary);
+  color: var(--bg-primary);
+  font-weight: 600;
+  border: 1px solid transparent;
 }
 
 .btn-save-layout:hover {
-  background: #22d3ee;
-  color: #050508;
+  opacity: 0.9;
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-sm);
 }
 
 .btn-cancel-layout {
-  background: rgba(244, 63, 94, 0.1);
-  border-color: rgba(244, 63, 94, 0.3);
-  color: var(--color-danger);
+  background: transparent;
+  border: 1px solid var(--border-color);
+  color: var(--text-secondary);
 }
 
 .btn-cancel-layout:hover {
-  background: rgba(244, 63, 94, 0.2);
-  border-color: var(--color-danger);
+  background: var(--bg-tertiary);
+  color: var(--color-danger);
+  border-color: rgba(244, 63, 94, 0.35);
 }
 
 /* 连线提示条 */

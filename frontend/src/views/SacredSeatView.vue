@@ -146,7 +146,7 @@ function triggerRegretExit() {
   store.recordSession(log).catch(err => console.error('Failed to log regret session', err));
 
   // 3. 提示横幅
-  regretNotice.value = '💊 已触发后悔药国策：本次退出不扣连胜，无负罪感退出。';
+  regretNotice.value = '已触发后悔药国策：本次退出不扣连胜，无负罪感退出。';
   setTimeout(() => {
     regretNotice.value = '';
   }, 3500);
@@ -176,7 +176,7 @@ function handleConfirmReset() {
   };
   store.recordSession(log).catch(err => console.error('Failed to log fail session', err));
 
-  regretNotice.value = '⚠️ 专注已中断：承认本次主链断裂，连胜纪录重置为 #0。';
+  regretNotice.value = '专注已中断：承认本次主链断裂，连胜纪录重置为 #0。';
   setTimeout(() => {
     regretNotice.value = '';
   }, 3500);
@@ -205,7 +205,7 @@ async function handleCompleteSession(withCase: boolean) {
 
   await store.recordSession(log);
 
-  regretNotice.value = `🎉 恭喜！本次专注圆满完成，主链推进至 #${store.config.currentStreak}！`;
+  regretNotice.value = `恭喜！本次专注圆满完成，主链推进至 #${store.config.currentStreak}！`;
   setTimeout(() => {
     regretNotice.value = '';
   }, 3500);
@@ -291,8 +291,7 @@ onUnmounted(() => {
             <span class="streak-max font-mono">最高: #{{ store.config.maxStreak }}</span>
           </div>
           <button class="btn-icon" @click="isSettingsModalOpen = true" title="个性化设置">
-            ⚙️
-          </button>
+            </button>
         </div>
       </div>
 
@@ -302,7 +301,7 @@ onUnmounted(() => {
           {{ formatTime(store.config.defaultFocusDuration * 60) }}
         </div>
         <div class="timer-status-hint">
-          {{ currentState === 'RESERVING' ? '⏰ 预约倒计时进行中 · 预约结束后将自动唤醒' : '准备就位 · 点击下方按钮开启心流深潜' }}
+          {{ currentState === 'RESERVING' ? '预约倒计时进行中 · 预约结束后将自动唤醒' : '准备就位 · 点击下方按钮开启心流深潜' }}
         </div>
         <div class="timer-actions">
           <button 
@@ -320,7 +319,7 @@ onUnmounted(() => {
         <!-- 未激活预约：展示调节与点火按钮 -->
         <div v-show="currentState !== 'RESERVING'" class="res-config-panel">
           <div class="card-title">
-            <span>⏰ 预约链 (动态线性时延)</span>
+            <span>预约链 (动态线性时延)</span>
             <span class="signal-tag">启动信号: {{ store.config.reservationSignal }}</span>
           </div>
           <p class="card-desc">
@@ -356,7 +355,7 @@ onUnmounted(() => {
         <!-- 激活预约中：就地显示倒计时与取消按钮，无需整页跳变 -->
         <div v-show="currentState === 'RESERVING'" class="res-active-panel">
           <div class="res-active-header">
-            <span class="res-active-badge">⏰ 预约平移中</span>
+            <span class="res-active-badge">预约平移中</span>
             <span class="signal-tag">点火信号: {{ store.config.reservationSignal }}</span>
           </div>
           <div class="res-active-body">
@@ -396,7 +395,7 @@ onUnmounted(() => {
         <div class="focus-progress-info">
           <template v-if="currentState === 'FOCUSING'">
             <span v-if="isInsideRegretWindow" class="regret-pill-badge font-mono">
-              💊 后悔药窗口生效中 ({{ store.config.regretWindowSeconds - elapsedSeconds }}s)
+              后悔药窗口生效中 ({{ store.config.regretWindowSeconds - elapsedSeconds }}s)
             </span>
             <span v-else class="focus-ongoing-hint font-mono">
               深度专注进行中 · 主链连胜 #{{ store.config.currentStreak }}
@@ -422,7 +421,7 @@ onUnmounted(() => {
 
     <!-- ==================== 视图 C: 预约时间到唤醒点火卡 ==================== -->
     <div v-show="currentState === 'RESERVATION_TRIGGERED'" class="reservation-triggered-view">
-      <div class="fire-icon">⏰</div>
+      <div class="fire-icon"></div>
       <h2 class="fire-title">预约时间已到！启动信号已点火</h2>
       <div class="fire-signal-box">
         <span class="fire-label">即刻执行启动信号：</span>
@@ -433,7 +432,7 @@ onUnmounted(() => {
         <span class="fire-token font-mono">{{ store.config.sacredToken }}</span>
       </div>
       <button class="btn-confirm-ready" @click="confirmReservationReady">
-        ⚡ 确认就位，开启神圣专注 ({{ store.config.defaultFocusDuration }}m)
+        确认就位，开启神圣专注 ({{ store.config.defaultFocusDuration }}m)
       </button>
     </div>
 
@@ -615,9 +614,10 @@ onUnmounted(() => {
 }
 
 .btn-primary {
-  background: var(--color-lit);
-  color: #050508;
-  font-weight: 700;
+  background: var(--text-primary);
+  color: var(--bg-primary);
+  font-weight: 600;
+  border: 1px solid transparent;
   font-size: 15px;
   padding: 12px 32px;
   border-radius: var(--radius-full);
@@ -915,9 +915,10 @@ onUnmounted(() => {
 }
 
 .btn-confirm-ready {
-  background: var(--color-lit);
-  color: #050508;
-  font-weight: 700;
+  background: var(--text-primary);
+  color: var(--bg-primary);
+  font-weight: 600;
+  border: 1px solid transparent;
   font-size: 15px;
   padding: 14px 28px;
   border-radius: var(--radius-full);

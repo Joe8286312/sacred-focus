@@ -43,7 +43,7 @@ function handleSave() {
       <div v-if="isOpen" class="modal-backdrop" @click.self="emit('close')">
         <div class="modal-card">
           <div class="modal-header">
-            <h3 class="modal-title">⚙️ 神圣座位个性化设置</h3>
+            <h3 class="modal-title">神圣座位个性化设置</h3>
             <button class="btn-close" @click="emit('close')">✕</button>
           </div>
 
@@ -194,9 +194,10 @@ label {
 
 .btn-save {
   flex: 1.5;
-  background: var(--color-lit);
-  color: #050508;
-  font-weight: 700;
+  background: var(--text-primary);
+  color: var(--bg-primary);
+  font-weight: 600;
+  border: 1px solid transparent;
   padding: 10px;
   border-radius: var(--radius-sm);
   font-size: 13px;

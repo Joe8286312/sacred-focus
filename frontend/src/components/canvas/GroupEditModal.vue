@@ -70,14 +70,14 @@ function handleDelete() {
       <div class="group-modal-container">
         <div class="modal-header">
           <h2 class="modal-title">
-            {{ group ? '📁 编辑分组外框' : '✨ 新建国策分组外框' }}
+            {{ group ? '编辑分组' : '新建分组' }}
           </h2>
           <button class="btn-close" @click="$emit('close')">×</button>
         </div>
 
         <div class="modal-body">
           <div class="form-group">
-            <label class="form-label">分组纯文本名称</label>
+            <label class="form-label">分组名称</label>
             <input 
               v-model="form.name" 
               class="form-input" 
@@ -310,24 +310,39 @@ function handleDelete() {
 }
 
 .btn-cancel {
-  background: var(--bg-card);
+  background: transparent;
   border: 1px solid var(--border-color);
   color: var(--text-secondary);
   padding: 8px 18px;
   border-radius: var(--radius-sm);
   font-size: 13px;
+  font-weight: 500;
   cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.btn-cancel:hover {
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+  border-color: var(--border-focus);
 }
 
 .btn-submit {
-  background: var(--color-lit);
-  color: #050508;
-  font-weight: 700;
-  border: none;
+  background: var(--text-primary);
+  color: var(--bg-primary);
+  font-weight: 600;
+  border: 1px solid transparent;
   padding: 8px 22px;
   border-radius: var(--radius-sm);
   font-size: 13px;
   cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.btn-submit:hover {
+  opacity: 0.9;
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-sm);
 }
 
 .modal-fade-enter-active, .modal-fade-leave-active {

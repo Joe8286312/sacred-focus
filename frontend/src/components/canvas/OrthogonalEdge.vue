@@ -61,10 +61,10 @@ function handleDeleteClick(e: MouseEvent) {
     }" 
   />
 
-  <!-- 选中或编辑模式下在折线精确中心呈现高精度矢量删除图标 [×] -->
+  <!-- 仅在编辑模式且选中该连线时，在折线精确几何中心呈现矢量删除图标 -->
   <EdgeLabelRenderer>
     <div 
-      v-if="selected || data?.isEditMode" 
+      v-if="data?.isEditMode && selected" 
       :style="{
         position: 'absolute',
         transform: `translate(${centerX}px, ${centerY}px) translate(-50%, -50%)`,

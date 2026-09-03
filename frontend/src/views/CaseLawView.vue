@@ -26,7 +26,7 @@ onMounted(() => {
   <div class="cases-view-container">
     <div class="cases-header">
       <div>
-        <h2>⚖️ 下必为例判例法典</h2>
+        <h2>下必为例判例法典</h2>
         <p class="cases-subtitle">以终身永久放行的极高摩擦力，消灭灰色破窗侥幸心理。</p>
       </div>
 
@@ -62,7 +62,7 @@ onMounted(() => {
       >
         <div class="case-top">
           <span class="case-date font-mono">{{ item.date }}</span>
-          <span class="verdict-tag">{{ item.verdict === 'ALLOW' ? '✅ 终身允许' : '🚫 绝对禁止' }}</span>
+          <span class="verdict-tag">{{ item.verdict === 'ALLOW' ? '终身允许' : '绝对禁止' }}</span>
         </div>
         <div class="case-behavior">
           <strong>行为：</strong>{{ item.behavior }}

@@ -41,7 +41,7 @@ function handleConfirmDelete() {
           </div>
           <div class="header-right">
             <span class="status-pill">
-              {{ node.isFrozen ? '❄️ 水密隔舱冻结' : (node.isLit ? '🟢 已点亮' : '⚪ 待命熄灭') }}
+              {{ node.isFrozen ? '水密隔舱冻结' : (node.isLit ? '已点亮' : '待命熄灭') }}
             </span>
             <span class="level-pill font-mono">Lv.{{ node.level }}/{{ node.maxLevel }}</span>
             <button class="btn-close" @click="$emit('close')">×</button>
@@ -58,7 +58,7 @@ function handleConfirmDelete() {
         <div class="spec-content-body">
           <!-- 动作指令 -->
           <div class="spec-section">
-            <div class="section-label">⚡ 动作指令 (Instruction)</div>
+            <div class="section-label">动作指令 (Instruction)</div>
             <div class="section-text">
               {{ node.specCard?.instruction || '暂无详细动作指令' }}
             </div>
@@ -66,7 +66,7 @@ function handleConfirmDelete() {
 
           <!-- 失败判定 -->
           <div class="spec-section">
-            <div class="section-label fail-label">🚫 失败判定 (Fail Condition)</div>
+            <div class="section-label fail-label">失败判定 (Fail Condition)</div>
             <div class="section-text fail-text">
               {{ node.specCard?.failCondition || '暂无明确失败红线' }}
             </div>
@@ -74,7 +74,7 @@ function handleConfirmDelete() {
 
           <!-- 机制收益与心理学解释 -->
           <div class="spec-section">
-            <div class="section-label">🧠 机制收益与心理学解释 (Benefit Mechanism)</div>
+            <div class="section-label">机制收益与心理学解释 (Benefit Mechanism)</div>
             <div class="section-text">
               {{ node.specCard?.benefitMechanism || '暂无机制收益说明' }}
             </div>
@@ -82,7 +82,7 @@ function handleConfirmDelete() {
 
           <!-- 备注 -->
           <div v-if="node.specCard?.notes" class="spec-section">
-            <div class="section-label">📝 备注 (Notes)</div>
+            <div class="section-label">备注说明 (Notes)</div>
             <div class="section-text notes-text">
               {{ node.specCard.notes }}
             </div>
@@ -94,10 +94,10 @@ function handleConfirmDelete() {
           <div class="edit-tools">
             <template v-if="!isConfirmingDelete">
               <button class="btn-edit" @click="$emit('edit', node)">
-                ✏️ 编辑此国策
+                编辑此国策
               </button>
               <button class="btn-delete" @click="handleDeleteClick">
-                🗑️ 删除此国策
+                删除此国策
               </button>
             </template>
             <template v-else>
@@ -291,29 +291,37 @@ function handleConfirmDelete() {
 }
 
 .btn-edit {
-  background: var(--bg-tertiary);
+  background: transparent;
   border: 1px solid var(--border-color);
   color: var(--text-primary);
-  padding: 6px 14px;
+  padding: 7px 18px;
   border-radius: var(--radius-sm);
   font-size: 13px;
-  font-weight: 600;
+  font-weight: 500;
   cursor: pointer;
+  transition: all var(--transition-fast);
 }
 
 .btn-edit:hover {
-  border-color: var(--color-lit);
+  background: var(--bg-tertiary);
+  border-color: var(--border-focus);
 }
 
 .btn-delete {
-  background: rgba(244, 63, 94, 0.1);
+  background: transparent;
   border: 1px solid rgba(244, 63, 94, 0.3);
   color: var(--color-danger);
-  padding: 6px 14px;
+  padding: 7px 16px;
   border-radius: var(--radius-sm);
   font-size: 13px;
-  font-weight: 600;
+  font-weight: 500;
   cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.btn-delete:hover {
+  background: rgba(244, 63, 94, 0.1);
+  border-color: var(--color-danger);
 }
 
 .delete-warning {
@@ -325,15 +333,15 @@ function handleConfirmDelete() {
   background: var(--color-danger);
   color: #fff;
   border: none;
-  padding: 6px 12px;
+  padding: 6px 14px;
   border-radius: var(--radius-sm);
   font-size: 12px;
-  font-weight: 700;
+  font-weight: 600;
   cursor: pointer;
 }
 
 .btn-cancel-delete {
-  background: var(--bg-card);
+  background: transparent;
   border: 1px solid var(--border-color);
   color: var(--text-secondary);
   padding: 6px 12px;
@@ -343,14 +351,21 @@ function handleConfirmDelete() {
 }
 
 .btn-primary-close {
-  background: var(--color-lit);
-  color: #050508;
-  font-weight: 700;
+  background: var(--text-primary);
+  color: var(--bg-primary);
+  font-weight: 600;
   font-size: 13px;
-  padding: 8px 24px;
-  border-radius: var(--radius-full);
+  padding: 7px 22px;
+  border-radius: var(--radius-sm);
+  border: 1px solid transparent;
   margin-left: auto;
   cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.btn-primary-close:hover {
+  opacity: 0.9;
+  transform: translateY(-1px);
 }
 
 .modal-fade-enter-active, .modal-fade-leave-active {

@@ -17,8 +17,8 @@ onMounted(() => {
         <span class="count-tag font-mono">{{ store.nodes.length }} 节点</span>
       </div>
       <div class="header-actions">
-        <button class="btn-sm">🔄 还原基准顺序</button>
-        <button class="btn-sm active">💾 保存当前排序</button>
+        <button class="btn-sm">还原基准顺序</button>
+        <button class="btn-sm active">保存当前排序</button>
       </div>
     </div>
 
@@ -52,7 +52,7 @@ onMounted(() => {
           <div class="col-time">{{ node.triggerTime }}</div>
           <div class="col-level font-mono">Lv.{{ node.level }}/{{ node.maxLevel }}</div>
           <div class="col-status">
-            <span class="status-indicator">{{ node.isLit ? '🟢' : '⚪' }}</span>
+            <span class="status-indicator">{{ node.isLit ? '' : '' }}</span>
           </div>
         </div>
       </div>

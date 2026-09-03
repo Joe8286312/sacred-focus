@@ -15,7 +15,7 @@ const emit = defineEmits<{
     <Transition name="fade">
       <div v-if="isOpen" class="modal-backdrop" @click.self="emit('cancel')">
         <div class="modal-card">
-          <div class="warning-icon">⚠️</div>
+          <div class="warning-icon"></div>
           <h3 class="warning-title">严正警告：此操作不可撤销</h3>
           
           <p class="warning-desc">
@@ -25,7 +25,7 @@ const emit = defineEmits<{
           <div class="streak-impact">
             <span>当前主链连胜：</span>
             <span class="impact-node font-mono">#{{ currentStreak }}</span>
-            <span class="arrow">➔</span>
+            <span class="arrow">→</span>
             <span class="impact-reset font-mono">#0 (彻底清零)</span>
           </div>
 

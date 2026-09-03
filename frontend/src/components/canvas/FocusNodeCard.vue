@@ -18,10 +18,10 @@ const emit = defineEmits<{
   (e: 'handle-click', payload: { nodeId: string; anchor: 'TOP' | 'BOTTOM' | 'LEFT' | 'RIGHT' }): void;
 }>();
 
-// 状态图标：严格仅用于全局状态指示
-const statusIcon = computed(() => {
-  if (props.data.isFrozen) return '❄️';
-  return props.data.isLit ? '🟢' : '⚪';
+// 状态纯色指示点类（杜绝 Emoji，极简专业设计）
+const statusDotClass = computed(() => {
+  if (props.data.isFrozen) return 'dot-frozen';
+  return props.data.isLit ? 'dot-lit' : 'dot-unlit';
 });
 
 // 状态边框类
@@ -90,7 +90,7 @@ function handleAnchorClick(anchor: 'TOP' | 'BOTTOM' | 'LEFT' | 'RIGHT', e: Mouse
     <div class="card-header">
       <span class="node-code font-mono">{{ data.code }}</span>
       <div class="node-meta">
-        <span class="status-indicator">{{ statusIcon }}</span>
+        <span class="status-indicator-dot" :class="statusDotClass"></span>
         <span class="level-tag font-mono">Lv.{{ data.level }}/{{ data.maxLevel }}</span>
       </div>
     </div>
@@ -226,12 +226,30 @@ function handleAnchorClick(anchor: 'TOP' | 'BOTTOM' | 'LEFT' | 'RIGHT', e: Mouse
 .node-meta {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 6px;
 }
 
-.status-indicator {
-  font-size: 11px;
-  line-height: 1;
+.status-indicator-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  display: inline-block;
+  transition: all 0.2s ease;
+}
+
+.status-indicator-dot.dot-lit {
+  background: #10B981;
+  box-shadow: 0 0 6px rgba(16, 185, 129, 0.7);
+}
+
+.status-indicator-dot.dot-unlit {
+  background: var(--text-muted);
+  opacity: 0.5;
+}
+
+.status-indicator-dot.dot-frozen {
+  background: #38BDF8;
+  box-shadow: 0 0 6px rgba(56, 189, 248, 0.7);
 }
 
 .level-tag {

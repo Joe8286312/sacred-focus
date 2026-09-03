@@ -81,7 +81,7 @@ function handleDirectComplete() {
         <div class="modal-card">
           <!-- 阶段一：圆满完成选择界面 -->
           <div v-if="!isRecordingMode" class="completion-view">
-            <div class="card-icon">🪑</div>
+            <div class="card-icon"></div>
             <h3 class="card-title">本次神圣专注已圆满结束</h3>
             
             <p class="card-desc">
@@ -90,10 +90,10 @@ function handleDirectComplete() {
 
             <div class="actions-stack">
               <button class="btn-complete" @click="handleDirectComplete">
-                ✨ 无争议，直接完成
+                无争议，直接完成
               </button>
               <button class="btn-record" @click="isRecordingMode = true">
-                ⚖️ 记录判例法典
+                记录判例法典
               </button>
             </div>
           </div>
@@ -101,7 +101,7 @@ function handleDirectComplete() {
           <!-- 阶段二：判例法典录入表单 -->
           <div v-else class="record-view">
             <div class="form-header">
-              <span class="form-title">⚖️ 录入【下必为例】判例</span>
+              <span class="form-title">录入【下必为例】判例</span>
               <button class="btn-back" @click="isRecordingMode = false">返回</button>
             </div>
 
@@ -129,7 +129,7 @@ function handleDirectComplete() {
                     :class="{ active: verdict === 'ALLOW', allow: verdict === 'ALLOW' }"
                     @click="verdict = 'ALLOW'"
                   >
-                    ✅ 终身允许 (ALLOW)
+                    终身允许 (ALLOW)
                   </button>
                   <button 
                     type="button"
@@ -137,7 +137,7 @@ function handleDirectComplete() {
                     :class="{ active: verdict === 'FORBID', forbid: verdict === 'FORBID' }"
                     @click="verdict = 'FORBID'"
                   >
-                    🚫 绝对禁止 (FORBID)
+                    绝对禁止 (FORBID)
                   </button>
                 </div>
               </div>
@@ -228,9 +228,10 @@ function handleDirectComplete() {
 }
 
 .btn-complete {
-  background: var(--color-lit);
-  color: #050508;
-  font-weight: 700;
+  background: var(--text-primary);
+  color: var(--bg-primary);
+  font-weight: 600;
+  border: 1px solid transparent;
   font-size: 15px;
   padding: 14px;
   border-radius: var(--radius-md);
@@ -336,9 +337,10 @@ function handleDirectComplete() {
 
 .btn-submit {
   flex: 1.5;
-  background: var(--color-lit);
-  color: #050508;
-  font-weight: 700;
+  background: var(--text-primary);
+  color: var(--bg-primary);
+  font-weight: 600;
+  border: 1px solid transparent;
   border: none;
   padding: 11px;
   border-radius: var(--radius-sm);

@@ -77,7 +77,7 @@ function handleSave() {
       <div class="edit-modal-container">
         <div class="modal-header">
           <h2 class="modal-title">
-            {{ node ? '✏️ 编辑国策属性与规范' : '✨ 新建国策节点' }}
+            {{ node ? '编辑国策' : '新建国策' }}
           </h2>
           <button class="btn-close" @click="$emit('close')">×</button>
         </div>
@@ -85,7 +85,7 @@ function handleSave() {
         <div class="modal-body">
           <div class="form-row">
             <div class="form-group flex-1">
-              <label class="form-label">国策纯文本代号 (禁Emoji)</label>
+              <label class="form-label">国策代码</label>
               <input 
                 v-model="form.code" 
                 class="form-input font-mono" 
@@ -94,7 +94,7 @@ function handleSave() {
               />
             </div>
             <div class="form-group flex-2">
-              <label class="form-label">国策纯文本名称 (禁Emoji)</label>
+              <label class="form-label">国策名称</label>
               <input 
                 v-model="form.name" 
                 class="form-input" 
@@ -149,14 +149,14 @@ function handleSave() {
               <div class="checkbox-row">
                 <label class="checkbox-label">
                   <input type="checkbox" v-model="form.isFrozen" />
-                  <span>水密隔舱冻结 (❄️)</span>
+                  <span>水密隔舱冻结</span>
                 </label>
               </div>
             </div>
           </div>
 
           <div class="form-group">
-            <label class="form-label">⚡ 动作指令 (Instruction)</label>
+            <label class="form-label">动作指令 (Instruction)</label>
             <textarea 
               v-model="form.specCard.instruction" 
               class="form-textarea" 
@@ -166,7 +166,7 @@ function handleSave() {
           </div>
 
           <div class="form-group">
-            <label class="form-label form-label-danger">🚫 失败判定 (Fail Condition)</label>
+            <label class="form-label form-label-danger">失败判定 (Fail Condition)</label>
             <textarea 
               v-model="form.specCard.failCondition" 
               class="form-textarea form-textarea-danger" 
@@ -176,7 +176,7 @@ function handleSave() {
           </div>
 
           <div class="form-group">
-            <label class="form-label">🧠 机制收益与心理学解释 (Benefit Mechanism)</label>
+            <label class="form-label">机制收益与心理学解释 (Benefit Mechanism)</label>
             <textarea 
               v-model="form.specCard.benefitMechanism" 
               class="form-textarea" 
@@ -186,7 +186,7 @@ function handleSave() {
           </div>
 
           <div class="form-group">
-            <label class="form-label">📝 备注与历史演化记录 (可选)</label>
+            <label class="form-label">备注说明 (可选)</label>
             <input 
               v-model="form.specCard.notes" 
               class="form-input" 
@@ -328,24 +328,39 @@ function handleSave() {
 }
 
 .btn-cancel {
-  background: var(--bg-card);
+  background: transparent;
   border: 1px solid var(--border-color);
   color: var(--text-secondary);
   padding: 8px 20px;
   border-radius: var(--radius-sm);
   font-size: 13px;
+  font-weight: 500;
   cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.btn-cancel:hover {
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+  border-color: var(--border-focus);
 }
 
 .btn-submit {
-  background: var(--color-lit);
-  color: #050508;
-  font-weight: 700;
-  border: none;
+  background: var(--text-primary);
+  color: var(--bg-primary);
+  font-weight: 600;
+  border: 1px solid transparent;
   padding: 8px 24px;
   border-radius: var(--radius-sm);
   font-size: 13px;
   cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.btn-submit:hover {
+  opacity: 0.9;
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-sm);
 }
 
 .modal-fade-enter-active, .modal-fade-leave-active {
