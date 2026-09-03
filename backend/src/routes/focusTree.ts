@@ -273,7 +273,7 @@ router.delete('/groups/:id', (req: Request, res: Response) => {
       // 连带删除组内节点及其关联线
       const childNodes = db.prepare('SELECT id FROM focus_nodes WHERE groupId = ?').all(id) as { id: string }[];
       for (const n of childNodes) {
-        db.prepare('DELETE FROM focus_edges WHERE (sourceId = ? AND sourceType = "NODE") OR (targetId = ? AND targetType = "NODE")').run(n.id, n.id);
+        db.prepare("DELETE FROM focus_edges WHERE (sourceId = ? AND sourceType = 'NODE') OR (targetId = ? AND targetType = 'NODE')").run(n.id, n.id);
       }
       db.prepare('DELETE FROM focus_nodes WHERE groupId = ?').run(id);
     } else {
@@ -282,7 +282,7 @@ router.delete('/groups/:id', (req: Request, res: Response) => {
     }
 
     // 清除外框自身的关联连线
-    db.prepare('DELETE FROM focus_edges WHERE (sourceId = ? AND sourceType = "GROUP") OR (targetId = ? AND targetType = "GROUP")').run(id, id);
+    db.prepare("DELETE FROM focus_edges WHERE (sourceId = ? AND sourceType = 'GROUP') OR (targetId = ? AND targetType = 'GROUP')").run(id, id);
     return db.prepare('DELETE FROM focus_groups WHERE id = ?').run(id);
   });
 
