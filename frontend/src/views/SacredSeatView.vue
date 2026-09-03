@@ -51,7 +51,7 @@ const isInsideRegretWindow = computed(() => {
   return elapsedSeconds.value < store.config.regretWindowSeconds;
 });
 
-// 清理所有定时器
+// 清理定时器
 function clearTimer() {
   if (timerInterval !== null) {
     clearInterval(timerInterval);
@@ -78,7 +78,6 @@ function startFocus(minutes?: number) {
     if (remainingSeconds.value > 0) {
       remainingSeconds.value -= 1;
       if (remainingSeconds.value === 0) {
-        // 关键机制：倒计时归零，静音且不弹窗，顺水推舟转为超额计时
         enterOverFocus();
       }
     }
@@ -97,7 +96,6 @@ function enterOverFocus() {
   }, 1000);
 
   // 延迟监听用户退出心流后的首次点击/触控
-  // 延迟 300ms 注册，避免归零瞬间的误触
   setTimeout(() => {
     window.addEventListener('click', handleWakeUpAction, { once: true });
     window.addEventListener('touchstart', handleWakeUpAction, { once: true });
@@ -124,82 +122,97 @@ function handleGiveUpClick() {
   }
 }
 
-// 触发后悔药免责退出
-async function triggerRegretExit() {
+// 触发后悔药免责退出（0ms 乐观更新，非阻塞异步上报）
+function triggerRegretExit() {
   clearTimer();
+  const actualSec = elapsedSeconds.value;
+  const startIso = sessionStartTime.value ? sessionStartTime.value.toISOString() : new Date().toISOString();
+  const targetMins = Math.round(targetDurationSeconds.value / 60);
+
+  // 1. 立即同步切回 IDLE 状态，0ms 响应用户点击！
+  currentState.value = 'IDLE';
+
+  // 2. 异步后台提交持久化，不阻塞主线程 UI
   const log: FocusSessionLog = {
     id: `log-${Date.now()}`,
     type: 'FOCUS',
-    startTime: sessionStartTime.value ? sessionStartTime.value.toISOString() : new Date().toISOString(),
+    startTime: startIso,
     endTime: new Date().toISOString(),
-    targetDurationMinutes: Math.round(targetDurationSeconds.value / 60),
-    actualDurationSeconds: elapsedSeconds.value,
+    targetDurationMinutes: targetMins,
+    actualDurationSeconds: actualSec,
     status: 'REGRET',
     note: '在30秒免责窗口内使用后悔药退出，主链连胜完整保留'
   };
+  store.recordSession(log).catch(err => console.error('Failed to log regret session', err));
 
-  await store.recordSession(log);
-  currentState.value = 'IDLE';
-
-  // 提示横幅
+  // 3. 提示横幅
   regretNotice.value = '💊 已触发后悔药国策：本次退出不扣连胜，无负罪感退出。';
   setTimeout(() => {
     regretNotice.value = '';
-  }, 4000);
+  }, 3500);
 }
 
 // 二次确认：确认违规放弃并清零主链
-async function handleConfirmReset() {
+function handleConfirmReset() {
   isWarningModalOpen.value = false;
   clearTimer();
+  const actualSec = elapsedSeconds.value;
+  const startIso = sessionStartTime.value ? sessionStartTime.value.toISOString() : new Date().toISOString();
+  const targetMins = Math.round(targetDurationSeconds.value / 60);
 
+  // 1. 立即同步切回 IDLE，0ms 响应
+  currentState.value = 'IDLE';
+
+  // 2. 异步后台提交
   const log: FocusSessionLog = {
     id: `log-${Date.now()}`,
     type: 'FOCUS',
-    startTime: sessionStartTime.value ? sessionStartTime.value.toISOString() : new Date().toISOString(),
+    startTime: startIso,
     endTime: new Date().toISOString(),
-    targetDurationMinutes: Math.round(targetDurationSeconds.value / 60),
-    actualDurationSeconds: elapsedSeconds.value,
+    targetDurationMinutes: targetMins,
+    actualDurationSeconds: actualSec,
     status: 'FAIL',
     note: '中途主动中断专注，主链归零'
   };
-
-  await store.recordSession(log);
-  currentState.value = 'IDLE';
+  store.recordSession(log).catch(err => console.error('Failed to log fail session', err));
 
   regretNotice.value = '⚠️ 专注已中断：承认本次主链断裂，连胜纪录重置为 #0。';
   setTimeout(() => {
     regretNotice.value = '';
-  }, 4000);
+  }, 3500);
 }
 
 // 正常结算（无争议 或 存入判例）
 async function handleCompleteSession(withCase: boolean) {
   isCaseModalOpen.value = false;
   clearTimer();
+  const actualSec = elapsedSeconds.value;
+  const startIso = sessionStartTime.value ? sessionStartTime.value.toISOString() : new Date().toISOString();
+  const targetMins = Math.round(targetDurationSeconds.value / 60);
+
+  currentState.value = 'IDLE';
 
   const log: FocusSessionLog = {
     id: `log-${Date.now()}`,
     type: 'FOCUS',
-    startTime: sessionStartTime.value ? sessionStartTime.value.toISOString() : new Date().toISOString(),
+    startTime: startIso,
     endTime: new Date().toISOString(),
-    targetDurationMinutes: Math.round(targetDurationSeconds.value / 60),
-    actualDurationSeconds: elapsedSeconds.value,
+    targetDurationMinutes: targetMins,
+    actualDurationSeconds: actualSec,
     status: 'SUCCESS',
     note: withCase ? '专注成功完成（已增量录入下必为例判例）' : '专注成功完成（无争议）'
   };
 
   await store.recordSession(log);
-  currentState.value = 'IDLE';
 
   regretNotice.value = `🎉 恭喜！本次专注圆满完成，主链推进至 #${store.config.currentStreak}！`;
   setTimeout(() => {
     regretNotice.value = '';
-  }, 4000);
+  }, 3500);
 }
 
 // -----------------------------------------------------------------------------
-// 2. 预约链模块 (线性时延抗阻平移)
+// 2. 预约链模块 (就地平滑响应，0ms延迟)
 // -----------------------------------------------------------------------------
 
 function setReservationMinutes(mins: number) {
@@ -216,7 +229,6 @@ function startReservation() {
     if (reservationRemainingSeconds.value > 0) {
       reservationRemainingSeconds.value -= 1;
       if (reservationRemainingSeconds.value === 0) {
-        // 预约归零，播放清脆提示音，转入就位确认
         clearTimer();
         playChimeSound();
         currentState.value = 'RESERVATION_TRIGGERED';
@@ -226,12 +238,12 @@ function startReservation() {
 }
 
 function cancelReservation() {
+  // 关键：0 毫秒同步重置，直接在常驻卡片内切换状态
   clearTimer();
   currentState.value = 'IDLE';
 }
 
 function confirmReservationReady() {
-  // 点击【确认就位，开始专注】，直接进入标准专注倒计时
   startFocus(store.config.defaultFocusDuration);
 }
 
@@ -265,45 +277,50 @@ onUnmounted(() => {
       </div>
     </Transition>
 
-    <!-- 核心视图状态平滑过渡 -->
-    <Transition name="state-fade" mode="out-in">
-      <!-- ==================== 状态 1: IDLE 待命态 ==================== -->
-      <div v-if="currentState === 'IDLE'" key="idle" class="state-panel idle-panel">
-        <div class="seat-header">
-          <div class="token-banner">
-            <span class="token-label">神圣信物生效中</span>
-            <span class="token-value">{{ store.config.sacredToken }}</span>
-          </div>
-          <div class="header-tools">
-            <div class="streak-badge">
-              <span class="streak-node">当前主链: #{{ store.config.currentStreak }}</span>
-              <span class="streak-max font-mono">最高: #{{ store.config.maxStreak }}</span>
-            </div>
-            <button class="btn-icon" @click="isSettingsModalOpen = true" title="个性化设置">
-              ⚙️
-            </button>
-          </div>
+    <!-- ==================== 视图 A: 主仪表盘（常驻持久化 DOM，包含待命与预约） ==================== -->
+    <div v-show="currentState === 'IDLE' || currentState === 'RESERVING'" class="main-dashboard-view">
+      <!-- 头部：信物与主链徽章 -->
+      <div class="seat-header">
+        <div class="token-banner">
+          <span class="token-label">神圣信物生效中</span>
+          <span class="token-value">{{ store.config.sacredToken }}</span>
         </div>
-
-        <!-- 待命主时钟展示 -->
-        <div class="timer-display-card">
-          <div class="timer-digits font-mono">
-            {{ formatTime(store.config.defaultFocusDuration * 60) }}
+        <div class="header-tools">
+          <div class="streak-badge">
+            <span class="streak-node">当前主链: #{{ store.config.currentStreak }}</span>
+            <span class="streak-max font-mono">最高: #{{ store.config.maxStreak }}</span>
           </div>
-          <div class="timer-status-hint">
-            准备就位 · 点击下方按钮开启心流深潜
-          </div>
-          <div class="timer-actions">
-            <button class="btn-primary" @click="startFocus()">
-              开启神圣专注 ({{ store.config.defaultFocusDuration }}m)
-            </button>
-          </div>
+          <button class="btn-icon" @click="isSettingsModalOpen = true" title="个性化设置">
+            ⚙️
+          </button>
         </div>
+      </div>
 
-        <!-- 动态线性时延预约链 -->
-        <div class="reservation-card">
+      <!-- 待命大时钟卡片 -->
+      <div class="timer-display-card">
+        <div class="timer-digits font-mono">
+          {{ formatTime(store.config.defaultFocusDuration * 60) }}
+        </div>
+        <div class="timer-status-hint">
+          {{ currentState === 'RESERVING' ? '⏰ 预约倒计时进行中 · 预约结束后将自动唤醒' : '准备就位 · 点击下方按钮开启心流深潜' }}
+        </div>
+        <div class="timer-actions">
+          <button 
+            class="btn-primary" 
+            :class="{ 'btn-primary-reserving': currentState === 'RESERVING' }"
+            @click="startFocus()"
+          >
+            {{ currentState === 'RESERVING' ? '跳过预约，直接专注' : `开启神圣专注 (${store.config.defaultFocusDuration}m)` }}
+          </button>
+        </div>
+      </div>
+
+      <!-- 预约链控制卡片 (就地切换，DOM 结构恒久稳定，0 耗时) -->
+      <div class="reservation-card" :class="{ 'is-active-reserving': currentState === 'RESERVING' }">
+        <!-- 未激活预约：展示调节与点火按钮 -->
+        <div v-show="currentState !== 'RESERVING'" class="res-config-panel">
           <div class="card-title">
-            <span>⏰ 预约链 (线性时延抗阻)</span>
+            <span>⏰ 预约链 (动态线性时延)</span>
             <span class="signal-tag">启动信号: {{ store.config.reservationSignal }}</span>
           </div>
           <p class="card-desc">
@@ -335,99 +352,90 @@ onUnmounted(() => {
             </button>
           </div>
         </div>
-      </div>
 
-      <!-- ==================== 状态 2: FOCUSING 专注倒计时进行中 ==================== -->
-      <div v-else-if="currentState === 'FOCUSING'" key="focusing" class="state-panel focus-panel">
-        <div class="immersive-focus-view">
-          <div class="focus-top-banner">
-            <span class="focus-token-hint">信物生效中：{{ store.config.sacredToken }}</span>
+        <!-- 激活预约中：就地显示倒计时与取消按钮，无需整页跳变 -->
+        <div v-show="currentState === 'RESERVING'" class="res-active-panel">
+          <div class="res-active-header">
+            <span class="res-active-badge">⏰ 预约平移中</span>
+            <span class="signal-tag">点火信号: {{ store.config.reservationSignal }}</span>
           </div>
-
-          <div class="focus-clock-center">
-            <div class="focus-clock-digits font-mono">
-              {{ formatTime(remainingSeconds) }}
+          <div class="res-active-body">
+            <div class="res-active-clock font-mono">
+              {{ formatTime(reservationRemainingSeconds) }}
             </div>
-            <div class="focus-progress-info">
-              <span v-if="isInsideRegretWindow" class="regret-pill-badge font-mono">
-                💊 后悔药窗口生效中 ({{ store.config.regretWindowSeconds - elapsedSeconds }}s)
-              </span>
-              <span v-else class="focus-ongoing-hint font-mono">
-                深度专注进行中 · 主链连胜 #{{ store.config.currentStreak }}
-              </span>
-            </div>
+            <p class="res-active-hint">
+              倒计时结束将清脆鸣响并点火，请做好就位准备。
+            </p>
           </div>
-
-          <div class="focus-bottom-bar">
-            <button class="btn-giveup" @click="handleGiveUpClick">
-              放弃退出
+          <div class="res-active-footer">
+            <button class="btn-cancel-res" @click="cancelReservation">
+              取消本次预约
             </button>
           </div>
         </div>
       </div>
+    </div>
 
-      <!-- ==================== 状态 3: OVER_FOCUS 顺水推舟超额计时 ==================== -->
-      <div v-else-if="currentState === 'OVER_FOCUS'" key="overfocus" class="state-panel overfocus-panel" @click="handleWakeUpAction">
-        <div class="immersive-focus-view over-focus-view">
-          <div class="focus-top-banner">
-            <span class="focus-token-hint">预设时长已达成 · 顺水推舟深潜中</span>
-          </div>
+    <!-- ==================== 视图 B: 沉浸式专注与顺水推舟态 (v-show 瞬时切换) ==================== -->
+    <div v-show="currentState === 'FOCUSING' || currentState === 'OVER_FOCUS'" class="immersive-focus-view">
+      <div class="focus-top-banner">
+        <span v-if="currentState === 'FOCUSING'" class="focus-token-hint">信物生效中：{{ store.config.sacredToken }}</span>
+        <span v-else class="focus-token-hint">预设时长已达成 · 顺水推舟深潜中</span>
+      </div>
 
-          <div class="focus-clock-center">
-            <div class="focus-clock-digits over-digits font-mono">
-              + {{ formatTime(overFocusSeconds) }}
-            </div>
-            <div class="over-focus-hint">
+      <div class="focus-clock-center">
+        <!-- 专注正常倒计时 -->
+        <div v-if="currentState === 'FOCUSING'" class="focus-clock-digits font-mono">
+          {{ formatTime(remainingSeconds) }}
+        </div>
+        <!-- 超额正向计数器 -->
+        <div v-else class="focus-clock-digits over-digits font-mono">
+          + {{ formatTime(overFocusSeconds) }}
+        </div>
+
+        <div class="focus-progress-info">
+          <template v-if="currentState === 'FOCUSING'">
+            <span v-if="isInsideRegretWindow" class="regret-pill-badge font-mono">
+              💊 后悔药窗口生效中 ({{ store.config.regretWindowSeconds - elapsedSeconds }}s)
+            </span>
+            <span v-else class="focus-ongoing-hint font-mono">
+              深度专注进行中 · 主链连胜 #{{ store.config.currentStreak }}
+            </span>
+          </template>
+          <template v-else>
+            <span class="over-focus-hint font-mono">
               静音无扰心流中 · 任意点击页面以唤醒结算
-            </div>
-          </div>
-
-          <div class="focus-bottom-bar">
-            <button class="btn-wake-settle" @click="handleWakeUpAction">
-              已退出心流，完成结算
-            </button>
-          </div>
+            </span>
+          </template>
         </div>
       </div>
 
-      <!-- ==================== 状态 4: RESERVING 预约链倒计时 ==================== -->
-      <div v-else-if="currentState === 'RESERVING'" key="reserving" class="state-panel reserving-panel">
-        <div class="reservation-running-view">
-          <div class="res-badge">⏰ 预约平移中</div>
-          <div class="res-clock font-mono">
-            {{ formatTime(reservationRemainingSeconds) }}
-          </div>
-          <div class="res-signal-info">
-            点火信号：<strong>{{ store.config.reservationSignal }}</strong>
-          </div>
-          <p class="res-hint">
-            请提前做好物理就位准备。倒计时结束时将清脆鸣响，引导无缝接驳专注。
-          </p>
-          <button class="btn-cancel-res" @click="cancelReservation">
-            取消本次预约
-          </button>
-        </div>
+      <div class="focus-bottom-bar">
+        <button v-if="currentState === 'FOCUSING'" class="btn-giveup" @click="handleGiveUpClick">
+          放弃退出
+        </button>
+        <button v-else class="btn-wake-settle" @click="handleWakeUpAction">
+          已退出心流，完成结算
+        </button>
       </div>
+    </div>
 
-      <!-- ==================== 状态 5: RESERVATION_TRIGGERED 预约点火就位卡 ==================== -->
-      <div v-else-if="currentState === 'RESERVATION_TRIGGERED'" key="triggered" class="state-panel triggered-panel">
-        <div class="reservation-triggered-view">
-          <div class="fire-icon">⏰</div>
-          <h2 class="fire-title">预约时间已到！启动信号已点火</h2>
-          <div class="fire-signal-box">
-            <span class="fire-label">即刻执行启动信号：</span>
-            <span class="fire-signal font-mono">{{ store.config.reservationSignal }}</span>
-          </div>
-          <div class="fire-token-box">
-            <span class="fire-label">物理信物就位：</span>
-            <span class="fire-token font-mono">{{ store.config.sacredToken }}</span>
-          </div>
-          <button class="btn-confirm-ready" @click="confirmReservationReady">
-            ⚡ 确认就位，开启神圣专注 ({{ store.config.defaultFocusDuration }}m)
-          </button>
-        </div>
+    <!-- ==================== 视图 C: 预约时间到唤醒点火卡 ==================== -->
+    <div v-show="currentState === 'RESERVATION_TRIGGERED'" class="reservation-triggered-view">
+      <div class="fire-icon">⏰</div>
+      <h2 class="fire-title">预约时间已到！启动信号已点火</h2>
+      <div class="fire-signal-box">
+        <span class="fire-label">即刻执行启动信号：</span>
+        <span class="fire-signal font-mono">{{ store.config.reservationSignal }}</span>
       </div>
-    </Transition>
+      <div class="fire-token-box">
+        <span class="fire-label">物理信物就位：</span>
+        <span class="fire-token font-mono">{{ store.config.sacredToken }}</span>
+      </div>
+      <button class="btn-confirm-ready" @click="confirmReservationReady">
+        ⚡ 确认就位，开启神圣专注 ({{ store.config.defaultFocusDuration }}m)
+      </button>
+    </div>
 
     <!-- 弹窗组件：严正清零警告模态框 -->
     <StreakWarningModal 
@@ -463,7 +471,6 @@ onUnmounted(() => {
   justify-content: center;
   height: 100%;
   padding: 24px;
-  gap: 28px;
   max-width: 680px;
   margin: 0 auto;
   position: relative;
@@ -473,6 +480,15 @@ onUnmounted(() => {
   max-width: 100%;
   padding: 0;
   background-color: var(--bg-primary);
+}
+
+/* 主仪表盘恒定容器 */
+.main-dashboard-view {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+  align-items: center;
 }
 
 /* 顶部提示条 */
@@ -574,6 +590,7 @@ onUnmounted(() => {
   justify-content: center;
   box-shadow: var(--shadow-md);
   backdrop-filter: blur(12px);
+  transform: translateZ(0);
 }
 
 .timer-digits {
@@ -605,14 +622,34 @@ onUnmounted(() => {
   padding: 12px 32px;
   border-radius: var(--radius-full);
   box-shadow: var(--shadow-glow);
+  transition: all var(--transition-fast);
 }
 
+.btn-primary-reserving {
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+  border: 1px solid var(--border-focus);
+  box-shadow: none;
+}
+
+/* 预约卡片样式 */
 .reservation-card {
   width: 100%;
   background: var(--bg-card);
   border: 1px solid var(--border-color);
   border-radius: var(--radius-md);
   padding: 18px 20px;
+  transform: translateZ(0);
+  transition: border-color var(--transition-fast);
+}
+
+.reservation-card.is-active-reserving {
+  border-color: var(--color-gold);
+}
+
+.res-config-panel {
+  display: flex;
+  flex-direction: column;
 }
 
 .card-title {
@@ -667,6 +704,73 @@ onUnmounted(() => {
   font-size: 13px;
   font-weight: 600;
   color: var(--text-primary);
+}
+
+/* 激活预约就地展示 */
+.res-active-panel {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 0;
+}
+
+.res-active-header {
+  width: 100%;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.res-active-badge {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-gold);
+}
+
+.res-active-body {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  margin: 6px 0;
+}
+
+.res-active-clock {
+  font-size: 48px;
+  font-weight: 700;
+  color: var(--color-gold);
+  line-height: 1;
+}
+
+.res-active-hint {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.res-active-footer {
+  width: 100%;
+  display: flex;
+  justify-content: center;
+  margin-top: 4px;
+}
+
+.btn-cancel-res {
+  background: rgba(244, 63, 94, 0.08);
+  border: 1px solid rgba(244, 63, 94, 0.3);
+  padding: 8px 24px;
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-danger);
+  cursor: pointer;
+  outline: none;
+  transition: all var(--transition-fast);
+}
+
+.btn-cancel-res:hover {
+  background: rgba(244, 63, 94, 0.16);
+  border-color: var(--color-danger);
 }
 
 /* ================= 沉浸式专注界面 ================= */
@@ -739,10 +843,6 @@ onUnmounted(() => {
 }
 
 /* 超额顺水推舟态 */
-.over-focus-view {
-  cursor: pointer;
-}
-
 .over-digits {
   color: var(--text-secondary);
   text-shadow: none;
@@ -761,51 +861,6 @@ onUnmounted(() => {
   border-radius: var(--radius-full);
   font-size: 13px;
   font-weight: 600;
-}
-
-/* ================= 预约中界面 ================= */
-.reservation-running-view {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 20px;
-  text-align: center;
-  padding: 32px 16px;
-}
-
-.res-badge {
-  font-size: 13px;
-  color: var(--color-gold);
-  background: rgba(245, 158, 11, 0.1);
-  padding: 4px 14px;
-  border-radius: var(--radius-full);
-}
-
-.res-clock {
-  font-size: clamp(64px, 14vw, 100px);
-  font-weight: 700;
-  line-height: 1;
-}
-
-.res-signal-info {
-  font-size: 14px;
-}
-
-.res-hint {
-  max-width: 380px;
-  font-size: 12px;
-  color: var(--text-muted);
-  line-height: 1.6;
-}
-
-.btn-cancel-res {
-  background: var(--bg-secondary);
-  border: 1px solid var(--border-color);
-  padding: 8px 24px;
-  border-radius: var(--radius-sm);
-  font-size: 12px;
-  color: var(--text-secondary);
 }
 
 /* ================= 预约点火卡 ================= */
@@ -883,57 +938,5 @@ onUnmounted(() => {
 .slide-down-enter-from, .slide-down-leave-to {
   transform: translateY(-20px);
   opacity: 0;
-}
-
-/* 核心状态平滑过渡动效 */
-.state-panel {
-  width: 100%;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 28px;
-  will-change: opacity, transform;
-}
-
-.state-fade-enter-active,
-.state-fade-leave-active {
-  transition: opacity 0.16s cubic-bezier(0.4, 0, 0.2, 1), transform 0.16s cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-.state-fade-enter-from {
-  opacity: 0;
-  transform: scale(0.985);
-}
-
-.state-fade-leave-to {
-  opacity: 0;
-  transform: scale(0.985);
-}
-
-/* 硬件加速以消除高斯模糊和巨大字体重绘卡顿 */
-.timer-display-card,
-.reservation-card,
-.reservation-running-view,
-.reservation-triggered-view {
-  transform: translateZ(0);
-  backface-visibility: hidden;
-}
-
-.btn-cancel-res {
-  background: var(--bg-secondary);
-  border: 1px solid var(--border-color);
-  padding: 9px 26px;
-  border-radius: var(--radius-sm);
-  font-size: 13px;
-  font-weight: 500;
-  color: var(--text-secondary);
-  cursor: pointer;
-  outline: none;
-}
-
-.btn-cancel-res:hover {
-  background: var(--bg-tertiary);
-  color: var(--text-primary);
-  border-color: var(--border-focus);
 }
 </style>
