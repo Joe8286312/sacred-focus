@@ -24,7 +24,7 @@ export const useFocusTreeStore = defineStore('focusTree', () => {
         }
         const maxY = Math.max(...groupNodes.map(n => n.position.y));
         const referenceX = groupNodes[0].position.x;
-        const newY = Math.round(maxY + 100);
+        const newY = Math.round(maxY + 95);
 
         // 自适应撑大分组外框高度
         const requiredBottom = newY + 80 + 30;
@@ -35,13 +35,21 @@ export const useFocusTreeStore = defineStore('focusTree', () => {
         return { x: Math.round(referenceX), y: newY };
       }
     }
-    // 独立国策放置逻辑
+
+    // 独立国策放置逻辑 (groupId === null)
     const independentNodes = nodes.value.filter(n => !n.groupId);
     if (independentNodes.length === 0) {
-      return { x: 380, y: 380 };
+      return { x: 1080, y: 120 };
     }
     const maxY = Math.max(...independentNodes.map(n => n.position.y));
-    return { x: 380, y: Math.round(maxY + 110) };
+    const lastNode = independentNodes[independentNodes.length - 1];
+    const referenceX = lastNode?.position?.x || 1080;
+
+    // 若垂直排列过长（> 650），自动开启右侧新列排布
+    if (maxY > 650) {
+      return { x: Math.round(referenceX + 220), y: 120 };
+    }
+    return { x: Math.round(referenceX), y: Math.round(maxY + 105) };
   }
 
   async function fetchTree() {

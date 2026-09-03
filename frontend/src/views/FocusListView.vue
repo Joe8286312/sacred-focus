@@ -223,10 +223,17 @@ function openEditModal(node: FocusNode) {
 function handleSaveNode(nodeData: FocusNode) {
   if (editingNode.value) {
     store.updateNode(nodeData.id, nodeData);
+    const idx = localNodeList.value.findIndex(n => n.id === nodeData.id);
+    if (idx !== -1) {
+      localNodeList.value[idx] = { ...localNodeList.value[idx], ...nodeData };
+    }
   } else {
     store.addNode(nodeData);
+    localNodeList.value = localNodeList.value.filter(n => n.id !== nodeData.id);
+    localNodeList.value.push(nodeData);
   }
   isNodeEditModalOpen.value = false;
+  editingNode.value = null;
 }
 
 async function handleDeleteNode(node: FocusNode) {

@@ -34,13 +34,13 @@ const form = ref<FocusNode>({
   }
 });
 
-watch(() => props.node, (newVal) => {
-  if (newVal) {
-    form.value = JSON.parse(JSON.stringify(newVal));
+function initForm() {
+  if (props.node) {
+    form.value = JSON.parse(JSON.stringify(props.node));
   } else {
-    // 新建默认值
+    // 每次新建时完全重置表单，生成全新唯一 ID，并将 position 设为 {x: 0, y: 0} 触发智能投放
     form.value = {
-      id: `node-${Date.now()}`,
+      id: `node-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`,
       code: '',
       name: '',
       groupId: null,
@@ -50,7 +50,7 @@ watch(() => props.node, (newVal) => {
       maxLevel: 3,
       isLit: false,
       isFrozen: false,
-      position: { x: 150 + Math.random() * 100, y: 150 + Math.random() * 100 },
+      position: { x: 0, y: 0 },
       specCard: {
         instruction: '',
         failCondition: '',
@@ -59,7 +59,27 @@ watch(() => props.node, (newVal) => {
       }
     };
   }
-}, { immediate: true });
+}
+
+// 核心修复：监听 isOpen，每次打开弹窗时彻底根据 props.node 初始化，绝不残留上次新建输入
+watch(
+  () => props.isOpen,
+  (open) => {
+    if (open) {
+      initForm();
+    }
+  },
+  { immediate: true }
+);
+
+watch(
+  () => props.node,
+  () => {
+    if (props.isOpen) {
+      initForm();
+    }
+  }
+);
 
 function handleSave() {
   if (!form.value.code.trim() || !form.value.name.trim()) {
