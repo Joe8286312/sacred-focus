@@ -127,6 +127,111 @@ export const useFocusTreeStore = defineStore('focusTree', () => {
     }
   }
 
+  async function addNode(node: FocusNode) {
+    nodes.value.push(node);
+    try {
+      await fetch('/api/focus-tree/nodes', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(node)
+      });
+    } catch (e) {
+      console.error('Failed to add node', e);
+    }
+  }
+
+  async function updateNode(id: string, updates: Partial<FocusNode>) {
+    const idx = nodes.value.findIndex(n => n.id === id);
+    if (idx !== -1) {
+      nodes.value[idx] = { ...nodes.value[idx], ...updates };
+    }
+    try {
+      await fetch(`/api/focus-tree/nodes/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updates)
+      });
+    } catch (e) {
+      console.error('Failed to update node', e);
+    }
+  }
+
+  async function deleteNode(id: string) {
+    nodes.value = nodes.value.filter(n => n.id !== id);
+    edges.value = edges.value.filter(e => e.sourceId !== id && e.targetId !== id);
+    try {
+      await fetch(`/api/focus-tree/nodes/${id}`, { method: 'DELETE' });
+    } catch (e) {
+      console.error('Failed to delete node', e);
+    }
+  }
+
+  async function addEdge(edge: FocusEdge) {
+    edges.value.push(edge);
+    try {
+      await fetch('/api/focus-tree/edges', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(edge)
+      });
+    } catch (e) {
+      console.error('Failed to add edge', e);
+    }
+  }
+
+  async function deleteEdge(id: string) {
+    edges.value = edges.value.filter(e => e.id !== id);
+    try {
+      await fetch(`/api/focus-tree/edges/${id}`, { method: 'DELETE' });
+    } catch (e) {
+      console.error('Failed to delete edge', e);
+    }
+  }
+
+  async function addGroup(group: FocusGroup) {
+    groups.value.push(group);
+    try {
+      await fetch('/api/focus-tree/groups', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(group)
+      });
+    } catch (e) {
+      console.error('Failed to add group', e);
+    }
+  }
+
+  async function updateGroup(id: string, updates: Partial<FocusGroup>) {
+    const idx = groups.value.findIndex(g => g.id === id);
+    if (idx !== -1) {
+      groups.value[idx] = { ...groups.value[idx], ...updates };
+    }
+    try {
+      await fetch(`/api/focus-tree/groups/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updates)
+      });
+    } catch (e) {
+      console.error('Failed to update group', e);
+    }
+  }
+
+  async function deleteGroup(id: string) {
+    groups.value = groups.value.filter(g => g.id !== id);
+    // 把该组内节点的 groupId 置空
+    nodes.value.forEach(n => {
+      if (n.groupId === id) n.groupId = null;
+    });
+    // 移除与该组直接相连的连线
+    edges.value = edges.value.filter(e => e.sourceId !== id && e.targetId !== id);
+    try {
+      await fetch(`/api/focus-tree/groups/${id}`, { method: 'DELETE' });
+    } catch (e) {
+      console.error('Failed to delete group', e);
+    }
+  }
+
   return {
     nodes,
     edges,
@@ -139,6 +244,14 @@ export const useFocusTreeStore = defineStore('focusTree', () => {
     reorderNodes,
     fetchEvolution,
     createSnapshot,
-    rollbackToSlot
+    rollbackToSlot,
+    addNode,
+    updateNode,
+    deleteNode,
+    addEdge,
+    deleteEdge,
+    addGroup,
+    updateGroup,
+    deleteGroup
   };
 });
