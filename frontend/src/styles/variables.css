@@ -1,0 +1,72 @@
+:root {
+  /* 字体族定义 */
+  --font-sans: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+  --font-mono: 'JetBrains Mono', SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+
+  /* 基础过度动效 */
+  --transition-fast: 0.15s cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-normal: 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+
+  /* 圆角规范 */
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 16px;
+  --radius-full: 9999px;
+}
+
+/* 极夜深色模式（默认 OLED 纯黑与科技微光） */
+:root[data-theme="dark"],
+:root {
+  --bg-primary: #0A0A0C;
+  --bg-secondary: #121216;
+  --bg-tertiary: #1A1A20;
+  --bg-card: rgba(18, 18, 22, 0.85);
+  --bg-card-hover: rgba(26, 26, 32, 0.95);
+
+  --border-color: #26262F;
+  --border-focus: #3F3F4E;
+
+  --text-primary: #EDEDED;
+  --text-secondary: #94949E;
+  --text-muted: #5E5E6B;
+
+  --color-lit: #00F0FF;          /* 天青科技微光 */
+  --color-lit-glow: rgba(0, 240, 255, 0.25);
+  --color-gold: #F59E0B;         /* 胜利金黄 */
+  --color-unlit: #3A3A45;        /* 待命暗灰 */
+  --color-frozen: #38BDF8;       /* 冰蓝冻结态 */
+  --color-danger: #F43F5E;       /* 警示猩红 */
+  --color-success: #10B981;      /* 纯净翠绿 */
+
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.6);
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.7);
+  --shadow-glow: 0 0 18px rgba(0, 240, 255, 0.2);
+}
+
+/* 日光浅色模式（极简纸感浅灰与高对比墨黑） */
+:root[data-theme="light"] {
+  --bg-primary: #F8F9FA;
+  --bg-secondary: #FFFFFF;
+  --bg-tertiary: #EEF0F2;
+  --bg-card: #FFFFFF;
+  --bg-card-hover: #F1F3F5;
+
+  --border-color: #E2E4E8;
+  --border-focus: #CBD0D8;
+
+  --text-primary: #111827;
+  --text-secondary: #4B5563;
+  --text-muted: #9CA3AF;
+
+  --color-lit: #0284C7;
+  --color-lit-glow: rgba(2, 132, 199, 0.2);
+  --color-gold: #D97706;
+  --color-unlit: #9CA3AF;
+  --color-frozen: #0284C7;
+  --color-danger: #E11D48;
+  --color-success: #059669;
+
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.05);
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.08);
+  --shadow-glow: 0 0 15px rgba(2, 132, 199, 0.15);
+}

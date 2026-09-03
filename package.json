@@ -1,0 +1,25 @@
+{
+  "name": "sacred-focus",
+  "version": "1.0.0",
+  "description": "个人自控与效能系统（国策树与神圣座位）",
+  "private": true,
+  "scripts": {
+    "dev:backend": "npm --prefix backend run dev",
+    "dev:frontend": "npm --prefix frontend run dev",
+    "dev": "npx -y concurrently \"npm run dev:backend\" \"npm run dev:frontend\"",
+    "build:backend": "npm --prefix backend run build",
+    "build:frontend": "npm --prefix frontend run build",
+    "build": "npm run build:backend && npm run build:frontend",
+    "start": "npm --prefix backend start"
+  },
+  "keywords": [
+    "focus",
+    "productivity",
+    "vue3",
+    "vue-flow",
+    "express",
+    "sqlite"
+  ],
+  "author": "",
+  "license": "MIT"
+}
