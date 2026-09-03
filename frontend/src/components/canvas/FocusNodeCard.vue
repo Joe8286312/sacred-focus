@@ -48,7 +48,7 @@ function handleAnchorClick(anchor: 'TOP' | 'BOTTOM' | 'LEFT' | 'RIGHT', e: Mouse
 </script>
 
 <template>
-  <div class="focus-node-card" :class="cardClass">
+  <div class="focus-node-card" :class="[cardClass, { 'nodrag': !data.isEditMode }]">
     <!-- 四向磁吸连接锚点（单桩支持连接，杜绝图层叠放倒置） -->
     <Handle 
       id="top" 
@@ -125,6 +125,15 @@ function handleAnchorClick(anchor: 'TOP' | 'BOTTOM' | 'LEFT' | 'RIGHT', e: Mouse
   position: relative;
   transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
   box-sizing: border-box;
+  cursor: pointer;
+}
+
+.focus-node-card.is-edit-mode {
+  cursor: grab;
+}
+
+.focus-node-card.is-edit-mode:active {
+  cursor: grabbing;
 }
 
 /* 点亮态：根据用户需求，整张卡片背景变为清新浅绿色，在浅色/深色模式下都极其醒目 */

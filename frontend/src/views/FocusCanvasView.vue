@@ -43,7 +43,7 @@ const editingGroup = ref<FocusGroup | null>(null);
 
 // 排版无损撤销快照
 let preEditNodesSnapshot: { id: string; x: number; y: number }[] = [];
-let preEditGroupsSnapshot: { id: string; x: number; y: number }[] = [];
+let preEditGroupsSnapshot: { id: string; x: number; y: number; width: number; height: number }[] = [];
 
 // 选中状态跟踪
 const selectedNodeId = ref<string | null>(null);
@@ -270,7 +270,13 @@ function onPaneClick() {
 function toggleEditMode() {
   if (!isEditMode.value) {
     preEditNodesSnapshot = store.nodes.map(n => ({ id: n.id, x: n.position.x, y: n.position.y }));
-    preEditGroupsSnapshot = store.groups.map(g => ({ id: g.id, x: g.position.x, y: g.position.y }));
+    preEditGroupsSnapshot = store.groups.map(g => ({ 
+      id: g.id, 
+      x: g.position.x, 
+      y: g.position.y,
+      width: g.size?.width || 360,
+      height: g.size?.height || 260
+    }));
     isEditMode.value = true;
   } else {
     saveLayoutChanges();
@@ -293,11 +299,19 @@ function cancelLayoutChanges() {
     if (group) {
       group.position.x = snap.x;
       group.position.y = snap.y;
+      group.size = { width: snap.width, height: snap.height };
     }
   }
   syncToFlow();
   isEditMode.value = false;
   activeConnectingHandle.value = null;
+}
+
+function onResizeGroup(payload: { id: string; size: { width: number; height: number } }) {
+  const found = store.groups.find(g => g.id === payload.id);
+  if (found) {
+    found.size = { ...payload.size };
+  }
 }
 
 async function saveLayoutChanges() {
@@ -313,6 +327,9 @@ async function saveLayoutChanges() {
       if (group) {
         group.position.x = Math.round(fn.position.x);
         group.position.y = Math.round(fn.position.y);
+        if (fn.data?.size) {
+          group.size = { ...fn.data.size };
+        }
       }
     }
   }
@@ -508,6 +525,7 @@ onUnmounted(() => {
             :selected="props.selected"
             @edit-group="editingGroup = $event; isGroupEditModalOpen = true"
             @handle-click="onHandleClick"
+            @resize-group="onResizeGroup"
           />
         </template>
 
@@ -776,7 +794,8 @@ onUnmounted(() => {
 }
 
 :deep(.vue-flow__node-focusGroup .group-header),
-:deep(.vue-flow__node-focusGroup .group-handle) {
+:deep(.vue-flow__node-focusGroup .group-handle),
+:deep(.vue-flow__node-focusGroup .group-resizer) {
   pointer-events: all !important;
 }
 

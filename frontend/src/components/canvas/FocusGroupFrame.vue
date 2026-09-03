@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { computed } from 'vue';
-import { Handle, Position } from '@vue-flow/core';
+import { ref, computed } from 'vue';
+import { Handle, Position, useVueFlow } from '@vue-flow/core';
 import type { FocusGroup } from '../../types';
 
 const props = defineProps<{
@@ -15,21 +15,27 @@ const props = defineProps<{
 const emit = defineEmits<{
   (e: 'edit-group', group: FocusGroup): void;
   (e: 'handle-click', payload: { nodeId: string; anchor: 'TOP' | 'BOTTOM' | 'LEFT' | 'RIGHT' }): void;
+  (e: 'resize-group', payload: { id: string; size: { width: number; height: number } }): void;
 }>();
 
-// 主题色样式计算
+const { viewport } = useVueFlow();
+const isResizing = ref(false);
+
+// 主题色与外框尺寸
+const themeColor = computed(() => props.data.themeColor || '#0284C7');
+
 const frameStyle = computed(() => {
-  const color = props.data.themeColor || '#0284C7';
+  const color = themeColor.value;
   return {
     borderColor: color,
     backgroundColor: `${color}0D`, // 5% 透明度背景
-    width: `${props.data.size?.width || 320}px`,
-    height: `${props.data.size?.height || 220}px`
+    width: `${props.data.size?.width || 360}px`,
+    height: `${props.data.size?.height || 260}px`
   };
 });
 
 const headerStyle = computed(() => {
-  const color = props.data.themeColor || '#0284C7';
+  const color = themeColor.value;
   return {
     backgroundColor: `${color}26`, // 15% 透明度
     borderBottomColor: `${color}4D`,
@@ -47,13 +53,65 @@ function handleAnchorClick(anchor: 'TOP' | 'BOTTOM' | 'LEFT' | 'RIGHT', e: Mouse
   e.stopPropagation();
   emit('handle-click', { nodeId: props.id, anchor });
 }
+
+// -----------------------------------------------------------------------------
+// 自由拖拽调整尺寸 (Resize Engine)
+// -----------------------------------------------------------------------------
+function startResize(direction: 'br' | 'r' | 'b', e: MouseEvent | TouchEvent) {
+  if (!props.data.isEditMode) return;
+  e.stopPropagation();
+  e.preventDefault();
+
+  const startX = 'touches' in e ? e.touches[0].clientX : e.clientX;
+  const startY = 'touches' in e ? e.touches[0].clientY : e.clientY;
+  const startWidth = props.data.size?.width || 360;
+  const startHeight = props.data.size?.height || 260;
+  const currentZoom = viewport.value.zoom || 1;
+
+  isResizing.value = true;
+
+  function onPointerMove(moveEvent: MouseEvent | TouchEvent) {
+    const clientX = 'touches' in moveEvent ? moveEvent.touches[0].clientX : moveEvent.clientX;
+    const clientY = 'touches' in moveEvent ? moveEvent.touches[0].clientY : moveEvent.clientY;
+
+    const deltaX = (clientX - startX) / currentZoom;
+    const deltaY = (clientY - startY) / currentZoom;
+
+    if (direction === 'br' || direction === 'r') {
+      const newWidth = Math.max(240, Math.round(startWidth + deltaX));
+      if (!props.data.size) props.data.size = { width: newWidth, height: startHeight };
+      else props.data.size.width = newWidth;
+    }
+    if (direction === 'br' || direction === 'b') {
+      const newHeight = Math.max(160, Math.round(startHeight + deltaY));
+      if (!props.data.size) props.data.size = { width: startWidth, height: newHeight };
+      else props.data.size.height = newHeight;
+    }
+  }
+
+  function onPointerUp() {
+    isResizing.value = false;
+    window.removeEventListener('mousemove', onPointerMove);
+    window.removeEventListener('mouseup', onPointerUp);
+    window.removeEventListener('touchmove', onPointerMove);
+    window.removeEventListener('touchend', onPointerUp);
+    if (props.data.size) {
+      emit('resize-group', { id: props.id, size: { ...props.data.size } });
+    }
+  }
+
+  window.addEventListener('mousemove', onPointerMove);
+  window.addEventListener('mouseup', onPointerUp);
+  window.addEventListener('touchmove', onPointerMove);
+  window.addEventListener('touchend', onPointerUp);
+}
 </script>
 
 <template>
   <div 
     class="focus-group-frame" 
     :style="frameStyle" 
-    :class="{ 'is-selected': selected, 'is-edit-mode': data.isEditMode }"
+    :class="{ 'is-selected': selected, 'is-edit-mode': data.isEditMode, 'is-resizing': isResizing }"
   >
     <!-- 分组四向连接锚点，支持全场景拓扑连线 (Group-to-Group, Group-to-Node, Node-to-Group) -->
     <Handle 
@@ -95,8 +153,36 @@ function handleAnchorClick(anchor: 'TOP' | 'BOTTOM' | 'LEFT' | 'RIGHT', e: Mouse
     <!-- 分组标题栏 -->
     <div class="group-header" :style="headerStyle" @dblclick="$emit('edit-group', data)">
       <span class="group-title">{{ data.name }}</span>
-      <span v-if="data.isEditMode" class="group-edit-hint">双击修改</span>
+      <span v-if="data.isEditMode" class="group-edit-hint">双击设置</span>
     </div>
+
+    <!-- 实时调整尺寸尺寸标签指示 -->
+    <div v-if="isResizing" class="resize-dimension-tag font-mono">
+      {{ data.size?.width }} × {{ data.size?.height }} px
+    </div>
+
+    <!-- 编辑模式下的多向自由调整尺寸手柄 (支持右下角对角线拉伸、右边框拉宽、底边框拉高) -->
+    <template v-if="data.isEditMode">
+      <div 
+        class="group-resizer group-resizer-br nodrag" 
+        :style="{ borderColor: themeColor }"
+        title="拖拽调整外框大小"
+        @mousedown="startResize('br', $event)"
+        @touchstart="startResize('br', $event)"
+      ></div>
+      <div 
+        class="group-resizer group-resizer-r nodrag" 
+        title="拖拽调整外框宽度"
+        @mousedown="startResize('r', $event)"
+        @touchstart="startResize('r', $event)"
+      ></div>
+      <div 
+        class="group-resizer group-resizer-b nodrag" 
+        title="拖拽调整外框高度"
+        @mousedown="startResize('b', $event)"
+        @touchstart="startResize('b', $event)"
+      ></div>
+    </template>
   </div>
 </template>
 
@@ -108,13 +194,17 @@ function handleAnchorClick(anchor: 'TOP' | 'BOTTOM' | 'LEFT' | 'RIGHT', e: Mouse
   position: relative;
   user-select: none;
   transition: box-shadow 0.15s ease, border-color 0.15s ease;
-  /* 关键：外框本体设为 none，使组内内部空间不阻挡对内部连线/画布的鼠标点击与选取 */
+  /* 外框本体设为 none，内部空间不阻挡内部连线/画布点击 */
   pointer-events: none;
 }
 
 .focus-group-frame.is-selected {
   border-style: solid;
   box-shadow: 0 0 16px rgba(245, 158, 11, 0.35);
+}
+
+.focus-group-frame.is-resizing {
+  transition: none !important;
 }
 
 .group-header {
@@ -132,7 +222,6 @@ function handleAnchorClick(anchor: 'TOP' | 'BOTTOM' | 'LEFT' | 'RIGHT', e: Mouse
   font-size: 13px;
   font-weight: 700;
   cursor: grab;
-  /* 标题栏接收交互以支持拖拽外框整体 */
   pointer-events: all;
 }
 
@@ -154,7 +243,6 @@ function handleAnchorClick(anchor: 'TOP' | 'BOTTOM' | 'LEFT' | 'RIGHT', e: Mouse
   border: 2px solid var(--text-muted) !important;
   border-radius: 50% !important;
   opacity: 0;
-  /* 使用 scale 原地对称缩放 */
   transition: opacity 0.15s ease, transform 0.15s ease, scale 0.15s ease, border-color 0.15s ease;
   z-index: 15;
   cursor: crosshair;
@@ -183,5 +271,68 @@ function handleAnchorClick(anchor: 'TOP' | 'BOTTOM' | 'LEFT' | 'RIGHT', e: Mouse
 @keyframes pulse-group-handle {
   from { scale: 1.4; }
   to { scale: 1.75; }
+}
+
+/* 实时拖拽尺寸提示 */
+.resize-dimension-tag {
+  position: absolute;
+  bottom: 12px;
+  right: 12px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  color: var(--text-primary);
+  font-size: 11px;
+  padding: 3px 8px;
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-sm);
+  pointer-events: none;
+  z-index: 50;
+}
+
+/* 调整尺寸手柄 */
+.group-resizer {
+  pointer-events: all;
+}
+
+/* 右下角对角线拉伸把手 */
+.group-resizer-br {
+  position: absolute;
+  right: -5px;
+  bottom: -5px;
+  width: 13px;
+  height: 13px;
+  background: var(--bg-card);
+  border: 2px solid;
+  border-radius: 3px;
+  cursor: nwse-resize;
+  z-index: 40;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.35);
+  transition: scale 0.15s ease;
+}
+
+.group-resizer-br:hover {
+  scale: 1.35;
+}
+
+/* 右边框宽度把手 */
+.group-resizer-r {
+  position: absolute;
+  right: -4px;
+  top: 36px;
+  bottom: 16px;
+  width: 8px;
+  cursor: ew-resize;
+  z-index: 35;
+}
+
+/* 底边框高度把手 */
+.group-resizer-b {
+  position: absolute;
+  left: 16px;
+  right: 16px;
+  bottom: -4px;
+  height: 8px;
+  cursor: ns-resize;
+  z-index: 35;
 }
 </style>
