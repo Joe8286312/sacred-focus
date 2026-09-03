@@ -54,6 +54,38 @@ router.post('/', (req: Request, res: Response) => {
   res.status(201).json({ id, date, behavior, verdict, boundaryCondition, createdAt });
 });
 
+// 修改判例
+router.put('/:id', (req: Request, res: Response) => {
+  const { id } = req.params;
+  const { date, behavior, verdict, boundaryCondition } = req.body;
+
+  if (!behavior || !verdict || !boundaryCondition) {
+    return res.status(400).json({ error: 'Missing required precedent case fields' });
+  }
+
+  if (verdict !== 'ALLOW' && verdict !== 'FORBID') {
+    return res.status(400).json({ error: 'Invalid verdict value. Must be ALLOW or FORBID.' });
+  }
+
+  const result = db.prepare(`
+    UPDATE precedent_cases 
+    SET behavior = @behavior, verdict = @verdict, boundaryCondition = @boundaryCondition, date = COALESCE(@date, date)
+    WHERE id = @id
+  `).run({
+    id,
+    behavior,
+    verdict,
+    boundaryCondition,
+    date: date || null
+  });
+
+  if (result.changes === 0) {
+    return res.status(404).json({ error: 'Case not found' });
+  }
+
+  res.json({ id, date, behavior, verdict, boundaryCondition });
+});
+
 // 删除判例
 router.delete('/:id', (req: Request, res: Response) => {
   const { id } = req.params;

@@ -129,7 +129,7 @@ function handleDirectComplete() {
                     :class="{ active: verdict === 'ALLOW', allow: verdict === 'ALLOW' }"
                     @click="verdict = 'ALLOW'"
                   >
-                    终身允许 (ALLOW)
+                    终身允许
                   </button>
                   <button 
                     type="button"
@@ -137,7 +137,7 @@ function handleDirectComplete() {
                     :class="{ active: verdict === 'FORBID', forbid: verdict === 'FORBID' }"
                     @click="verdict = 'FORBID'"
                   >
-                    绝对禁止 (FORBID)
+                    绝对禁止
                   </button>
                 </div>
               </div>
