@@ -54,8 +54,8 @@ function handleDeleteClick(e: MouseEvent) {
     :path="path" 
     :marker-end="markerEnd"
     :style="{
-      stroke: selected ? 'var(--color-lit)' : (data?.style === 'DASHED' ? 'var(--text-muted)' : 'var(--border-color)'),
-      strokeWidth: selected ? '2.5px' : '1.5px',
+      stroke: selected ? 'var(--edge-stroke-selected)' : (isDashed ? 'var(--edge-stroke-dashed)' : 'var(--edge-stroke)'),
+      strokeWidth: selected ? '3px' : '2px',
       strokeDasharray: isDashed ? '6,6' : 'none',
       transition: 'stroke 0.15s ease, stroke-width 0.15s ease'
     }" 

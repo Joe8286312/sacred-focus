@@ -91,10 +91,10 @@ function handleConfirmDelete() {
 
         <!-- 底部行动栏 -->
         <div class="spec-footer">
-          <div v-if="isEditMode" class="edit-tools">
+          <div class="edit-tools">
             <template v-if="!isConfirmingDelete">
               <button class="btn-edit" @click="$emit('edit', node)">
-                ✏️ 修改此国策
+                ✏️ 编辑此国策
               </button>
               <button class="btn-delete" @click="handleDeleteClick">
                 🗑️ 删除此国策

@@ -41,6 +41,11 @@
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.6);
   --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.7);
   --shadow-glow: 0 0 18px rgba(0, 240, 255, 0.2);
+
+  /* 拓扑连线高对比色彩（深色模式下浅亮、清晰可见） */
+  --edge-stroke: #A1A1AA;
+  --edge-stroke-dashed: #71717A;
+  --edge-stroke-selected: #38BDF8;
 }
 
 /* 日光浅色模式（极简纸感浅灰与高对比墨黑） */
@@ -69,4 +74,9 @@
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.05);
   --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.08);
   --shadow-glow: 0 0 15px rgba(2, 132, 199, 0.15);
+
+  /* 拓扑连线高对比色彩（浅色模式下深重、清晰利落） */
+  --edge-stroke: #334155;
+  --edge-stroke-dashed: #64748B;
+  --edge-stroke-selected: #0284C7;
 }

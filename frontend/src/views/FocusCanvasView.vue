@@ -317,6 +317,8 @@ async function saveLayoutChanges() {
     }
   }
   await store.syncTree();
+  isEditMode.value = false;
+  activeConnectingHandle.value = null;
 }
 
 function handleKeyDown(e: KeyboardEvent) {
@@ -744,5 +746,28 @@ onUnmounted(() => {
 .focus-tree-flow {
   width: 100%;
   height: 100%;
+}
+
+/* 彻底解决分组外框阻挡内部连线选取的底层原因：
+   1. 将连线图层置于分组节点外框之上 (z-index: 5)
+   2. 将 Vue Flow 自动生成的 .vue-flow__node-focusGroup 外框容器设为 pointer-events: none
+   3. 分组标题栏与连接桩单独保留 pointer-events: all */
+:deep(.vue-flow__edges) {
+  z-index: 5 !important;
+}
+
+:deep(.vue-flow__node-focusGroup) {
+  z-index: 1 !important;
+  pointer-events: none !important;
+}
+
+:deep(.vue-flow__node-focusGroup .group-header),
+:deep(.vue-flow__node-focusGroup .group-handle) {
+  pointer-events: all !important;
+}
+
+:deep(.vue-flow__node-focusNode) {
+  z-index: 10 !important;
+  pointer-events: all !important;
 }
 </style>
