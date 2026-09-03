@@ -13,67 +13,16 @@ export const useFocusTreeStore = defineStore('focusTree', () => {
   const loading = ref(false);
   const lastCreatedNodeId = ref<string | null>(null);
 
-  // 检查某个 (x, y) 矩形区域是否已被已有国策节点或分组外框占用
-  function isAreaOccupied(x: number, y: number, w = 210, h = 95): boolean {
-    // 1. 检查是否与任何已有国策节点碰撞
-    for (const n of nodes.value) {
-      if (!n.position) continue;
-      const dx = Math.abs(x - n.position.x);
-      const dy = Math.abs(y - n.position.y);
-      if (dx < w && dy < h) {
-        return true;
-      }
-    }
-    // 2. 检查是否与任何分组外框碰撞 (严格杜绝独立国策掉进分组外框内部)
-    for (const g of groups.value) {
-      if (!g.position || !g.size) continue;
-      const gx = g.position.x;
-      const gy = g.position.y;
-      const gw = g.size.width;
-      const gh = g.size.height;
-      if (x < gx + gw && x + w > gx && y < gy + gh && y + h > gy) {
-        return true;
-      }
-    }
-    return false;
-  }
-
-  // 100% 几何无碰撞智能空间放置计算引擎
+  // 新建国策固定坐标初始化（遵循用户设计定调：固定初始落点，交由画布自由拖拽排布）
   function calculateSmartPlacement(groupId: string | null): { x: number; y: number } {
     if (groupId) {
       const group = groups.value.find(g => g.id === groupId);
       if (group) {
-        const groupNodes = nodes.value.filter(n => n.groupId === groupId);
-        if (groupNodes.length === 0) {
-          return { x: Math.round(group.position.x + 24), y: Math.round(group.position.y + 60) };
-        }
-        const maxY = Math.max(...groupNodes.map(n => n.position.y));
-        const referenceX = groupNodes[0].position.x || Math.round(group.position.x + 24);
-        const newY = Math.round(maxY + 95);
-
-        // 自适应撑大分组外框高度
-        const requiredBottom = newY + 85 + 24;
-        const currentBottom = group.position.y + group.size.height;
-        if (requiredBottom > currentBottom) {
-          group.size.height = Math.round(requiredBottom - group.position.y);
-        }
-        return { x: Math.round(referenceX), y: newY };
+        return { x: Math.round(group.position.x + 30), y: Math.round(group.position.y + 60) };
       }
     }
-
-    // 独立国策：在独立国策专属网格（x 从 1060 开始，按列递进，每列从 y=80 开始自上而下检索）
-    // 逐槽位执行几何碰撞探测，精准锁定第一个 100% 闲置、绝对无重叠的空旷槽位
-    for (let col = 0; col < 12; col++) {
-      const candidateX = 1060 + col * 230;
-      for (let row = 0; row < 10; row++) {
-        const candidateY = 80 + row * 105;
-        if (!isAreaOccupied(candidateX, candidateY)) {
-          return { x: candidateX, y: candidateY };
-        }
-      }
-    }
-
-    return { x: 1060, y: 800 };
+    // 独立国策：固定初始化到画布右侧干净可见的待排布起始坐标
+    return { x: 1060, y: 120 };
   }
 
   async function fetchTree() {

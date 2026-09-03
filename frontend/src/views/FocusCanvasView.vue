@@ -365,13 +365,23 @@ function handleKeyDown(e: KeyboardEvent) {
       store.deleteEdge(selectedEdgeId.value);
       selectedEdgeId.value = null;
     } else if (selectedNodeId.value) {
-      const isGroup = store.groups.some(g => g.id === selectedNodeId.value);
-      if (isGroup) {
-        store.deleteGroup(selectedNodeId.value);
+      const node = store.nodes.find(n => n.id === selectedNodeId.value);
+      if (node) {
+        const confirmed = window.confirm(`严正确认：您确定要彻底删除国策【${node.name}】吗？\n所有关联连线也将一并物理清理。此操作不可撤销。`);
+        if (confirmed) {
+          store.deleteNode(node.id);
+          selectedNodeId.value = null;
+        }
       } else {
-        store.deleteNode(selectedNodeId.value);
+        const group = store.groups.find(g => g.id === selectedNodeId.value);
+        if (group) {
+          const confirmed = window.confirm(`严正确认：您确定要彻底删除分组【${group.name}】吗？\n组内国策将变为独立国策。此操作不可撤销。`);
+          if (confirmed) {
+            store.deleteGroup(group.id);
+            selectedNodeId.value = null;
+          }
+        }
       }
-      selectedNodeId.value = null;
     }
   }
 }
@@ -490,7 +500,7 @@ onUnmounted(() => {
         </template>
         <!-- 展示模式快捷项 -->
         <template v-else>
-          <button class="btn-action-tool" @click="fitView({ padding: 0.2 })" title="自适应居中对齐">
+          <button class="btn-action-tool" @click="fitView({ padding: 0.15, minZoom: 0.05, maxZoom: 1 })" title="自适应居中对齐">
             居中全景
           </button>
           <button class="btn-action-tool" @click="store.fetchTree" title="重新从数据库拉取最新国策树">
@@ -517,6 +527,8 @@ onUnmounted(() => {
         :fit-view-on-init="true"
         :zoom-on-double-click="false"
         :pan-on-drag="!isHoveringNode"
+        :min-zoom="0.05"
+        :max-zoom="3"
         :nodes-draggable="isEditMode"
         :nodes-connectable="isEditMode"
         :elements-selectable="true"
