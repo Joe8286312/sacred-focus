@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia';
 import { ref } from 'vue';
-import type { FocusNode, FocusEdge, FocusGroup, EvolutionState } from '../types/index.js';
+import type { FocusNode, FocusEdge, FocusGroup, EvolutionState } from '../types';
 
 export const useFocusTreeStore = defineStore('focusTree', () => {
   const nodes = ref<FocusNode[]>([]);

@@ -3,7 +3,7 @@ import { onMounted } from 'vue';
 import { VueFlow } from '@vue-flow/core';
 import '@vue-flow/core/dist/style.css';
 import '@vue-flow/core/dist/theme-default.css';
-import { useFocusTreeStore } from '../stores/focusTree.js';
+import { useFocusTreeStore } from '../stores/focusTree';
 
 const store = useFocusTreeStore();
 

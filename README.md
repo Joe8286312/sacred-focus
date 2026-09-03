@@ -79,7 +79,7 @@ npm install
 cd backend
 npm run dev
 
-# 启动前端开发服务器（端口 5173，自动代理 API 请求至 3000）
+# 启动前端开发服务器（端口 5180，自动代理 API 请求至 3000）
 cd frontend
 npm run dev
 ```

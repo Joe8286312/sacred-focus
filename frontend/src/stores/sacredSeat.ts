@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia';
 import { ref } from 'vue';
-import type { SacredSeatConfig, FocusSessionLog } from '../types/index.js';
+import type { SacredSeatConfig, FocusSessionLog } from '../types';
 
 export const useSacredSeatStore = defineStore('sacredSeat', () => {
   const config = ref<SacredSeatConfig>({

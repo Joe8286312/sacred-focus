@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { onMounted } from 'vue';
-import { useSacredSeatStore } from '../stores/sacredSeat.js';
+import { useSacredSeatStore } from '../stores/sacredSeat';
 
 const store = useSacredSeatStore();
 

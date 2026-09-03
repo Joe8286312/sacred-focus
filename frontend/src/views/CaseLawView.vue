@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue';
-import type { PrecedentCase } from '../types/index.js';
+import type { PrecedentCase } from '../types';
 
 const cases = ref<PrecedentCase[]>([]);
 const filter = ref<'ALL' | 'ALLOW' | 'FORBID'>('ALL');

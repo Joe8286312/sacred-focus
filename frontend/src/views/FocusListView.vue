@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { onMounted } from 'vue';
-import { useFocusTreeStore } from '../stores/focusTree.js';
+import { useFocusTreeStore } from '../stores/focusTree';
 
 const store = useFocusTreeStore();
 
