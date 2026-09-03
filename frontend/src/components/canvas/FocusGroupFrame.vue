@@ -5,12 +5,16 @@ import type { FocusGroup } from '../../types';
 
 const props = defineProps<{
   id: string;
-  data: FocusGroup & { isEditMode?: boolean };
+  data: FocusGroup & { 
+    isEditMode?: boolean;
+    activeConnectingHandle?: { nodeId: string; anchor: string } | null;
+  };
   selected?: boolean;
 }>();
 
-defineEmits<{
+const emit = defineEmits<{
   (e: 'edit-group', group: FocusGroup): void;
+  (e: 'handle-click', payload: { nodeId: string; anchor: 'TOP' | 'BOTTOM' | 'LEFT' | 'RIGHT' }): void;
 }>();
 
 // 主题色样式计算
@@ -32,6 +36,17 @@ const headerStyle = computed(() => {
     color: color
   };
 });
+
+function isHandleActive(anchor: string) {
+  const active = props.data.activeConnectingHandle;
+  return active && active.nodeId === props.id && active.anchor === anchor;
+}
+
+function handleAnchorClick(anchor: 'TOP' | 'BOTTOM' | 'LEFT' | 'RIGHT', e: MouseEvent) {
+  if (!props.data.isEditMode) return;
+  e.stopPropagation();
+  emit('handle-click', { nodeId: props.id, anchor });
+}
 </script>
 
 <template>
@@ -42,55 +57,39 @@ const headerStyle = computed(() => {
   >
     <!-- 分组四向连接锚点，支持全场景拓扑连线 (Group-to-Group, Group-to-Node, Node-to-Group) -->
     <Handle 
-      id="group-top" 
+      id="top" 
       type="source" 
       :position="Position.Top" 
       class="group-handle handle-top" 
-    />
-    <Handle 
-      id="group-target-top" 
-      type="target" 
-      :position="Position.Top" 
-      class="group-handle handle-top" 
+      :class="{ 'is-connecting-active': isHandleActive('TOP') }"
+      @click="handleAnchorClick('TOP', $event)"
     />
 
     <Handle 
-      id="group-bottom" 
+      id="bottom" 
       type="source" 
       :position="Position.Bottom" 
       class="group-handle handle-bottom" 
-    />
-    <Handle 
-      id="group-target-bottom" 
-      type="target" 
-      :position="Position.Bottom" 
-      class="group-handle handle-bottom" 
+      :class="{ 'is-connecting-active': isHandleActive('BOTTOM') }"
+      @click="handleAnchorClick('BOTTOM', $event)"
     />
 
     <Handle 
-      id="group-left" 
+      id="left" 
       type="source" 
       :position="Position.Left" 
       class="group-handle handle-left" 
-    />
-    <Handle 
-      id="group-target-left" 
-      type="target" 
-      :position="Position.Left" 
-      class="group-handle handle-left" 
+      :class="{ 'is-connecting-active': isHandleActive('LEFT') }"
+      @click="handleAnchorClick('LEFT', $event)"
     />
 
     <Handle 
-      id="group-right" 
+      id="right" 
       type="source" 
       :position="Position.Right" 
       class="group-handle handle-right" 
-    />
-    <Handle 
-      id="group-target-right" 
-      type="target" 
-      :position="Position.Right" 
-      class="group-handle handle-right" 
+      :class="{ 'is-connecting-active': isHandleActive('RIGHT') }"
+      @click="handleAnchorClick('RIGHT', $event)"
     />
 
     <!-- 分组标题栏 -->
@@ -109,7 +108,8 @@ const headerStyle = computed(() => {
   position: relative;
   user-select: none;
   transition: box-shadow 0.15s ease, border-color 0.15s ease;
-  pointer-events: all;
+  /* 关键：外框本体设为 none，使组内内部空间不阻挡对内部连线/画布的鼠标点击与选取 */
+  pointer-events: none;
 }
 
 .focus-group-frame.is-selected {
@@ -132,6 +132,8 @@ const headerStyle = computed(() => {
   font-size: 13px;
   font-weight: 700;
   cursor: grab;
+  /* 标题栏接收交互以支持拖拽外框整体 */
+  pointer-events: all;
 }
 
 .group-title {
@@ -148,12 +150,15 @@ const headerStyle = computed(() => {
 .group-handle {
   width: 10px !important;
   height: 10px !important;
-  background: var(--bg-primary) !important;
+  background: var(--bg-card) !important;
   border: 2px solid var(--text-muted) !important;
   border-radius: 50% !important;
   opacity: 0;
-  transition: opacity 0.15s ease, transform 0.15s ease;
-  z-index: 4;
+  /* 使用 scale 原地对称缩放 */
+  transition: opacity 0.15s ease, transform 0.15s ease, scale 0.15s ease, border-color 0.15s ease;
+  z-index: 15;
+  cursor: crosshair;
+  pointer-events: all;
 }
 
 .focus-group-frame:hover .group-handle,
@@ -162,8 +167,21 @@ const headerStyle = computed(() => {
 }
 
 .group-handle:hover {
-  transform: scale(1.3);
+  scale: 1.45;
   border-color: var(--color-gold) !important;
   box-shadow: 0 0 8px var(--color-gold);
+}
+
+.group-handle.is-connecting-active {
+  border-color: var(--color-gold) !important;
+  background: var(--color-gold) !important;
+  scale: 1.6;
+  box-shadow: 0 0 12px var(--color-gold);
+  animation: pulse-group-handle 1s infinite alternate;
+}
+
+@keyframes pulse-group-handle {
+  from { scale: 1.4; }
+  to { scale: 1.75; }
 }
 </style>

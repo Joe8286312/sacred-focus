@@ -28,6 +28,9 @@ const { fitView } = useVueFlow();
 // 交互模式：展示模式 (View Mode, 默认) vs 编辑模式 (Edit Mode)
 const isEditMode = ref(false);
 
+// 两步点击连接桩状态 (Click-to-Connect)
+const activeConnectingHandle = ref<{ nodeId: string; anchor: 'TOP' | 'BOTTOM' | 'LEFT' | 'RIGHT' } | null>(null);
+
 // 模态框状态
 const isSpecModalOpen = ref(false);
 const activeSpecNode = ref<FocusNode | null>(null);
@@ -45,11 +48,6 @@ let preEditGroupsSnapshot: { id: string; x: number; y: number }[] = [];
 // 选中状态跟踪
 const selectedNodeId = ref<string | null>(null);
 const selectedEdgeId = ref<string | null>(null);
-
-// 快速连续点击检测 (支持移动端快速三击或右键唤起规范卡)
-let lastClickNodeId = '';
-let lastClickTime = 0;
-let clickCount = 0;
 
 // 计算已点亮国策统计
 const litStats = computed(() => {
@@ -71,7 +69,11 @@ function syncToFlow() {
       id: g.id,
       type: 'focusGroup',
       position: { ...g.position },
-      data: { ...g, isEditMode: isEditMode.value },
+      data: { 
+        ...g, 
+        isEditMode: isEditMode.value,
+        activeConnectingHandle: activeConnectingHandle.value
+      },
       draggable: isEditMode.value,
       selectable: isEditMode.value,
       style: { zIndex: 1 }
@@ -84,7 +86,11 @@ function syncToFlow() {
       id: n.id,
       type: 'focusNode',
       position: { ...n.position },
-      data: { ...n, isEditMode: isEditMode.value },
+      data: { 
+        ...n, 
+        isEditMode: isEditMode.value,
+        activeConnectingHandle: activeConnectingHandle.value
+      },
       draggable: isEditMode.value,
       selectable: true,
       style: { zIndex: 10 }
@@ -93,25 +99,25 @@ function syncToFlow() {
 
   flowNodes.value = nodesList;
 
-  // 3. 拓扑连线
+  // 3. 拓扑连线 (层级处于中间偏上)
   flowEdges.value = store.edges.map(e => ({
     id: e.id,
     source: e.sourceId,
     target: e.targetId,
-    sourceHandle: e.sourceAnchor ? (e.sourceType === 'GROUP' ? `group-${e.sourceAnchor.toLowerCase()}` : e.sourceAnchor.toLowerCase()) : undefined,
-    targetHandle: e.targetAnchor ? (e.targetType === 'GROUP' ? `group-target-${e.targetAnchor.toLowerCase()}` : `target-${e.targetAnchor.toLowerCase()}`) : undefined,
+    sourceHandle: e.sourceAnchor ? e.sourceAnchor.toLowerCase() : undefined,
+    targetHandle: e.targetAnchor ? e.targetAnchor.toLowerCase() : undefined,
     type: 'orthogonal',
     markerEnd: MarkerType.ArrowClosed,
     data: { ...e, isEditMode: isEditMode.value }
   }));
 }
 
-watch([() => store.nodes, () => store.groups, () => store.edges, isEditMode], () => {
+watch([() => store.nodes, () => store.groups, () => store.edges, isEditMode, activeConnectingHandle], () => {
   syncToFlow();
 }, { deep: true });
 
 // -----------------------------------------------------------------------------
-// 交互事件处理
+// 交互事件处理 (遵循用户最新核心定调：展示模式下单击点亮、双击规范；编辑模式下双击编辑)
 // -----------------------------------------------------------------------------
 
 // 单击节点
@@ -119,29 +125,20 @@ function onNodeClick({ node }: NodeMouseEvent) {
   selectedNodeId.value = node.id;
   selectedEdgeId.value = null;
 
-  // 多击检测 (支持移动端快速三击打开规范卡)
-  const now = Date.now();
-  if (lastClickNodeId === node.id && now - lastClickTime < 350) {
-    clickCount++;
-    if (clickCount >= 3) {
-      openSpecCard(node.id);
-      clickCount = 0;
-    }
-  } else {
-    lastClickNodeId = node.id;
-    clickCount = 1;
+  if (!isEditMode.value && node.type === 'focusNode') {
+    // 模式 A 展示模式：单击快速切换【点亮 / 熄灭】
+    store.toggleNodeLit(node.id);
   }
-  lastClickTime = now;
 }
 
-// 双击节点：展示模式下点亮/熄灭；编辑模式下打开编辑
+// 双击节点
 function onNodeDoubleClick({ node }: NodeMouseEvent) {
   if (node.type === 'focusNode') {
     if (!isEditMode.value) {
-      // 模式 A：双击左键切换【点亮 / 熄灭】
-      store.toggleNodeLit(node.id);
+      // 模式 A 展示模式：双击唤出【详细规范卡】
+      openSpecCard(node.id);
     } else {
-      // 模式 B：编辑模式下双击打开编辑
+      // 模式 B 编辑模式：双击呼出【国策编辑表单】
       const found = store.nodes.find(n => n.id === node.id);
       if (found) {
         editingNode.value = found;
@@ -157,14 +154,6 @@ function onNodeDoubleClick({ node }: NodeMouseEvent) {
   }
 }
 
-// 鼠标右键：展示模式下直接呼出国策详细规范卡
-function onNodeContextMenu({ node, event }: NodeMouseEvent) {
-  event.preventDefault();
-  if (node.type === 'focusNode') {
-    openSpecCard(node.id);
-  }
-}
-
 function openSpecCard(nodeId: string) {
   const found = store.nodes.find(n => n.id === nodeId);
   if (found) {
@@ -173,37 +162,61 @@ function openSpecCard(nodeId: string) {
   }
 }
 
-// 单击连线
-function onEdgeClick({ edge }: EdgeMouseEvent) {
-  selectedEdgeId.value = edge.id;
-  selectedNodeId.value = null;
-}
+// -----------------------------------------------------------------------------
+// 两步点击精准连线 (Click-to-Connect)
+// -----------------------------------------------------------------------------
 
-// 双击连线删除
-function onEdgeDoubleClick({ edge }: EdgeMouseEvent) {
-  if (isEditMode.value) {
-    store.deleteEdge(edge.id);
+function onHandleClick(payload: { nodeId: string; anchor: 'TOP' | 'BOTTOM' | 'LEFT' | 'RIGHT' }) {
+  if (!isEditMode.value) return;
+
+  if (!activeConnectingHandle.value) {
+    // 第一步：选定起始端 (Source)
+    activeConnectingHandle.value = payload;
+  } else {
+    // 如果再次点击了同一个桩，取消选定
+    if (
+      activeConnectingHandle.value.nodeId === payload.nodeId &&
+      activeConnectingHandle.value.anchor === payload.anchor
+    ) {
+      activeConnectingHandle.value = null;
+      return;
+    }
+
+    // 第二步：选定目标端 (Target)，立刻生成确定性的 Source ➔ Target 有向连线
+    const source = activeConnectingHandle.value;
+    const target = payload;
+
+    const isSourceGroup = store.groups.some(g => g.id === source.nodeId);
+    const isTargetGroup = store.groups.some(g => g.id === target.nodeId);
+
+    const newEdge: FocusEdge = {
+      id: `edge-${Date.now()}`,
+      sourceId: source.nodeId,
+      sourceType: isSourceGroup ? 'GROUP' : 'NODE',
+      targetId: target.nodeId,
+      targetType: isTargetGroup ? 'GROUP' : 'NODE',
+      sourceAnchor: source.anchor,
+      targetAnchor: target.anchor,
+      style: 'SOLID'
+    };
+
+    store.addEdge(newEdge);
+    activeConnectingHandle.value = null;
   }
 }
 
-function onDeleteEdge(edgeId: string) {
-  store.deleteEdge(edgeId);
-}
-
-// 创建新连线
+// 拖拽连线兼容
 function onConnect(connection: Connection) {
   if (!isEditMode.value) return;
   if (!connection.source || !connection.target) return;
-  if (connection.source === connection.target) return; // 杜绝自环
+  if (connection.source === connection.target) return;
 
-  // 解析 source 与 target 是 node 还是 group
   const isSourceGroup = store.groups.some(g => g.id === connection.source);
   const isTargetGroup = store.groups.some(g => g.id === connection.target);
 
-  // 解析锚点方位
   const parseAnchor = (handle?: string | null): 'TOP' | 'BOTTOM' | 'LEFT' | 'RIGHT' => {
     if (!handle) return 'RIGHT';
-    const clean = handle.replace(/^(group-|target-)+/, '').toUpperCase();
+    const clean = handle.toUpperCase();
     if (['TOP', 'BOTTOM', 'LEFT', 'RIGHT'].includes(clean)) {
       return clean as 'TOP' | 'BOTTOM' | 'LEFT' | 'RIGHT';
     }
@@ -224,9 +237,30 @@ function onConnect(connection: Connection) {
   store.addEdge(newEdge);
 }
 
+// 单击连线
+function onEdgeClick({ edge }: EdgeMouseEvent) {
+  selectedEdgeId.value = edge.id;
+  selectedNodeId.value = null;
+}
+
+// 双击连线删除
+function onEdgeDoubleClick({ edge }: EdgeMouseEvent) {
+  if (isEditMode.value) {
+    store.deleteEdge(edge.id);
+  }
+}
+
+function onDeleteEdge(edgeId: string) {
+  store.deleteEdge(edgeId);
+}
+
 function onPaneClick() {
   selectedNodeId.value = null;
   selectedEdgeId.value = null;
+  // 单击空白处取消待连接桩
+  if (activeConnectingHandle.value) {
+    activeConnectingHandle.value = null;
+  }
 }
 
 // -----------------------------------------------------------------------------
@@ -235,21 +269,18 @@ function onPaneClick() {
 
 function toggleEditMode() {
   if (!isEditMode.value) {
-    // 进入编辑模式：捕获当前坐标快照，供 Esc 或取消时无损恢复
     preEditNodesSnapshot = store.nodes.map(n => ({ id: n.id, x: n.position.x, y: n.position.y }));
     preEditGroupsSnapshot = store.groups.map(g => ({ id: g.id, x: g.position.x, y: g.position.y }));
     isEditMode.value = true;
   } else {
-    // 退出编辑模式前自动保存排版
     saveLayoutChanges();
     isEditMode.value = false;
+    activeConnectingHandle.value = null;
   }
 }
 
-// 放弃排版调整 (Esc 无损撤销)
 function cancelLayoutChanges() {
   if (!isEditMode.value) return;
-  // 从快照恢复
   for (const snap of preEditNodesSnapshot) {
     const node = store.nodes.find(n => n.id === snap.id);
     if (node) {
@@ -266,11 +297,10 @@ function cancelLayoutChanges() {
   }
   syncToFlow();
   isEditMode.value = false;
+  activeConnectingHandle.value = null;
 }
 
-// 保存当前排版坐标
 async function saveLayoutChanges() {
-  // 从 VueFlow 实例同步当前实际拖拽坐标回 Pinia
   for (const fn of flowNodes.value) {
     if (fn.type === 'focusNode') {
       const node = store.nodes.find(n => n.id === fn.id);
@@ -289,10 +319,11 @@ async function saveLayoutChanges() {
   await store.syncTree();
 }
 
-// 键盘快捷键监听 (Delete/Backspace 删除选中对象, Esc 撤销排版)
 function handleKeyDown(e: KeyboardEvent) {
   if (e.key === 'Escape') {
-    if (isSpecModalOpen.value) {
+    if (activeConnectingHandle.value) {
+      activeConnectingHandle.value = null;
+    } else if (isSpecModalOpen.value) {
       isSpecModalOpen.value = false;
     } else if (isNodeEditModalOpen.value) {
       isNodeEditModalOpen.value = false;
@@ -302,7 +333,6 @@ function handleKeyDown(e: KeyboardEvent) {
       cancelLayoutChanges();
     }
   } else if ((e.key === 'Delete' || e.key === 'Backspace') && isEditMode.value) {
-    // 焦点在输入框中时不拦截
     const tag = (e.target as HTMLElement)?.tagName;
     if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
 
@@ -321,7 +351,6 @@ function handleKeyDown(e: KeyboardEvent) {
   }
 }
 
-// 模态框事件
 function openNewNodeModal() {
   editingNode.value = null;
   isNodeEditModalOpen.value = true;
@@ -377,7 +406,7 @@ onUnmounted(() => {
 
 <template>
   <div class="canvas-view-container">
-    <!-- 顶部极简毛玻璃控制条 -->
+    <!-- 顶部极简毛玻璃控制条：采用 1fr auto 1fr 三列严格网格对齐，中心按钮永不位移 -->
     <div class="canvas-header-bar">
       <div class="bar-left">
         <h1 class="system-title">国策树画布中枢</h1>
@@ -387,14 +416,14 @@ onUnmounted(() => {
       </div>
 
       <div class="bar-center">
-        <!-- 核心交互模式切换开关 -->
+        <!-- 核心交互模式切换开关 (严格居中) -->
         <button 
           class="mode-toggle-btn"
           :class="{ 'is-editing': isEditMode }"
           @click="toggleEditMode"
         >
-          <span v-if="!isEditMode">👁️ 展示模式 (双击点亮 · 右键规范)</span>
-          <span v-else>✏️ 编辑模式 (拖拽排版 · 磁吸连线)</span>
+          <span v-if="!isEditMode">👁️ 展示模式 (单击点亮 · 双击规范)</span>
+          <span v-else>✏️ 编辑模式 (拖拽排版 · 点击连线)</span>
         </button>
       </div>
 
@@ -426,13 +455,23 @@ onUnmounted(() => {
       </div>
     </div>
 
+    <!-- 两步连线提示条 -->
+    <Transition name="slide-banner">
+      <div v-if="activeConnectingHandle" class="connecting-hint-banner">
+        <span class="hint-pulse-dot"></span>
+        <span>已选中起始桩 <strong>[{{ activeConnectingHandle.nodeId }} · {{ activeConnectingHandle.anchor }}]</strong>，请点击目标国策连接桩以相连</span>
+        <button class="btn-cancel-hint" @click="activeConnectingHandle = null">取消 (Esc)</button>
+      </div>
+    </Transition>
+
     <!-- Vue Flow 核心画布容器 -->
     <div class="vue-flow-viewport">
       <VueFlow
         v-model:nodes="flowNodes"
         v-model:edges="flowEdges"
         :fit-view-on-init="true"
-        :pan-on-drag="!isEditMode || true"
+        :zoom-on-double-click="false"
+        :pan-on-drag="true"
         :nodes-draggable="isEditMode"
         :nodes-connectable="isEditMode"
         :elements-selectable="true"
@@ -441,7 +480,6 @@ onUnmounted(() => {
         class="focus-tree-flow"
         @node-click="onNodeClick"
         @node-double-click="onNodeDoubleClick"
-        @node-contextmenu="onNodeContextMenu"
         @edge-click="onEdgeClick"
         @edge-double-click="onEdgeDoubleClick"
         @connect="onConnect"
@@ -455,6 +493,7 @@ onUnmounted(() => {
             :selected="props.selected"
             @toggle-lit="store.toggleNodeLit(props.id)"
             @open-spec="openSpecCard(props.id)"
+            @handle-click="onHandleClick"
           />
         </template>
 
@@ -465,6 +504,7 @@ onUnmounted(() => {
             :data="props.data"
             :selected="props.selected"
             @edit-group="editingGroup = $event; isGroupEditModalOpen = true"
+            @handle-click="onHandleClick"
           />
         </template>
 
@@ -519,15 +559,15 @@ onUnmounted(() => {
   background-color: var(--bg-primary);
 }
 
-/* 顶部控制条 */
+/* 顶部极简毛玻璃控制条：严格 1fr auto 1fr 三列栅格，保证中间模式开关绝对居中 */
 .canvas-header-bar {
   height: 54px;
   background: var(--bg-card);
   border-bottom: 1px solid var(--border-color);
   padding: 0 20px;
-  display: flex;
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
   align-items: center;
-  justify-content: space-between;
   backdrop-filter: blur(12px);
   z-index: 100;
   box-shadow: var(--shadow-sm);
@@ -537,6 +577,7 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   gap: 12px;
+  justify-self: start;
 }
 
 .system-title {
@@ -544,21 +585,24 @@ onUnmounted(() => {
   font-weight: 700;
   color: var(--text-primary);
   margin: 0;
+  white-space: nowrap;
 }
 
 .lit-badge {
   font-size: 12px;
   font-weight: 600;
-  background: rgba(6, 182, 212, 0.1);
-  border: 1px solid rgba(6, 182, 212, 0.3);
-  color: var(--color-lit);
+  background: rgba(16, 185, 129, 0.12);
+  border: 1px solid rgba(16, 185, 129, 0.35);
+  color: #10B981;
   padding: 3px 10px;
   border-radius: var(--radius-full);
+  white-space: nowrap;
 }
 
 .bar-center {
   display: flex;
   align-items: center;
+  justify-self: center;
 }
 
 .mode-toggle-btn {
@@ -567,23 +611,25 @@ onUnmounted(() => {
   color: var(--text-secondary);
   font-size: 13px;
   font-weight: 600;
-  padding: 6px 18px;
+  padding: 6px 20px;
   border-radius: var(--radius-full);
   cursor: pointer;
   transition: all var(--transition-fast);
+  white-space: nowrap;
 }
 
 .mode-toggle-btn.is-editing {
-  background: rgba(245, 158, 11, 0.12);
+  background: rgba(245, 158, 11, 0.14);
   border-color: var(--color-gold);
   color: var(--color-gold);
-  box-shadow: 0 0 10px rgba(245, 158, 11, 0.2);
+  box-shadow: 0 0 12px rgba(245, 158, 11, 0.25);
 }
 
 .bar-right {
   display: flex;
   align-items: center;
   gap: 8px;
+  justify-self: end;
 }
 
 .btn-action-tool {
@@ -596,6 +642,7 @@ onUnmounted(() => {
   border-radius: var(--radius-sm);
   cursor: pointer;
   transition: all var(--transition-fast);
+  white-space: nowrap;
 }
 
 .btn-action-tool:hover {
@@ -626,6 +673,63 @@ onUnmounted(() => {
   border-color: var(--color-danger);
 }
 
+/* 连线提示条 */
+.connecting-hint-banner {
+  position: absolute;
+  top: 64px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--bg-card);
+  border: 1px solid var(--color-gold);
+  box-shadow: 0 4px 20px rgba(245, 158, 11, 0.35);
+  padding: 8px 18px;
+  border-radius: var(--radius-full);
+  z-index: 150;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+  color: var(--text-primary);
+  backdrop-filter: blur(8px);
+}
+
+.hint-pulse-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--color-gold);
+  box-shadow: 0 0 8px var(--color-gold);
+  animation: pulse-dot 1s infinite alternate;
+}
+
+@keyframes pulse-dot {
+  from { opacity: 0.4; }
+  to { opacity: 1; }
+}
+
+.btn-cancel-hint {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  color: var(--text-secondary);
+  padding: 2px 8px;
+  border-radius: var(--radius-sm);
+  font-size: 11px;
+  cursor: pointer;
+  margin-left: 6px;
+}
+
+.btn-cancel-hint:hover {
+  color: var(--color-danger);
+}
+
+.slide-banner-enter-active, .slide-banner-leave-active {
+  transition: all 0.2s ease;
+}
+.slide-banner-enter-from, .slide-banner-leave-to {
+  transform: translate(-50%, -12px);
+  opacity: 0;
+}
+
 /* 画布视口 */
 .vue-flow-viewport {
   flex: 1;
@@ -633,7 +737,6 @@ onUnmounted(() => {
   height: calc(100% - 54px);
   position: relative;
   background-color: var(--bg-primary);
-  /* 现代点阵网格背景 */
   background-image: radial-gradient(var(--border-color) 1px, transparent 1px);
   background-size: 24px 24px;
 }

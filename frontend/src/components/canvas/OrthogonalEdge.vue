@@ -54,20 +54,20 @@ function handleDeleteClick(e: MouseEvent) {
     :path="path" 
     :marker-end="markerEnd"
     :style="{
-      stroke: selected ? 'var(--color-lit)' : 'var(--border-color)',
+      stroke: selected ? 'var(--color-lit)' : (data?.style === 'DASHED' ? 'var(--text-muted)' : 'var(--border-color)'),
       strokeWidth: selected ? '2.5px' : '1.5px',
-      strokeDasharray: isDashed ? '5,5' : 'none',
+      strokeDasharray: isDashed ? '6,6' : 'none',
       transition: 'stroke 0.15s ease, stroke-width 0.15s ease'
     }" 
   />
 
-  <!-- 选中或编辑模式下在折线中心呈现快捷删除按钮 [×] -->
+  <!-- 选中或编辑模式下在折线精确中心呈现高精度矢量删除图标 [×] -->
   <EdgeLabelRenderer>
     <div 
       v-if="selected || data?.isEditMode" 
       :style="{
         position: 'absolute',
-        transform: `translate(-50%, -50%) translate(${centerX}px, ${centerY}px)`,
+        transform: `translate(${centerX}px, ${centerY}px) translate(-50%, -50%)`,
         pointerEvents: 'all'
       }"
       class="edge-delete-container"
@@ -77,7 +77,18 @@ function handleDeleteClick(e: MouseEvent) {
         title="删除此连线"
         @click="handleDeleteClick"
       >
-        ×
+        <svg 
+          viewBox="0 0 24 24" 
+          width="11" 
+          height="11" 
+          stroke="currentColor" 
+          stroke-width="3" 
+          stroke-linecap="round"
+          class="delete-svg-icon"
+        >
+          <line x1="18" y1="6" x2="6" y2="18"></line>
+          <line x1="6" y1="6" x2="18" y2="18"></line>
+        </svg>
       </button>
     </div>
   </EdgeLabelRenderer>
@@ -85,30 +96,37 @@ function handleDeleteClick(e: MouseEvent) {
 
 <style scoped>
 .edge-delete-container {
-  z-index: 10;
-}
-
-.btn-edge-delete {
-  width: 18px;
-  height: 18px;
-  border-radius: 50%;
-  background: var(--color-danger);
-  color: #ffffff;
-  font-size: 13px;
-  font-weight: 700;
+  z-index: 50;
   display: flex;
   align-items: center;
   justify-content: center;
-  border: 1px solid rgba(255, 255, 255, 0.4);
-  box-shadow: 0 0 6px rgba(244, 63, 94, 0.6);
+}
+
+.btn-edge-delete {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #F43F5E 0%, #E11D48 100%);
+  color: #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1.5px solid rgba(255, 255, 255, 0.75);
+  box-shadow: 0 2px 8px rgba(225, 29, 72, 0.45);
   cursor: pointer;
-  line-height: 1;
   padding: 0;
-  transition: transform 0.15s ease, background-color 0.15s ease;
+  margin: 0;
+  transition: transform 0.18s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.18s ease;
+  line-height: 0;
 }
 
 .btn-edge-delete:hover {
-  transform: scale(1.25);
-  background: #e11d48;
+  transform: scale(1.28);
+  box-shadow: 0 3px 12px rgba(225, 29, 72, 0.65);
+}
+
+.delete-svg-icon {
+  display: block;
+  pointer-events: none;
 }
 </style>
