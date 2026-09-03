@@ -27,6 +27,9 @@ const { fitView, setCenter } = useVueFlow();
 
 const highlightedNodeId = ref<string | null>(null);
 
+// 鼠标悬停在国策节点上时，禁用画布左键拖拽平移，彻底防误触
+const isHoveringNode = ref(false);
+
 // 交互模式：展示模式 (View Mode, 默认) vs 编辑模式 (Edit Mode)
 const isEditMode = ref(false);
 
@@ -513,7 +516,7 @@ onUnmounted(() => {
         v-model:edges="flowEdges"
         :fit-view-on-init="true"
         :zoom-on-double-click="false"
-        :pan-on-drag="true"
+        :pan-on-drag="!isHoveringNode"
         :nodes-draggable="isEditMode"
         :nodes-connectable="isEditMode"
         :elements-selectable="true"
@@ -522,6 +525,9 @@ onUnmounted(() => {
         class="focus-tree-flow"
         @node-click="onNodeClick"
         @node-double-click="onNodeDoubleClick"
+        @node-mouse-enter="isHoveringNode = true"
+        @node-mouse-leave="isHoveringNode = false"
+        @pane-mouse-enter="isHoveringNode = false"
         @edge-click="onEdgeClick"
         @edge-double-click="onEdgeDoubleClick"
         @connect="onConnect"
@@ -536,6 +542,7 @@ onUnmounted(() => {
             @toggle-lit="store.toggleNodeLit(props.id)"
             @open-spec="openSpecCard(props.id)"
             @handle-click="onHandleClick"
+            @node-hover="isHoveringNode = $event"
           />
         </template>
 

@@ -17,7 +17,15 @@ const emit = defineEmits<{
   (e: 'toggle-lit', id: string): void;
   (e: 'open-spec', node: FocusNode): void;
   (e: 'handle-click', payload: { nodeId: string; anchor: 'TOP' | 'BOTTOM' | 'LEFT' | 'RIGHT' }): void;
+  (e: 'node-hover', hovering: boolean): void;
 }>();
+
+function onCardPointerDown(e: MouseEvent | PointerEvent) {
+  // 展示模式下严格阻止鼠标/指针按下事件冒泡到外层画布，彻底禁用在卡片上拖拽引发的画布平移
+  if (!props.data.isEditMode) {
+    e.stopPropagation();
+  }
+}
 
 // 状态纯色指示点类（杜绝 Emoji，极简专业设计）
 const statusDotClass = computed(() => {
@@ -50,7 +58,14 @@ function handleAnchorClick(anchor: 'TOP' | 'BOTTOM' | 'LEFT' | 'RIGHT', e: Mouse
 </script>
 
 <template>
-  <div class="focus-node-card" :class="[cardClass, { 'nodrag': !data.isEditMode }]">
+  <div 
+    class="focus-node-card" 
+    :class="[cardClass, { 'nodrag': !data.isEditMode }]"
+    @mouseenter="emit('node-hover', true)"
+    @mouseleave="emit('node-hover', false)"
+    @pointerdown="onCardPointerDown"
+    @mousedown="onCardPointerDown"
+  >
     <!-- 四向磁吸连接锚点（单桩支持连接，杜绝图层叠放倒置） -->
     <Handle 
       id="top" 
