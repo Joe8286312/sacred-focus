@@ -14,9 +14,10 @@ build/
 .env.*.local
 
 # Database & SQLite files
-backend/data/*.db
-backend/data/*.db-wal
-backend/data/*.db-shm
+**/data/*.db*
+**/data/*.db-wal*
+**/data/*.db-shm*
+data/
 !backend/data/.gitkeep
 
 # Logs
