@@ -185,19 +185,44 @@ function handleAnchorClick(anchor: 'TOP' | 'BOTTOM' | 'LEFT' | 'RIGHT', e: Mouse
   color: #6EE7B7;
 }
 
-/* 熄灭待命态 */
+/* 熄灭待命态：显著加深边框对比度，使其清晰分明 */
 .focus-node-card.is-unlit {
-  border-color: var(--border-color);
-  background: var(--bg-card);
-  opacity: 0.88;
+  border: 1.5px solid #64748B !important;
+  background: #FFFFFF;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
 }
 
 .focus-node-card.is-unlit .node-name {
-  color: var(--text-secondary);
+  color: #1E293B;
+  font-weight: 600;
 }
 
 .focus-node-card.is-unlit .node-code {
-  color: var(--text-muted);
+  color: #64748B;
+  font-weight: 700;
+}
+
+.focus-node-card.is-unlit .trigger-time-tag {
+  color: #64748B;
+}
+
+/* 深色模式下的熄灭待命态定制 */
+[data-theme="dark"] .focus-node-card.is-unlit {
+  border: 1.5px solid #4B5563 !important;
+  background: rgba(24, 24, 28, 0.95) !important;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4) !important;
+}
+
+[data-theme="dark"] .focus-node-card.is-unlit .node-name {
+  color: #F1F5F9;
+}
+
+[data-theme="dark"] .focus-node-card.is-unlit .node-code {
+  color: #94A3B8;
+}
+
+[data-theme="dark"] .focus-node-card.is-unlit .trigger-time-tag {
+  color: #94A3B8;
 }
 
 /* 冻结水密隔舱态 */
@@ -307,15 +332,20 @@ function handleAnchorClick(anchor: 'TOP' | 'BOTTOM' | 'LEFT' | 'RIGHT', e: Mouse
   border: 2px solid var(--text-muted) !important;
   border-radius: 50% !important;
   opacity: 0;
+  pointer-events: none;
   /* 使用 scale 而非覆盖 transform，保证始终严格以中心点为原点对称放大 */
   transition: opacity 0.15s ease, border-color 0.15s ease, scale 0.15s ease, box-shadow 0.15s ease;
   z-index: 20;
   cursor: crosshair;
 }
 
-/* 编辑模式下或悬停时暴露锚点 */
-.focus-node-card:hover .node-handle,
+/* 仅在编辑模式下暴露锚点！展示模式下保持彻底隐蔽与不可交互 */
 .focus-node-card.is-edit-mode .node-handle {
+  opacity: 0.6;
+  pointer-events: all;
+}
+
+.focus-node-card.is-edit-mode:hover .node-handle {
   opacity: 1;
 }
 

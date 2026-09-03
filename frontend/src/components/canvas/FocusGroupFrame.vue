@@ -243,14 +243,19 @@ function startResize(direction: 'br' | 'r' | 'b', e: MouseEvent | TouchEvent) {
   border: 2px solid var(--text-muted) !important;
   border-radius: 50% !important;
   opacity: 0;
+  pointer-events: none;
   transition: opacity 0.15s ease, transform 0.15s ease, scale 0.15s ease, border-color 0.15s ease;
   z-index: 15;
   cursor: crosshair;
+}
+
+/* 仅在编辑模式下暴露锚点！展示模式下保持隐蔽 */
+.focus-group-frame.is-edit-mode .group-handle {
+  opacity: 0.6;
   pointer-events: all;
 }
 
-.focus-group-frame:hover .group-handle,
-.focus-group-frame.is-edit-mode .group-handle {
+.focus-group-frame.is-edit-mode:hover .group-handle {
   opacity: 1;
 }
 
