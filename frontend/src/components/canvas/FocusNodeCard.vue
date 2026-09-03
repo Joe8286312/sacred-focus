@@ -8,6 +8,7 @@ const props = defineProps<{
   data: FocusNode & { 
     isEditMode?: boolean;
     activeConnectingHandle?: { nodeId: string; anchor: string } | null;
+    isHighlighted?: boolean;
   };
   selected?: boolean;
 }>();
@@ -31,7 +32,8 @@ const cardClass = computed(() => {
     'is-unlit': !props.data.isLit && !props.data.isFrozen,
     'is-frozen': props.data.isFrozen,
     'is-selected': props.selected,
-    'is-edit-mode': props.data.isEditMode
+    'is-edit-mode': props.data.isEditMode,
+    'pulse-highlight': props.data.isHighlighted
   };
 });
 
@@ -367,5 +369,24 @@ function handleAnchorClick(anchor: 'TOP' | 'BOTTOM' | 'LEFT' | 'RIGHT', e: Mouse
 @keyframes pulse-active {
   from { scale: 1.4; }
   to { scale: 1.75; }
+}
+
+/* 新建国策切回画布时的微光呼吸动画 */
+.focus-node-card.pulse-highlight {
+  animation: pulse-node-glow 1.1s infinite alternate ease-in-out;
+  z-index: 30 !important;
+}
+
+@keyframes pulse-node-glow {
+  0% {
+    box-shadow: 0 0 8px rgba(16, 185, 129, 0.4);
+    border-color: #10B981 !important;
+    transform: scale(1);
+  }
+  100% {
+    box-shadow: 0 0 24px rgba(16, 185, 129, 0.95);
+    border-color: #34D399 !important;
+    transform: scale(1.04);
+  }
 }
 </style>

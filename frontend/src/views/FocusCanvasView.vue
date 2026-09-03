@@ -23,7 +23,9 @@ import GroupEditModal from '../components/canvas/GroupEditModal.vue';
 import type { FocusNode, FocusGroup, FocusEdge } from '../types';
 
 const store = useFocusTreeStore();
-const { fitView } = useVueFlow();
+const { fitView, setCenter } = useVueFlow();
+
+const highlightedNodeId = ref<string | null>(null);
 
 // 交互模式：展示模式 (View Mode, 默认) vs 编辑模式 (Edit Mode)
 const isEditMode = ref(false);
@@ -89,7 +91,8 @@ function syncToFlow() {
       data: { 
         ...n, 
         isEditMode: isEditMode.value,
-        activeConnectingHandle: activeConnectingHandle.value
+        activeConnectingHandle: activeConnectingHandle.value,
+        isHighlighted: highlightedNodeId.value === n.id
       },
       draggable: isEditMode.value,
       selectable: true,
@@ -412,10 +415,29 @@ function handleDeleteGroup(groupId: string) {
   }
 }
 
-onMounted(() => {
-  store.fetchTree();
+onMounted(async () => {
+  await store.fetchTree();
   store.fetchEvolution();
+  syncToFlow();
   window.addEventListener('keydown', handleKeyDown);
+
+  // 跨页面联动：若刚从列表页新建了节点，自动平滑平移至该卡片，并激发脉冲微光呼吸动画
+  if (store.lastCreatedNodeId) {
+    const targetId = store.lastCreatedNodeId;
+    store.lastCreatedNodeId = null;
+    setTimeout(() => {
+      const found = flowNodes.value.find(n => n.id === targetId);
+      if (found) {
+        setCenter(found.position.x + 90, found.position.y + 40, { duration: 800 });
+        highlightedNodeId.value = targetId;
+        syncToFlow();
+        setTimeout(() => {
+          highlightedNodeId.value = null;
+          syncToFlow();
+        }, 2600);
+      }
+    }, 250);
+  }
 });
 
 onUnmounted(() => {

@@ -11,6 +11,38 @@ export const useFocusTreeStore = defineStore('focusTree', () => {
     snapshots: []
   });
   const loading = ref(false);
+  const lastCreatedNodeId = ref<string | null>(null);
+
+  // 智能空间放置与防重叠计算
+  function calculateSmartPlacement(groupId: string | null): { x: number; y: number } {
+    if (groupId) {
+      const group = groups.value.find(g => g.id === groupId);
+      if (group) {
+        const groupNodes = nodes.value.filter(n => n.groupId === groupId);
+        if (groupNodes.length === 0) {
+          return { x: Math.round(group.position.x + 30), y: Math.round(group.position.y + 60) };
+        }
+        const maxY = Math.max(...groupNodes.map(n => n.position.y));
+        const referenceX = groupNodes[0].position.x;
+        const newY = Math.round(maxY + 100);
+
+        // 自适应撑大分组外框高度
+        const requiredBottom = newY + 80 + 30;
+        const currentBottom = group.position.y + group.size.height;
+        if (requiredBottom > currentBottom) {
+          group.size.height = Math.round(requiredBottom - group.position.y);
+        }
+        return { x: Math.round(referenceX), y: newY };
+      }
+    }
+    // 独立国策放置逻辑
+    const independentNodes = nodes.value.filter(n => !n.groupId);
+    if (independentNodes.length === 0) {
+      return { x: 380, y: 380 };
+    }
+    const maxY = Math.max(...independentNodes.map(n => n.position.y));
+    return { x: 380, y: Math.round(maxY + 110) };
+  }
 
   async function fetchTree() {
     loading.value = true;
@@ -128,7 +160,11 @@ export const useFocusTreeStore = defineStore('focusTree', () => {
   }
 
   async function addNode(node: FocusNode) {
+    if (!node.position || (node.position.x === 0 && node.position.y === 0)) {
+      node.position = calculateSmartPlacement(node.groupId);
+    }
     nodes.value.push(node);
+    lastCreatedNodeId.value = node.id;
     try {
       await fetch('/api/focus-tree/nodes', {
         method: 'POST',
@@ -143,6 +179,11 @@ export const useFocusTreeStore = defineStore('focusTree', () => {
   async function updateNode(id: string, updates: Partial<FocusNode>) {
     const idx = nodes.value.findIndex(n => n.id === id);
     if (idx !== -1) {
+      const current = nodes.value[idx];
+      // 若分组变更，自动触发跨组空间重吸附
+      if (updates.groupId !== undefined && updates.groupId !== current.groupId) {
+        updates.position = calculateSmartPlacement(updates.groupId);
+      }
       nodes.value[idx] = { ...nodes.value[idx], ...updates };
     }
     try {
@@ -154,6 +195,20 @@ export const useFocusTreeStore = defineStore('focusTree', () => {
     } catch (e) {
       console.error('Failed to update node', e);
     }
+  }
+
+  async function saveReorder(orderedIds: string[]) {
+    const nodeMap = new Map(nodes.value.map(n => [n.id, n]));
+    const reordered: FocusNode[] = [];
+    for (const id of orderedIds) {
+      const item = nodeMap.get(id);
+      if (item) reordered.push(item);
+    }
+    for (const n of nodes.value) {
+      if (!orderedIds.includes(n.id)) reordered.push(n);
+    }
+    nodes.value = reordered;
+    await reorderNodes(orderedIds);
   }
 
   async function deleteNode(id: string) {
@@ -238,10 +293,13 @@ export const useFocusTreeStore = defineStore('focusTree', () => {
     groups,
     evolution,
     loading,
+    lastCreatedNodeId,
+    calculateSmartPlacement,
     fetchTree,
     syncTree,
     toggleNodeLit,
     reorderNodes,
+    saveReorder,
     fetchEvolution,
     createSnapshot,
     rollbackToSlot,
