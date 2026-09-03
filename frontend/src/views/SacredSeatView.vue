@@ -265,166 +265,169 @@ onUnmounted(() => {
       </div>
     </Transition>
 
-    <!-- ==================== 状态 1: IDLE 待命态 ==================== -->
-    <template v-if="currentState === 'IDLE'">
-      <div class="seat-header">
-        <div class="token-banner">
-          <span class="token-label">神圣信物生效中</span>
-          <span class="token-value">{{ store.config.sacredToken }}</span>
-        </div>
-        <div class="header-tools">
-          <div class="streak-badge">
-            <span class="streak-node">当前主链: #{{ store.config.currentStreak }}</span>
-            <span class="streak-max font-mono">最高: #{{ store.config.maxStreak }}</span>
+    <!-- 核心视图状态平滑过渡 -->
+    <Transition name="state-fade" mode="out-in">
+      <!-- ==================== 状态 1: IDLE 待命态 ==================== -->
+      <div v-if="currentState === 'IDLE'" key="idle" class="state-panel idle-panel">
+        <div class="seat-header">
+          <div class="token-banner">
+            <span class="token-label">神圣信物生效中</span>
+            <span class="token-value">{{ store.config.sacredToken }}</span>
           </div>
-          <button class="btn-icon" @click="isSettingsModalOpen = true" title="个性化设置">
-            ⚙️
+          <div class="header-tools">
+            <div class="streak-badge">
+              <span class="streak-node">当前主链: #{{ store.config.currentStreak }}</span>
+              <span class="streak-max font-mono">最高: #{{ store.config.maxStreak }}</span>
+            </div>
+            <button class="btn-icon" @click="isSettingsModalOpen = true" title="个性化设置">
+              ⚙️
+            </button>
+          </div>
+        </div>
+
+        <!-- 待命主时钟展示 -->
+        <div class="timer-display-card">
+          <div class="timer-digits font-mono">
+            {{ formatTime(store.config.defaultFocusDuration * 60) }}
+          </div>
+          <div class="timer-status-hint">
+            准备就位 · 点击下方按钮开启心流深潜
+          </div>
+          <div class="timer-actions">
+            <button class="btn-primary" @click="startFocus()">
+              开启神圣专注 ({{ store.config.defaultFocusDuration }}m)
+            </button>
+          </div>
+        </div>
+
+        <!-- 动态线性时延预约链 -->
+        <div class="reservation-card">
+          <div class="card-title">
+            <span>⏰ 预约链 (线性时延抗阻)</span>
+            <span class="signal-tag">启动信号: {{ store.config.reservationSignal }}</span>
+          </div>
+          <p class="card-desc">
+            面对当前极大的启动心理阻抗，平移专注起点，以预定倒计时平滑接入心流。
+          </p>
+          <div class="reservation-controls">
+            <button 
+              class="btn-secondary" 
+              :class="{ active: reservationDurationMinutes === 5 }" 
+              @click="setReservationMinutes(5)"
+            >+5m</button>
+            <button 
+              class="btn-secondary" 
+              :class="{ active: reservationDurationMinutes === 10 }" 
+              @click="setReservationMinutes(10)"
+            >+10m</button>
+            <button 
+              class="btn-secondary" 
+              :class="{ active: reservationDurationMinutes === 15 }" 
+              @click="setReservationMinutes(15)"
+            >+15m</button>
+            <button 
+              class="btn-secondary" 
+              :class="{ active: reservationDurationMinutes === 30 }" 
+              @click="setReservationMinutes(30)"
+            >+30m</button>
+            <button class="btn-reserve" @click="startReservation">
+              点火预约倒计时 ({{ reservationDurationMinutes }}m)
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- ==================== 状态 2: FOCUSING 专注倒计时进行中 ==================== -->
+      <div v-else-if="currentState === 'FOCUSING'" key="focusing" class="state-panel focus-panel">
+        <div class="immersive-focus-view">
+          <div class="focus-top-banner">
+            <span class="focus-token-hint">信物生效中：{{ store.config.sacredToken }}</span>
+          </div>
+
+          <div class="focus-clock-center">
+            <div class="focus-clock-digits font-mono">
+              {{ formatTime(remainingSeconds) }}
+            </div>
+            <div class="focus-progress-info">
+              <span v-if="isInsideRegretWindow" class="regret-pill-badge font-mono">
+                💊 后悔药窗口生效中 ({{ store.config.regretWindowSeconds - elapsedSeconds }}s)
+              </span>
+              <span v-else class="focus-ongoing-hint font-mono">
+                深度专注进行中 · 主链连胜 #{{ store.config.currentStreak }}
+              </span>
+            </div>
+          </div>
+
+          <div class="focus-bottom-bar">
+            <button class="btn-giveup" @click="handleGiveUpClick">
+              放弃退出
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- ==================== 状态 3: OVER_FOCUS 顺水推舟超额计时 ==================== -->
+      <div v-else-if="currentState === 'OVER_FOCUS'" key="overfocus" class="state-panel overfocus-panel" @click="handleWakeUpAction">
+        <div class="immersive-focus-view over-focus-view">
+          <div class="focus-top-banner">
+            <span class="focus-token-hint">预设时长已达成 · 顺水推舟深潜中</span>
+          </div>
+
+          <div class="focus-clock-center">
+            <div class="focus-clock-digits over-digits font-mono">
+              + {{ formatTime(overFocusSeconds) }}
+            </div>
+            <div class="over-focus-hint">
+              静音无扰心流中 · 任意点击页面以唤醒结算
+            </div>
+          </div>
+
+          <div class="focus-bottom-bar">
+            <button class="btn-wake-settle" @click="handleWakeUpAction">
+              已退出心流，完成结算
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- ==================== 状态 4: RESERVING 预约链倒计时 ==================== -->
+      <div v-else-if="currentState === 'RESERVING'" key="reserving" class="state-panel reserving-panel">
+        <div class="reservation-running-view">
+          <div class="res-badge">⏰ 预约平移中</div>
+          <div class="res-clock font-mono">
+            {{ formatTime(reservationRemainingSeconds) }}
+          </div>
+          <div class="res-signal-info">
+            点火信号：<strong>{{ store.config.reservationSignal }}</strong>
+          </div>
+          <p class="res-hint">
+            请提前做好物理就位准备。倒计时结束时将清脆鸣响，引导无缝接驳专注。
+          </p>
+          <button class="btn-cancel-res" @click="cancelReservation">
+            取消本次预约
           </button>
         </div>
       </div>
 
-      <!-- 待命主时钟展示 -->
-      <div class="timer-display-card">
-        <div class="timer-digits font-mono">
-          {{ formatTime(store.config.defaultFocusDuration * 60) }}
-        </div>
-        <div class="timer-status-hint">
-          准备就位 · 点击下方按钮开启心流深潜
-        </div>
-        <div class="timer-actions">
-          <button class="btn-primary" @click="startFocus()">
-            开启神圣专注 ({{ store.config.defaultFocusDuration }}m)
+      <!-- ==================== 状态 5: RESERVATION_TRIGGERED 预约点火就位卡 ==================== -->
+      <div v-else-if="currentState === 'RESERVATION_TRIGGERED'" key="triggered" class="state-panel triggered-panel">
+        <div class="reservation-triggered-view">
+          <div class="fire-icon">⏰</div>
+          <h2 class="fire-title">预约时间已到！启动信号已点火</h2>
+          <div class="fire-signal-box">
+            <span class="fire-label">即刻执行启动信号：</span>
+            <span class="fire-signal font-mono">{{ store.config.reservationSignal }}</span>
+          </div>
+          <div class="fire-token-box">
+            <span class="fire-label">物理信物就位：</span>
+            <span class="fire-token font-mono">{{ store.config.sacredToken }}</span>
+          </div>
+          <button class="btn-confirm-ready" @click="confirmReservationReady">
+            ⚡ 确认就位，开启神圣专注 ({{ store.config.defaultFocusDuration }}m)
           </button>
         </div>
       </div>
-
-      <!-- 动态线性时延预约链 -->
-      <div class="reservation-card">
-        <div class="card-title">
-          <span>⏰ 预约链 (线性时延抗阻)</span>
-          <span class="signal-tag">启动信号: {{ store.config.reservationSignal }}</span>
-        </div>
-        <p class="card-desc">
-          面对当前极大的启动心理阻抗，平移专注起点，以预定倒计时平滑接入心流。
-        </p>
-        <div class="reservation-controls">
-          <button 
-            class="btn-secondary" 
-            :class="{ active: reservationDurationMinutes === 5 }" 
-            @click="setReservationMinutes(5)"
-          >+5m</button>
-          <button 
-            class="btn-secondary" 
-            :class="{ active: reservationDurationMinutes === 10 }" 
-            @click="setReservationMinutes(10)"
-          >+10m</button>
-          <button 
-            class="btn-secondary" 
-            :class="{ active: reservationDurationMinutes === 15 }" 
-            @click="setReservationMinutes(15)"
-          >+15m</button>
-          <button 
-            class="btn-secondary" 
-            :class="{ active: reservationDurationMinutes === 30 }" 
-            @click="setReservationMinutes(30)"
-          >+30m</button>
-          <button class="btn-reserve" @click="startReservation">
-            点火预约倒计时 ({{ reservationDurationMinutes }}m)
-          </button>
-        </div>
-      </div>
-    </template>
-
-    <!-- ==================== 状态 2: FOCUSING 专注倒计时进行中 ==================== -->
-    <template v-else-if="currentState === 'FOCUSING'">
-      <div class="immersive-focus-view">
-        <div class="focus-top-banner">
-          <span class="focus-token-hint">信物生效中：{{ store.config.sacredToken }}</span>
-        </div>
-
-        <div class="focus-clock-center">
-          <div class="focus-clock-digits font-mono">
-            {{ formatTime(remainingSeconds) }}
-          </div>
-          <div class="focus-progress-info">
-            <span v-if="isInsideRegretWindow" class="regret-pill-badge font-mono">
-              💊 后悔药窗口生效中 ({{ store.config.regretWindowSeconds - elapsedSeconds }}s)
-            </span>
-            <span v-else class="focus-ongoing-hint font-mono">
-              深度专注进行中 · 主链连胜 #{{ store.config.currentStreak }}
-            </span>
-          </div>
-        </div>
-
-        <div class="focus-bottom-bar">
-          <button class="btn-giveup" @click="handleGiveUpClick">
-            放弃退出
-          </button>
-        </div>
-      </div>
-    </template>
-
-    <!-- ==================== 状态 3: OVER_FOCUS 顺水推舟超额计时 ==================== -->
-    <template v-else-if="currentState === 'OVER_FOCUS'">
-      <div class="immersive-focus-view over-focus-view" @click="handleWakeUpAction">
-        <div class="focus-top-banner">
-          <span class="focus-token-hint">预设时长已达成 · 顺水推舟深潜中</span>
-        </div>
-
-        <div class="focus-clock-center">
-          <div class="focus-clock-digits over-digits font-mono">
-            + {{ formatTime(overFocusSeconds) }}
-          </div>
-          <div class="over-focus-hint">
-            静音无扰心流中 · 任意点击页面以唤醒结算
-          </div>
-        </div>
-
-        <div class="focus-bottom-bar">
-          <button class="btn-wake-settle" @click="handleWakeUpAction">
-            已退出心流，完成结算
-          </button>
-        </div>
-      </div>
-    </template>
-
-    <!-- ==================== 状态 4: RESERVING 预约链倒计时 ==================== -->
-    <template v-else-if="currentState === 'RESERVING'">
-      <div class="reservation-running-view">
-        <div class="res-badge">⏰ 预约平移中</div>
-        <div class="res-clock font-mono">
-          {{ formatTime(reservationRemainingSeconds) }}
-        </div>
-        <div class="res-signal-info">
-          点火信号：<strong>{{ store.config.reservationSignal }}</strong>
-        </div>
-        <p class="res-hint">
-          请提前做好物理就位准备。倒计时结束时将清脆鸣响，引导无缝接驳专注。
-        </p>
-        <button class="btn-cancel-res" @click="cancelReservation">
-          取消本次预约
-        </button>
-      </div>
-    </template>
-
-    <!-- ==================== 状态 5: RESERVATION_TRIGGERED 预约点火就位卡 ==================== -->
-    <template v-else-if="currentState === 'RESERVATION_TRIGGERED'">
-      <div class="reservation-triggered-view">
-        <div class="fire-icon">⏰</div>
-        <h2 class="fire-title">预约时间已到！启动信号已点火</h2>
-        <div class="fire-signal-box">
-          <span class="fire-label">即刻执行启动信号：</span>
-          <span class="fire-signal font-mono">{{ store.config.reservationSignal }}</span>
-        </div>
-        <div class="fire-token-box">
-          <span class="fire-label">物理信物就位：</span>
-          <span class="fire-token font-mono">{{ store.config.sacredToken }}</span>
-        </div>
-        <button class="btn-confirm-ready" @click="confirmReservationReady">
-          ⚡ 确认就位，开启神圣专注 ({{ store.config.defaultFocusDuration }}m)
-        </button>
-      </div>
-    </template>
+    </Transition>
 
     <!-- 弹窗组件：严正清零警告模态框 -->
     <StreakWarningModal 
@@ -880,5 +883,57 @@ onUnmounted(() => {
 .slide-down-enter-from, .slide-down-leave-to {
   transform: translateY(-20px);
   opacity: 0;
+}
+
+/* 核心状态平滑过渡动效 */
+.state-panel {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 28px;
+  will-change: opacity, transform;
+}
+
+.state-fade-enter-active,
+.state-fade-leave-active {
+  transition: opacity 0.16s cubic-bezier(0.4, 0, 0.2, 1), transform 0.16s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.state-fade-enter-from {
+  opacity: 0;
+  transform: scale(0.985);
+}
+
+.state-fade-leave-to {
+  opacity: 0;
+  transform: scale(0.985);
+}
+
+/* 硬件加速以消除高斯模糊和巨大字体重绘卡顿 */
+.timer-display-card,
+.reservation-card,
+.reservation-running-view,
+.reservation-triggered-view {
+  transform: translateZ(0);
+  backface-visibility: hidden;
+}
+
+.btn-cancel-res {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  padding: 9px 26px;
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  cursor: pointer;
+  outline: none;
+}
+
+.btn-cancel-res:hover {
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+  border-color: var(--border-focus);
 }
 </style>
