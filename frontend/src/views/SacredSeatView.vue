@@ -399,7 +399,7 @@ onUnmounted(() => {
         <div class="focus-progress-info">
           <template v-if="currentState === 'FOCUSING'">
             <span v-if="isInsideRegretWindow" class="regret-pill-badge font-mono">
-              后悔药窗口生效中 ({{ store.config.regretWindowSeconds - elapsedSeconds }}s)
+              后悔药窗口 ({{ store.config.regretWindowSeconds - elapsedSeconds }}s)
             </span>
             <span v-else class="focus-ongoing-hint font-mono">
               深度专注进行中 · 主链连胜 #{{ store.config.currentStreak }}
@@ -811,13 +811,20 @@ onUnmounted(() => {
 }
 
 .regret-pill-badge {
-  background: rgba(245, 158, 11, 0.12);
-  border: 1px solid rgba(245, 158, 11, 0.4);
-  color: var(--color-gold);
-  font-size: 12px;
-  font-weight: 600;
-  padding: 4px 12px;
+  background: transparent;
+  border: 1px solid var(--border-color);
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 400;
+  padding: 2px 10px;
   border-radius: var(--radius-full);
+  opacity: 0.55;
+  letter-spacing: 0.3px;
+  transition: opacity 0.2s ease;
+}
+
+.regret-pill-badge:hover {
+  opacity: 0.85;
 }
 
 .focus-ongoing-hint {
