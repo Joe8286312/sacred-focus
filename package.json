@@ -3,6 +3,10 @@
   "version": "1.0.0",
   "description": "个人自控与效能系统（国策树与神圣座位）",
   "private": true,
+  "workspaces": [
+    "frontend",
+    "backend"
+  ],
   "scripts": {
     "dev:backend": "npm --prefix backend run dev",
     "dev:frontend": "npm --prefix frontend run dev",
