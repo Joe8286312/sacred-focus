@@ -54,23 +54,18 @@ function openGroupModal() {
   isGroupModalOpen.value = true;
 }
 
-async function handleSaveGroup(groupData: FocusGroup) {
-  const existing = store.groups.find(g => g.id === groupData.id);
-  if (existing) {
-    await store.updateGroup(groupData.id, groupData);
-  } else {
-    await store.addGroup(groupData);
-    form.value.groupId = groupData.id;
-  }
-  isGroupModalOpen.value = false;
+function handleSelectGroup(groupId: string | null) {
+  form.value.groupId = groupId;
 }
 
-async function handleDeleteGroup(groupId: string) {
-  await store.deleteGroup(groupId);
+function handleSaveGroup(groupData: FocusGroup) {
+  form.value.groupId = groupData.id;
+}
+
+function handleDeleteGroup(groupId: string) {
   if (form.value.groupId === groupId) {
     form.value.groupId = null;
   }
-  isGroupModalOpen.value = false;
 }
 
 // 标记场景描述是否被人为自定义修改过（若已自定义，则后续再改时间不再覆盖描述）
@@ -623,13 +618,15 @@ function handleSave() {
     </div>
   </Transition>
 
-  <!-- 嵌套分组编辑/新建弹窗 -->
+  <!-- 嵌套分组管理与CRUD弹窗 -->
   <GroupEditModal 
     :is-open="isGroupModalOpen" 
     :group="editingGroup" 
+    :current-group-id="form.groupId"
     @close="isGroupModalOpen = false" 
     @save="handleSaveGroup" 
     @delete="handleDeleteGroup" 
+    @select-group="handleSelectGroup"
   />
 </template>
 

@@ -15,33 +15,38 @@ export const useFocusTreeStore = defineStore('focusTree', () => {
   const lastCreatedGroupId = ref<string | null>(null);
   const pendingResetSummary = ref<{ resetNodes: any[]; settlementDate: string } | null>(null);
 
-  // 新建分组自适应坐标初始化
+  // 新建分组固定坐标及沿 Y 轴向下递增平移（用户指定：baseX + 当前分组数 * stepY）
   function calculateSmartGroupPlacement(): { x: number; y: number } {
-    if (groups.value.length === 0) {
-      return { x: 80, y: 80 };
-    }
-    let maxRight = 0;
-    let maxTop = 80;
-    for (const g of groups.value) {
-      const right = (g.position?.x || 0) + (g.size?.width || 360);
-      if (right > maxRight) {
-        maxRight = right;
-        maxTop = g.position?.y || 80;
-      }
-    }
-    return { x: Math.round(maxRight + 60), y: Math.round(maxTop) };
+    const baseX = 80;
+    const baseY = 80;
+    const stepY = 300; // 每个分组默认高 260px，加 40px 呼吸间距
+    const count = groups.value.length;
+    return {
+      x: baseX,
+      y: Math.round(baseY + count * stepY)
+    };
   }
 
-  // 新建国策固定坐标初始化（遵循用户设计定调：固定初始落点，交由画布自由拖拽排布）
+  // 新建国策固定坐标及向下平移（用户指定：按当前数量向下平移固定像素，避免连续新建重叠）
   function calculateSmartPlacement(groupId: string | null): { x: number; y: number } {
     if (groupId) {
       const group = groups.value.find(g => g.id === groupId);
       if (group) {
-        return { x: Math.round(group.position.x + 30), y: Math.round(group.position.y + 60) };
+        const countInGroup = nodes.value.filter(n => n.groupId === groupId).length;
+        const innerX = (group.position?.x ?? 80) + 30;
+        const innerY = (group.position?.y ?? 80) + 60 + countInGroup * 95;
+        return { x: Math.round(innerX), y: Math.round(innerY) };
       }
     }
-    // 独立国策：固定初始化到画布右侧干净可见的待排布起始坐标
-    return { x: 1060, y: 120 };
+    // 独立国策：固定 X 轴，按已有独立国策数依次向下平移 110px (卡片高 72px + 间距 38px)
+    const independentCount = nodes.value.filter(n => !n.groupId).length;
+    const baseNodeX = 600;
+    const baseNodeY = 80;
+    const stepNodeY = 110;
+    return {
+      x: baseNodeX,
+      y: Math.round(baseNodeY + independentCount * stepNodeY)
+    };
   }
 
   function dismissResetAlert() {
