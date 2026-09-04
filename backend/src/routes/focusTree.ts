@@ -54,25 +54,35 @@ router.put('/', (req: Request, res: Response) => {
       db.prepare('DELETE FROM focus_nodes').run();
       const insertNode = db.prepare(`
         INSERT INTO focus_nodes (
-          id, code, name, groupId, triggerTime, hasExactTime, timeValueMinutes,
+          id, code, name, groupId, triggerTime, triggerScene, hasExactTime, timeValueMinutes,
           level, maxLevel, isLit, isFrozen, lastLitDate, previousLevel, positionX, positionY,
           specInstruction, specFailCondition, specBenefitMechanism, specNotes, sortOrder
         ) VALUES (
-          @id, @code, @name, @groupId, @triggerTime, @hasExactTime, @timeValueMinutes,
+          @id, @code, @name, @groupId, @triggerTime, @triggerScene, @hasExactTime, @timeValueMinutes,
           @level, @maxLevel, @isLit, @isFrozen, @lastLitDate, @previousLevel, @positionX, @positionY,
           @specInstruction, @specFailCondition, @specBenefitMechanism, @specNotes, @sortOrder
         )
       `);
       for (let i = 0; i < nodes.length; i++) {
         const n = nodes[i];
+        let hasExactTime = 0;
+        let timeValueMinutes: number | null = null;
+        if (n.triggerTime) {
+          const match = n.triggerTime.match(/^(\d{1,2})[:：](\d{2})$/);
+          if (match) {
+            hasExactTime = 1;
+            timeValueMinutes = parseInt(match[1], 10) * 60 + parseInt(match[2], 10);
+          }
+        }
         insertNode.run({
           id: n.id,
           code: n.code,
           name: n.name,
           groupId: n.groupId,
-          triggerTime: n.triggerTime,
-          hasExactTime: n.hasExactTime ? 1 : 0,
-          timeValueMinutes: n.timeValueMinutes ?? null,
+          triggerTime: n.triggerTime || '',
+          triggerScene: n.triggerScene || n.triggerTime || '全天候',
+          hasExactTime,
+          timeValueMinutes,
           level: n.level ?? 0,
           maxLevel: n.maxLevel ?? 0,
           isLit: n.isLit ? 1 : 0,
@@ -226,13 +236,28 @@ router.post('/nodes', (req: Request, res: Response) => {
   const maxOrderRow = db.prepare('SELECT MAX(sortOrder) as maxOrder FROM focus_nodes').get() as { maxOrder: number | null };
   const sortOrder = (maxOrderRow?.maxOrder ?? -1) + 1;
 
+  let finalTime: string | null = null;
+  let hasExactTime = 0;
+  let timeValueMinutes: number | null = null;
+  if (n.triggerTime) {
+    const match = n.triggerTime.match(/^(\d{1,2})[:：](\d{2})$/);
+    if (match) {
+      const h = parseInt(match[1], 10);
+      const m = parseInt(match[2], 10);
+      finalTime = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+      hasExactTime = 1;
+      timeValueMinutes = h * 60 + m;
+    }
+  }
+  const finalScene = n.triggerScene?.trim() || finalTime || '全天候';
+
   db.prepare(`
     INSERT INTO focus_nodes (
-      id, code, name, groupId, triggerTime, hasExactTime, timeValueMinutes,
+      id, code, name, groupId, triggerTime, triggerScene, hasExactTime, timeValueMinutes,
       level, maxLevel, isLit, isFrozen, lastLitDate, previousLevel, positionX, positionY,
       specInstruction, specFailCondition, specBenefitMechanism, specNotes, sortOrder
     ) VALUES (
-      @id, @code, @name, @groupId, @triggerTime, @hasExactTime, @timeValueMinutes,
+      @id, @code, @name, @groupId, @triggerTime, @triggerScene, @hasExactTime, @timeValueMinutes,
       @level, @maxLevel, @isLit, @isFrozen, @lastLitDate, @previousLevel, @positionX, @positionY,
       @specInstruction, @specFailCondition, @specBenefitMechanism, @specNotes, @sortOrder
     )
@@ -241,9 +266,10 @@ router.post('/nodes', (req: Request, res: Response) => {
     code: n.code,
     name: n.name,
     groupId: n.groupId || null,
-    triggerTime: n.triggerTime || '全天候',
-    hasExactTime: n.hasExactTime ? 1 : 0,
-    timeValueMinutes: n.timeValueMinutes ?? null,
+    triggerTime: finalTime || '',
+    triggerScene: finalScene,
+    hasExactTime,
+    timeValueMinutes,
     level: n.level ?? 0,
     maxLevel: n.maxLevel ?? 0,
     isLit: n.isLit ? 1 : 0,
@@ -259,7 +285,13 @@ router.post('/nodes', (req: Request, res: Response) => {
     sortOrder
   });
 
-  res.status(201).json(n);
+  res.status(201).json({
+    ...n,
+    triggerTime: finalTime,
+    triggerScene: finalScene,
+    hasExactTime: Boolean(hasExactTime),
+    timeValueMinutes
+  });
 });
 
 router.put('/nodes/:id', (req: Request, res: Response) => {
@@ -271,12 +303,42 @@ router.put('/nodes/:id', (req: Request, res: Response) => {
     return res.status(404).json({ error: 'Node not found' });
   }
 
+  let finalTime = current.triggerTime;
+  let hasExactTime = current.hasExactTime;
+  let timeValueMinutes = current.timeValueMinutes;
+
+  if (n.triggerTime !== undefined) {
+    if (n.triggerTime) {
+      const match = n.triggerTime.match(/^(\d{1,2})[:：](\d{2})$/);
+      if (match) {
+        const h = parseInt(match[1], 10);
+        const m = parseInt(match[2], 10);
+        finalTime = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+        hasExactTime = 1;
+        timeValueMinutes = h * 60 + m;
+      } else {
+        finalTime = null;
+        hasExactTime = 0;
+        timeValueMinutes = null;
+      }
+    } else {
+      finalTime = null;
+      hasExactTime = 0;
+      timeValueMinutes = null;
+    }
+  }
+
+  const finalScene = n.triggerScene !== undefined 
+    ? (n.triggerScene.trim() || finalTime || '全天候') 
+    : (current.triggerScene || current.triggerTime || '全天候');
+
   db.prepare(`
     UPDATE focus_nodes SET
       code = @code,
       name = @name,
       groupId = @groupId,
       triggerTime = @triggerTime,
+      triggerScene = @triggerScene,
       hasExactTime = @hasExactTime,
       timeValueMinutes = @timeValueMinutes,
       level = @level,
@@ -297,9 +359,10 @@ router.put('/nodes/:id', (req: Request, res: Response) => {
     code: n.code ?? current.code,
     name: n.name ?? current.name,
     groupId: n.groupId !== undefined ? n.groupId : current.groupId,
-    triggerTime: n.triggerTime ?? current.triggerTime,
-    hasExactTime: n.hasExactTime !== undefined ? (n.hasExactTime ? 1 : 0) : current.hasExactTime,
-    timeValueMinutes: n.timeValueMinutes !== undefined ? n.timeValueMinutes : current.timeValueMinutes,
+    triggerTime: finalTime || '',
+    triggerScene: finalScene,
+    hasExactTime,
+    timeValueMinutes,
     level: n.level !== undefined ? n.level : current.level,
     maxLevel: n.maxLevel !== undefined ? n.maxLevel : current.maxLevel,
     isLit: n.isLit !== undefined ? (n.isLit ? 1 : 0) : current.isLit,

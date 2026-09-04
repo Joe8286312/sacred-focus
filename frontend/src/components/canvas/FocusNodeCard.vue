@@ -119,8 +119,8 @@ function handleAnchorClick(anchor: 'TOP' | 'BOTTOM' | 'LEFT' | 'RIGHT', e: Mouse
 
     <!-- 卡片下沿：触发场景/时间 -->
     <div class="card-footer">
-      <span class="trigger-time-tag font-mono" :title="data.triggerTime">
-        {{ data.triggerTime || '全天候' }}
+      <span class="trigger-time-tag font-mono" :title="data.triggerScene || data.triggerTime || '全天候'">
+        {{ data.triggerTime ? `${data.triggerTime}${data.triggerScene && data.triggerScene !== data.triggerTime ? ' · ' + data.triggerScene : ''}` : (data.triggerScene || '全天候') }}
       </span>
     </div>
   </div>

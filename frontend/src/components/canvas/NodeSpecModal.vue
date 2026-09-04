@@ -51,7 +51,9 @@ function handleConfirmDelete() {
         <!-- 触发场景与时限 -->
         <div class="trigger-banner">
           <span class="trigger-label">触发时限 / 场景：</span>
-          <span class="trigger-val font-mono">{{ node.triggerTime || '全天候无约束' }}</span>
+          <span class="trigger-val font-mono">
+            {{ node.triggerTime ? `${node.triggerTime} (${node.triggerScene || '定时执行'})` : (node.triggerScene || '全天候无约束') }}
+          </span>
         </div>
 
         <!-- 详细规范主体 -->

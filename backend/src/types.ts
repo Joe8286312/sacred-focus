@@ -43,9 +43,10 @@ export interface FocusNode {
   code: string;                   // 纯文本编号（如 R0, M1, F3, N7，严禁装饰Emoji）
   name: string;                   // 纯文本名称（如 离地起爆）
   groupId: string | null;         // 归属分组ID，新建默认 null (无外框独立国策)
-  triggerTime: string;            // 纯文本触发时间或场景描述（如 "07:30", "闹钟后3m", "全天候"）
+  triggerTime: string | null;     // 特定触发时间（如 "09:05"，null 代表无特定时间）
+  triggerScene: string;           // 触发场景描述（如 "起床后5分钟内下床"，"全天候"）
   hasExactTime: boolean;          // 是否为精确时间点（用于列表排序）
-  timeValueMinutes?: number;      // 转化为分钟数便于比较大小（如 07:30 -> 450）
+  timeValueMinutes?: number | null; // 转化为当天分钟数便于比较大小（如 09:05 -> 545）
   level: number;                  // 当前强化等级（连续点亮天数）
   maxLevel: number;               // 历史最高强化等级（峰值）
   isLit: boolean;                 // 当前是否点亮 (已点亮 / 待命)

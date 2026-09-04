@@ -77,7 +77,8 @@ export function initDatabase() {
       code TEXT NOT NULL,
       name TEXT NOT NULL,
       groupId TEXT,
-      triggerTime TEXT NOT NULL,
+      triggerTime TEXT,
+      triggerScene TEXT NOT NULL DEFAULT '全天候',
       hasExactTime INTEGER NOT NULL DEFAULT 0,
       timeValueMinutes INTEGER,
       level INTEGER NOT NULL DEFAULT 1,
@@ -130,13 +131,36 @@ export function initDatabase() {
     );
   `);
 
-  // 数据库平滑迁移：为 focus_nodes 增加 lastLitDate 与 previousLevel 字段
+  // 数据库平滑迁移：为 focus_nodes 增加 lastLitDate、previousLevel 与 triggerScene 字段
   const nodeCols = (db.prepare('PRAGMA table_info(focus_nodes)').all() as Array<{ name: string }>).map(c => c.name);
   if (!nodeCols.includes('lastLitDate')) {
     db.prepare('ALTER TABLE focus_nodes ADD COLUMN lastLitDate TEXT').run();
   }
   if (!nodeCols.includes('previousLevel')) {
     db.prepare('ALTER TABLE focus_nodes ADD COLUMN previousLevel INTEGER NOT NULL DEFAULT 0').run();
+  }
+  if (!nodeCols.includes('triggerScene')) {
+    db.prepare("ALTER TABLE focus_nodes ADD COLUMN triggerScene TEXT NOT NULL DEFAULT '全天候'").run();
+  }
+
+  // 历史数据平滑回填与校准迁移：确保旧节点时间与场景正确分离
+  const existingNodes = db.prepare('SELECT id, triggerTime, triggerScene FROM focus_nodes').all() as Array<{ id: string; triggerTime: string | null; triggerScene: string | null }>;
+  const updateStmt = db.prepare('UPDATE focus_nodes SET triggerScene = ?, triggerTime = ?, hasExactTime = ?, timeValueMinutes = ? WHERE id = ?');
+  for (const n of existingNodes) {
+    if (n.triggerTime) {
+      const match = n.triggerTime.match(/^(\d{1,2})[:：](\d{2})$/);
+      if (match) {
+        const h = parseInt(match[1], 10);
+        const m = parseInt(match[2], 10);
+        const standardTime = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+        const scene = (!n.triggerScene || n.triggerScene === '全天候') ? standardTime : n.triggerScene;
+        updateStmt.run(scene, standardTime, 1, h * 60 + m, n.id);
+      } else {
+        // 若 triggerTime 是诸如 "全天候"、"闹钟后3m" 等中文场景描述，将其移至 triggerScene，并将 triggerTime 置为空字符串满足 SQLite 约束
+        const scene = (n.triggerScene && n.triggerScene !== '全天候') ? n.triggerScene : (n.triggerTime || '全天候');
+        updateStmt.run(scene, '', 0, null, n.id);
+      }
+    }
   }
 
   seedDefaultData();
@@ -198,11 +222,11 @@ function seedDefaultData() {
     // 初始节点
     const insertNode = db.prepare(`
       INSERT INTO focus_nodes (
-        id, code, name, groupId, triggerTime, hasExactTime, timeValueMinutes,
+        id, code, name, groupId, triggerTime, triggerScene, hasExactTime, timeValueMinutes,
         level, maxLevel, isLit, isFrozen, positionX, positionY,
         specInstruction, specFailCondition, specBenefitMechanism, specNotes, sortOrder
       ) VALUES (
-        @id, @code, @name, @groupId, @triggerTime, @hasExactTime, @timeValueMinutes,
+        @id, @code, @name, @groupId, @triggerTime, @triggerScene, @hasExactTime, @timeValueMinutes,
         @level, @maxLevel, @isLit, @isFrozen, @positionX, @positionY,
         @specInstruction, @specFailCondition, @specBenefitMechanism, @specNotes, @sortOrder
       )
@@ -214,9 +238,10 @@ function seedDefaultData() {
         code: 'R0',
         name: '水密隔舱',
         groupId: null,
-        triggerTime: '全天候',
+        triggerTime: null,
+        triggerScene: '全天候',
         hasExactTime: false,
-        timeValueMinutes: undefined,
+        timeValueMinutes: null,
         level: 1,
         maxLevel: 1,
         isLit: true,
@@ -234,7 +259,8 @@ function seedDefaultData() {
         code: 'M1',
         name: '离地起爆',
         groupId: 'grp-dawn',
-        triggerTime: '闹钟后3m',
+        triggerTime: null,
+        triggerScene: '闹钟后3m',
         hasExactTime: false,
         timeValueMinutes: 420,
         level: 1,
@@ -254,7 +280,8 @@ function seedDefaultData() {
         code: 'M2',
         name: '冷水洗面',
         groupId: 'grp-dawn',
-        triggerTime: '起爆后2m',
+        triggerTime: null,
+        triggerScene: '起爆后2m',
         hasExactTime: false,
         timeValueMinutes: 425,
         level: 1,
@@ -275,6 +302,7 @@ function seedDefaultData() {
         name: '神圣首战',
         groupId: 'grp-combat',
         triggerTime: '08:30',
+        triggerScene: '08:30',
         hasExactTime: true,
         timeValueMinutes: 510,
         level: 1,
@@ -295,6 +323,7 @@ function seedDefaultData() {
         name: '神圣寝域',
         groupId: null,
         triggerTime: '22:30',
+        triggerScene: '22:30',
         hasExactTime: true,
         timeValueMinutes: 1350,
         level: 1,
@@ -318,6 +347,7 @@ function seedDefaultData() {
         name: node.name,
         groupId: node.groupId,
         triggerTime: node.triggerTime,
+        triggerScene: node.triggerScene,
         hasExactTime: node.hasExactTime ? 1 : 0,
         timeValueMinutes: node.timeValueMinutes ?? null,
         level: node.level,
@@ -427,9 +457,10 @@ export function getFullFocusTreeData(): FocusTreeData {
     code: row.code,
     name: row.name,
     groupId: row.groupId,
-    triggerTime: row.triggerTime,
-    hasExactTime: Boolean(row.hasExactTime),
-    timeValueMinutes: row.timeValueMinutes ?? undefined,
+    triggerTime: (row.triggerTime && row.triggerTime.trim()) ? row.triggerTime : null,
+    triggerScene: row.triggerScene || (row.triggerTime && row.triggerTime.trim()) || '全天候',
+    hasExactTime: Boolean(row.hasExactTime && row.triggerTime && row.triggerTime.trim()),
+    timeValueMinutes: row.timeValueMinutes ?? null,
     level: row.level,
     maxLevel: row.maxLevel,
     isLit: Boolean(row.isLit),

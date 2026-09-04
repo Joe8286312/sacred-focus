@@ -14,12 +14,17 @@ const activeSpecNode = ref<FocusNode | null>(null);
 const isNodeEditModalOpen = ref(false);
 const editingNode = ref<FocusNode | null>(null);
 
-// 搜索与过滤
+// 搜索与分组过滤
 const searchQuery = ref('');
+const selectedGroupFilter = ref('');
 
-// 排序状态机：基准顺序 (BASELINE) 与临时多维排序
-type SortRule = 'BASELINE' | 'TIME_ASC' | 'GROUP' | 'LEVEL_DESC' | 'STATUS_LIT';
-const sortRule = ref<SortRule>('BASELINE');
+// 类 Excel 复合排序规则栈（自然记忆先选的优先级高：第 1、第 2、第 3...）
+export type SortableKey = 'code' | 'name' | 'group' | 'time' | 'level' | 'maxLevel' | 'status';
+export interface SortRuleItem {
+  key: SortableKey;
+  dir: 'asc' | 'desc';
+}
+const sortStack = ref<SortRuleItem[]>([]);
 
 // 本地可拖拽工作列表
 const localNodeList = ref<FocusNode[]>([]);
@@ -32,7 +37,9 @@ const dropPosition = ref<'top' | 'bottom' | null>(null);
 
 // 每次进入页面时，无论之前如何临时排序，均自动复原并以基准持久化顺序呈现（Zero-Friction Auto-Reset）
 onMounted(async () => {
-  sortRule.value = 'BASELINE';
+  sortStack.value = [];
+  selectedGroupFilter.value = '';
+  searchQuery.value = '';
   isOrderDirty.value = false;
   await store.fetchTree();
   localNodeList.value = [...store.nodes];
@@ -42,59 +49,12 @@ onMounted(async () => {
 watch(
   () => store.nodes,
   (newNodes) => {
-    if (sortRule.value === 'BASELINE' && !isOrderDirty.value) {
+    if (sortStack.value.length === 0 && !isOrderDirty.value) {
       localNodeList.value = [...newNodes];
     }
   },
   { deep: true }
 );
-
-// 辅助解析时间值（分钟数）
-function parseTimeMinutes(triggerTime: string): number {
-  if (!triggerTime) return 9999;
-  const match = triggerTime.match(/(\d{1,2})[:：](\d{2})/);
-  if (match) {
-    return parseInt(match[1], 10) * 60 + parseInt(match[2], 10);
-  }
-  if (triggerTime.includes('全天候')) return 0;
-  if (triggerTime.includes('闹钟') || triggerTime.includes('晨') || triggerTime.includes('起爆')) return 360; // 06:00 左右
-  if (triggerTime.includes('洗面') || triggerTime.includes('起燥')) return 370;
-  if (triggerTime.includes('夜') || triggerTime.includes('寝') || triggerTime.includes('睡')) return 1380; // 23:00
-  return 1000;
-}
-
-// 计算最终展示列表
-const displayNodes = computed(() => {
-  let list = [...localNodeList.value];
-
-  // 1. 搜索过滤
-  if (searchQuery.value.trim()) {
-    const q = searchQuery.value.trim().toLowerCase();
-    list = list.filter(n => 
-      n.code.toLowerCase().includes(q) || 
-      n.name.toLowerCase().includes(q) ||
-      (n.triggerTime && n.triggerTime.toLowerCase().includes(q))
-    );
-  }
-
-  // 2. 临时多维排序规则应用
-  if (sortRule.value === 'TIME_ASC') {
-    list.sort((a, b) => parseTimeMinutes(a.triggerTime) - parseTimeMinutes(b.triggerTime));
-  } else if (sortRule.value === 'GROUP') {
-    list.sort((a, b) => {
-      if (!a.groupId && b.groupId) return 1;
-      if (a.groupId && !b.groupId) return -1;
-      if (!a.groupId && !b.groupId) return 0;
-      return (a.groupId || '').localeCompare(b.groupId || '');
-    });
-  } else if (sortRule.value === 'LEVEL_DESC') {
-    list.sort((a, b) => b.level - a.level || b.maxLevel - a.maxLevel);
-  } else if (sortRule.value === 'STATUS_LIT') {
-    list.sort((a, b) => (b.isLit ? 1 : 0) - (a.isLit ? 1 : 0));
-  }
-
-  return list;
-});
 
 function getGroupName(groupId: string | null): string {
   if (!groupId) return '独立国策';
@@ -108,12 +68,104 @@ function getGroupThemeColor(groupId: string | null): string {
   return group?.themeColor || 'var(--color-lit)';
 }
 
+// 表头列点击切换排序：循环状态 (asc -> desc -> 取消)
+function toggleColumnSort(key: SortableKey) {
+  const existingIdx = sortStack.value.findIndex(item => item.key === key);
+  if (existingIdx !== -1) {
+    const currentDir = sortStack.value[existingIdx].dir;
+    if (currentDir === 'asc') {
+      sortStack.value[existingIdx].dir = 'desc';
+    } else {
+      sortStack.value.splice(existingIdx, 1);
+    }
+  } else {
+    // 首次点击此列：追加至排序栈末尾（自动保证先选的优先级最高）
+    sortStack.value.push({ key, dir: 'asc' });
+  }
+}
+
+function getSortInfo(key: SortableKey): SortRuleItem | undefined {
+  return sortStack.value.find(item => item.key === key);
+}
+
+function getSortPriority(key: SortableKey): number {
+  return sortStack.value.findIndex(item => item.key === key) + 1;
+}
+
+// 计算最终展示列表
+const displayNodes = computed(() => {
+  let list = [...localNodeList.value];
+
+  // 1. 分组下拉快速过滤
+  if (selectedGroupFilter.value) {
+    if (selectedGroupFilter.value === 'INDEPENDENT') {
+      list = list.filter(n => !n.groupId);
+    } else {
+      list = list.filter(n => n.groupId === selectedGroupFilter.value);
+    }
+  }
+
+  // 2. 搜索过滤（支持代码、名称、场景描述、触发时间、所属分组名称搜索）
+  if (searchQuery.value.trim()) {
+    const q = searchQuery.value.trim().toLowerCase();
+    list = list.filter(n => 
+      n.code.toLowerCase().includes(q) || 
+      n.name.toLowerCase().includes(q) ||
+      (n.triggerScene && n.triggerScene.toLowerCase().includes(q)) ||
+      (n.triggerTime && n.triggerTime.toLowerCase().includes(q)) ||
+      getGroupName(n.groupId).toLowerCase().includes(q)
+    );
+  }
+
+  // 3. 类 Excel 多列复合排序应用
+  if (sortStack.value.length > 0) {
+    list.sort((a, b) => {
+      for (const rule of sortStack.value) {
+        let cmp = 0;
+        if (rule.key === 'time') {
+          // 核心时间排序规则：“按触发查询时，没有时间的场景放在最下面”
+          const aHas = Boolean(a.hasExactTime && a.timeValueMinutes != null);
+          const bHas = Boolean(b.hasExactTime && b.timeValueMinutes != null);
+          if (aHas && !bHas) return -1;
+          if (!aHas && bHas) return 1;
+          if (aHas && bHas) {
+            cmp = (a.timeValueMinutes! - b.timeValueMinutes!) * (rule.dir === 'asc' ? 1 : -1);
+          } else {
+            cmp = (a.triggerScene || '').localeCompare(b.triggerScene || '', 'zh-CN') * (rule.dir === 'asc' ? 1 : -1);
+          }
+        } else if (rule.key === 'code') {
+          cmp = a.code.localeCompare(b.code, undefined, { numeric: true }) * (rule.dir === 'asc' ? 1 : -1);
+        } else if (rule.key === 'name') {
+          cmp = a.name.localeCompare(b.name, 'zh-CN') * (rule.dir === 'asc' ? 1 : -1);
+        } else if (rule.key === 'group') {
+          const aGrp = getGroupName(a.groupId);
+          const bGrp = getGroupName(b.groupId);
+          cmp = aGrp.localeCompare(bGrp, 'zh-CN') * (rule.dir === 'asc' ? 1 : -1);
+        } else if (rule.key === 'level') {
+          cmp = (a.level - b.level) * (rule.dir === 'asc' ? 1 : -1);
+        } else if (rule.key === 'maxLevel') {
+          cmp = (a.maxLevel - b.maxLevel) * (rule.dir === 'asc' ? 1 : -1);
+        } else if (rule.key === 'status') {
+          const aVal = a.isLit ? 1 : 0;
+          const bVal = b.isLit ? 1 : 0;
+          cmp = (aVal - bVal) * (rule.dir === 'asc' ? 1 : -1);
+        }
+        if (cmp !== 0) return cmp;
+      }
+      return 0;
+    });
+  }
+
+  return list;
+});
+
 // -----------------------------------------------------------------------------
 // 排序操作：还原基准 vs 保存当前排序
 // -----------------------------------------------------------------------------
 
 function restoreBaseline() {
-  sortRule.value = 'BASELINE';
+  sortStack.value = [];
+  selectedGroupFilter.value = '';
   isOrderDirty.value = false;
   localNodeList.value = [...store.nodes];
 }
@@ -121,16 +173,8 @@ function restoreBaseline() {
 async function saveCurrentOrder() {
   const currentIds = displayNodes.value.map(n => n.id);
   await store.saveReorder(currentIds);
-  sortRule.value = 'BASELINE';
+  sortStack.value = [];
   isOrderDirty.value = false;
-}
-
-function switchSortRule(rule: SortRule) {
-  if (sortRule.value === rule) {
-    sortRule.value = 'BASELINE';
-  } else {
-    sortRule.value = rule;
-  }
 }
 
 // -----------------------------------------------------------------------------
@@ -181,7 +225,7 @@ function onRowDrop(index: number) {
 
   currentArr.splice(targetIdx, 0, itemToMove);
   localNodeList.value = currentArr;
-  sortRule.value = 'BASELINE'; // 拖动后即转为用户自定义物理序列
+  sortStack.value = []; // 拖动后即转为用户自定义物理基准序列
   isOrderDirty.value = true;
   onDragEnd();
 }
@@ -196,16 +240,9 @@ function onDragEnd() {
 // 行级点击与生命周期操作
 // -----------------------------------------------------------------------------
 
-function handleRowClick(node: FocusNode, e: MouseEvent) {
-  // 若点击在手柄、操作按钮上，不触发点亮
-  const target = e.target as HTMLElement;
-  if (target.closest('.col-handle') || target.closest('.col-actions')) return;
-  store.toggleNodeLit(node.id);
-}
-
 function handleRowDoubleClick(node: FocusNode, e: MouseEvent) {
   const target = e.target as HTMLElement;
-  if (target.closest('.col-handle') || target.closest('.col-actions')) return;
+  if (target.closest('.col-handle') || target.closest('.col-actions') || target.closest('.col-status')) return;
   activeSpecNode.value = node;
   isSpecModalOpen.value = true;
 }
@@ -247,18 +284,48 @@ async function handleDeleteNode(node: FocusNode) {
 
 <template>
   <div class="list-view-container">
-    <!-- 顶部状态栏与核心行动项 -->
+    <!-- 顶部状态栏 -->
     <div class="list-header">
       <div class="header-left">
         <h1 class="page-title">国策列表管理</h1>
         <span class="count-tag font-mono">{{ displayNodes.length }} / {{ store.nodes.length }} 节点</span>
       </div>
+    </div>
 
-      <div class="header-actions">
+    <!-- 检索工具栏与核心操作（下移并排补齐右侧空缺） -->
+    <div class="toolbar-strip">
+      <div class="toolbar-left">
+        <div class="search-box">
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="11" cy="11" r="8"></circle>
+            <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+          </svg>
+          <input 
+            v-model="searchQuery" 
+            type="text" 
+            placeholder="按代码、名称、场景或分组检索..." 
+          />
+          <button v-if="searchQuery" class="btn-clear-search" @click="searchQuery = ''">✕</button>
+        </div>
+
+        <!-- 分组筛选下拉框 -->
+        <div class="group-filter-wrap">
+          <select v-model="selectedGroupFilter" class="group-filter-select">
+            <option value="">全部分组</option>
+            <option value="INDEPENDENT">独立国策 (无外框)</option>
+            <option v-for="g in store.groups" :key="g.id" :value="g.id">
+              {{ g.name }}
+            </option>
+          </select>
+        </div>
+      </div>
+
+      <!-- 右侧核心操作项（从原顶部下移，与搜索工具栏并齐） -->
+      <div class="toolbar-actions">
         <!-- 还原基准顺序：离开页面自动复原，也可页内一键还原 -->
         <button 
           class="btn-tool btn-restore-order"
-          :class="{ 'is-active': sortRule !== 'BASELINE' || isOrderDirty }"
+          :class="{ 'is-active': sortStack.length > 0 || isOrderDirty || selectedGroupFilter || searchQuery }"
           @click="restoreBaseline" 
           title="恢复数据库中已持久化的默认基准物理排列"
         >
@@ -268,7 +335,7 @@ async function handleDeleteNode(node: FocusNode) {
         <!-- 保存当前排序：固化为新的永久基准 -->
         <button 
           class="btn-tool btn-save-order"
-          :class="{ 'is-highlight': sortRule !== 'BASELINE' || isOrderDirty }"
+          :class="{ 'is-highlight': sortStack.length > 0 || isOrderDirty }"
           @click="saveCurrentOrder" 
           title="将当前排列顺序持久化固化为新的默认基准"
         >
@@ -282,66 +349,18 @@ async function handleDeleteNode(node: FocusNode) {
       </div>
     </div>
 
-    <!-- 检索工具栏与临时动态排序维度切换药丸 -->
-    <div class="toolbar-strip">
-      <div class="search-box">
-        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <circle cx="11" cy="11" r="8"></circle>
-          <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
-        </svg>
-        <input 
-          v-model="searchQuery" 
-          type="text" 
-          placeholder="按代码、名称或场景快速检索..." 
-        />
-        <button v-if="searchQuery" class="btn-clear-search" @click="searchQuery = ''">✕</button>
-      </div>
-
-      <!-- 临时多维排序药丸 -->
-      <div class="sort-pills">
-        <span class="sort-pills-label">视图排序:</span>
-        <button 
-          class="sort-pill" 
-          :class="{ active: sortRule === 'BASELINE' && !isOrderDirty }"
-          @click="restoreBaseline"
-        >
-          基准默认
-        </button>
-        <button 
-          class="sort-pill" 
-          :class="{ active: sortRule === 'TIME_ASC' }"
-          @click="switchSortRule('TIME_ASC')"
-        >
-          按触发时间
-        </button>
-        <button 
-          class="sort-pill" 
-          :class="{ active: sortRule === 'GROUP' }"
-          @click="switchSortRule('GROUP')"
-        >
-          按所属分组
-        </button>
-        <button 
-          class="sort-pill" 
-          :class="{ active: sortRule === 'LEVEL_DESC' }"
-          @click="switchSortRule('LEVEL_DESC')"
-        >
-          按等级降序
-        </button>
-        <button 
-          class="sort-pill" 
-          :class="{ active: sortRule === 'STATUS_LIT' }"
-          @click="switchSortRule('STATUS_LIT')"
-        >
-          已点亮置顶
-        </button>
-      </div>
-    </div>
-
     <!-- 临时排序提示条 -->
-    <div v-if="sortRule !== 'BASELINE' || isOrderDirty" class="temporary-sort-banner">
+    <div v-if="sortStack.length > 0 || isOrderDirty" class="temporary-sort-banner">
       <span class="banner-text">
-        当前为临时排布视图（{{ sortRule === 'TIME_ASC' ? '按触发时间' : sortRule === 'GROUP' ? '按所属分组' : sortRule === 'LEVEL_DESC' ? '按等级降序' : sortRule === 'STATUS_LIT' ? '已点亮置顶' : '手动调整未保存' }}）· 离开此页面将自动复原为基准顺序
+        当前为类 Excel 复合排布视图（按先选优先级：
+        <template v-for="(rule, idx) in sortStack" :key="rule.key">
+          <strong class="sort-tag-item">
+            {{ rule.key === 'code' ? '代码' : rule.key === 'name' ? '名称' : rule.key === 'group' ? '分组' : rule.key === 'time' ? '触发时间' : rule.key === 'level' ? '当前等级' : rule.key === 'maxLevel' ? '最高等级' : '状态' }}
+            <span class="sort-dir-arrow">{{ rule.dir === 'asc' ? '▲' : '▼' }}</span>
+          </strong>
+          <span v-if="idx < sortStack.length - 1" class="sort-arrow-sep">→</span>
+        </template>
+        ）· 离开此页面将自动复原为基准顺序
       </span>
       <div class="banner-actions">
         <button class="btn-banner-restore" @click="restoreBaseline">立即还原</button>
@@ -352,20 +371,84 @@ async function handleDeleteNode(node: FocusNode) {
     <!-- 国策表格主体 -->
     <div class="node-table-wrapper">
       <div class="table-header">
-        <span class="col-handle" title="按住最左侧色块手柄拖动即可重排">#</span>
-        <span class="col-code">代码</span>
-        <span class="col-name">国策名称</span>
-        <span class="col-group">分组</span>
-        <span class="col-time">触发场景</span>
-        <span class="col-cur-level">当前等级</span>
-        <span class="col-max-level">最高等级</span>
-        <span class="col-status">状态</span>
-        <span class="col-actions">操作</span>
+        <span class="col-handle non-sortable" title="按住手柄即可拖动重排（仅无排序列时生效）">#</span>
+        
+        <div class="col-code sortable-header" @click="toggleColumnSort('code')" title="点击切换代码排序">
+          <span>代码</span>
+          <span class="sort-indicator" :class="{ 'is-active': getSortInfo('code') }">
+            <svg v-if="getSortInfo('code')?.dir === 'asc'" viewBox="0 0 24 24" width="10" height="10" fill="currentColor"><polygon points="12 4 4 18 20 18"></polygon></svg>
+            <svg v-else-if="getSortInfo('code')?.dir === 'desc'" viewBox="0 0 24 24" width="10" height="10" fill="currentColor"><polygon points="12 20 4 6 20 6"></polygon></svg>
+            <span v-else class="sort-idle-icon">⇅</span>
+            <sup v-if="getSortInfo('code') && sortStack.length > 1" class="priority-badge font-mono">{{ getSortPriority('code') }}</sup>
+          </span>
+        </div>
+
+        <div class="col-name sortable-header" @click="toggleColumnSort('name')" title="点击切换名称排序">
+          <span>国策名称</span>
+          <span class="sort-indicator" :class="{ 'is-active': getSortInfo('name') }">
+            <svg v-if="getSortInfo('name')?.dir === 'asc'" viewBox="0 0 24 24" width="10" height="10" fill="currentColor"><polygon points="12 4 4 18 20 18"></polygon></svg>
+            <svg v-else-if="getSortInfo('name')?.dir === 'desc'" viewBox="0 0 24 24" width="10" height="10" fill="currentColor"><polygon points="12 20 4 6 20 6"></polygon></svg>
+            <span v-else class="sort-idle-icon">⇅</span>
+            <sup v-if="getSortInfo('name') && sortStack.length > 1" class="priority-badge font-mono">{{ getSortPriority('name') }}</sup>
+          </span>
+        </div>
+
+        <div class="col-group sortable-header" @click="toggleColumnSort('group')" title="点击切换分组排序">
+          <span>分组</span>
+          <span class="sort-indicator" :class="{ 'is-active': getSortInfo('group') }">
+            <svg v-if="getSortInfo('group')?.dir === 'asc'" viewBox="0 0 24 24" width="10" height="10" fill="currentColor"><polygon points="12 4 4 18 20 18"></polygon></svg>
+            <svg v-else-if="getSortInfo('group')?.dir === 'desc'" viewBox="0 0 24 24" width="10" height="10" fill="currentColor"><polygon points="12 20 4 6 20 6"></polygon></svg>
+            <span v-else class="sort-idle-icon">⇅</span>
+            <sup v-if="getSortInfo('group') && sortStack.length > 1" class="priority-badge font-mono">{{ getSortPriority('group') }}</sup>
+          </span>
+        </div>
+
+        <div class="col-time sortable-header" @click="toggleColumnSort('time')" title="点击切换时间排序（无特定时间的场景稳定置底）">
+          <span>触发时间 / 场景</span>
+          <span class="sort-indicator" :class="{ 'is-active': getSortInfo('time') }">
+            <svg v-if="getSortInfo('time')?.dir === 'asc'" viewBox="0 0 24 24" width="10" height="10" fill="currentColor"><polygon points="12 4 4 18 20 18"></polygon></svg>
+            <svg v-else-if="getSortInfo('time')?.dir === 'desc'" viewBox="0 0 24 24" width="10" height="10" fill="currentColor"><polygon points="12 20 4 6 20 6"></polygon></svg>
+            <span v-else class="sort-idle-icon">⇅</span>
+            <sup v-if="getSortInfo('time') && sortStack.length > 1" class="priority-badge font-mono">{{ getSortPriority('time') }}</sup>
+          </span>
+        </div>
+
+        <div class="col-cur-level sortable-header center-header" @click="toggleColumnSort('level')" title="点击切换当前等级排序">
+          <span>当前等级</span>
+          <span class="sort-indicator" :class="{ 'is-active': getSortInfo('level') }">
+            <svg v-if="getSortInfo('level')?.dir === 'asc'" viewBox="0 0 24 24" width="10" height="10" fill="currentColor"><polygon points="12 4 4 18 20 18"></polygon></svg>
+            <svg v-else-if="getSortInfo('level')?.dir === 'desc'" viewBox="0 0 24 24" width="10" height="10" fill="currentColor"><polygon points="12 20 4 6 20 6"></polygon></svg>
+            <span v-else class="sort-idle-icon">⇅</span>
+            <sup v-if="getSortInfo('level') && sortStack.length > 1" class="priority-badge font-mono">{{ getSortPriority('level') }}</sup>
+          </span>
+        </div>
+
+        <div class="col-max-level sortable-header center-header" @click="toggleColumnSort('maxLevel')" title="点击切换最高等级排序">
+          <span>最高等级</span>
+          <span class="sort-indicator" :class="{ 'is-active': getSortInfo('maxLevel') }">
+            <svg v-if="getSortInfo('maxLevel')?.dir === 'asc'" viewBox="0 0 24 24" width="10" height="10" fill="currentColor"><polygon points="12 4 4 18 20 18"></polygon></svg>
+            <svg v-else-if="getSortInfo('maxLevel')?.dir === 'desc'" viewBox="0 0 24 24" width="10" height="10" fill="currentColor"><polygon points="12 20 4 6 20 6"></polygon></svg>
+            <span v-else class="sort-idle-icon">⇅</span>
+            <sup v-if="getSortInfo('maxLevel') && sortStack.length > 1" class="priority-badge font-mono">{{ getSortPriority('maxLevel') }}</sup>
+          </span>
+        </div>
+
+        <div class="col-status sortable-header center-header" @click="toggleColumnSort('status')" title="点击切换状态排序">
+          <span>状态</span>
+          <span class="sort-indicator" :class="{ 'is-active': getSortInfo('status') }">
+            <svg v-if="getSortInfo('status')?.dir === 'asc'" viewBox="0 0 24 24" width="10" height="10" fill="currentColor"><polygon points="12 4 4 18 20 18"></polygon></svg>
+            <svg v-else-if="getSortInfo('status')?.dir === 'desc'" viewBox="0 0 24 24" width="10" height="10" fill="currentColor"><polygon points="12 20 4 6 20 6"></polygon></svg>
+            <span v-else class="sort-idle-icon">⇅</span>
+            <sup v-if="getSortInfo('status') && sortStack.length > 1" class="priority-badge font-mono">{{ getSortPriority('status') }}</sup>
+          </span>
+        </div>
+
+        <span class="col-actions header-actions-col">操作</span>
       </div>
 
       <div class="table-body">
         <div v-if="displayNodes.length === 0" class="empty-list-hint">
-          {{ searchQuery ? '未检索到匹配的国策，可尝试其他关键词' : '暂无国策节点，点击右上角【+ 新建国策】即可开启' }}
+          {{ searchQuery || selectedGroupFilter ? '未检索到匹配的国策，可尝试重置筛选或关键词' : '暂无国策节点，点击右上角【+ 新建国策】即可开启' }}
         </div>
 
         <div 
@@ -379,12 +462,11 @@ async function handleDeleteNode(node: FocusNode) {
             'drop-indicator-top': dropTargetIndex === idx && dropPosition === 'top',
             'drop-indicator-bottom': dropTargetIndex === idx && dropPosition === 'bottom'
           }"
-          @click="handleRowClick(node, $event)"
           @dblclick="handleRowDoubleClick(node, $event)"
           @dragover="onRowDragOver(idx, $event)"
           @dragleave="onRowDragLeave(idx)"
           @drop="onRowDrop(idx)"
-          :title="`单击行切换点亮 · 双击查阅规范卡 · 拖动手柄调整排序`"
+          :title="`双击查阅规范卡 · 拖动手柄调整排序`"
         >
           <!-- 极简拖拽色块手柄（仅手柄响应拖拽，物理绝对隔离） -->
           <div 
@@ -420,8 +502,13 @@ async function handleDeleteNode(node: FocusNode) {
             </span>
           </div>
 
-          <!-- 触发场景描述 -->
-          <div class="col-time">{{ node.triggerTime || '全天候' }}</div>
+          <!-- 触发时间 / 场景描述 -->
+          <div class="col-time">
+            <span v-if="node.triggerTime" class="exact-time-badge font-mono">{{ node.triggerTime }}</span>
+            <span class="scene-desc-text" :class="{ 'is-dimmed': !node.triggerTime && node.triggerScene === '全天候' }">
+              {{ node.triggerScene || node.triggerTime || '全天候' }}
+            </span>
+          </div>
 
           <!-- 当前等级（居中） -->
           <div class="col-cur-level font-mono">
@@ -435,8 +522,12 @@ async function handleDeleteNode(node: FocusNode) {
             <span class="max-level-text">Lv.{{ node.maxLevel }}</span>
           </div>
 
-          <!-- 状态指示列：极简 CSS 纯色指示微点与文字 -->
-          <div class="col-status" @click.stop="store.toggleNodeLit(node.id)">
+          <!-- 状态指示列：仅在此列点击响应点亮/待命切换 -->
+          <div 
+            class="col-status col-status-clickable" 
+            @click.stop="store.toggleNodeLit(node.id)" 
+            title="点击切换点亮/待命状态"
+          >
             <span 
               class="status-indicator-dot" 
               :class="{
@@ -450,7 +541,7 @@ async function handleDeleteNode(node: FocusNode) {
             </span>
           </div>
 
-          <!-- 行级操作项 -->
+          <!-- 行级操作项（与表头绝对居中对齐） -->
           <div class="col-actions" @click.stop>
             <button class="btn-row-action btn-row-edit" @click="openEditModal(node)" title="编辑国策属性">
               修改
@@ -460,6 +551,7 @@ async function handleDeleteNode(node: FocusNode) {
             </button>
           </div>
         </div>
+
       </div>
     </div>
 
@@ -524,7 +616,73 @@ async function handleDeleteNode(node: FocusNode) {
   color: var(--text-secondary);
 }
 
-.header-actions {
+.toolbar-strip {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.toolbar-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 1;
+  min-width: 320px;
+}
+
+.search-box {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  padding: 6px 12px;
+  flex: 1;
+  color: var(--text-secondary);
+}
+
+.search-box input {
+  background: transparent;
+  border: none;
+  outline: none;
+  font-size: 12px;
+  color: var(--text-primary);
+  width: 100%;
+}
+
+.btn-clear-search {
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.group-filter-wrap {
+  display: flex;
+  align-items: center;
+}
+
+.group-filter-select {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  padding: 6px 10px;
+  font-size: 12px;
+  color: var(--text-primary);
+  outline: none;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.group-filter-select:hover, .group-filter-select:focus {
+  border-color: var(--border-focus);
+}
+
+.toolbar-actions {
   display: flex;
   gap: 8px;
   align-items: center;
@@ -583,80 +741,6 @@ async function handleDeleteNode(node: FocusNode) {
   transform: translateY(-1px);
 }
 
-/* 检索与排序药丸工具栏 */
-.toolbar-strip {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 16px;
-  flex-wrap: wrap;
-}
-
-.search-box {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  background: var(--bg-secondary);
-  border: 1px solid var(--border-color);
-  border-radius: var(--radius-sm);
-  padding: 5px 10px;
-  min-width: 240px;
-  color: var(--text-secondary);
-}
-
-.search-box input {
-  background: transparent;
-  border: none;
-  outline: none;
-  font-size: 12px;
-  color: var(--text-primary);
-  width: 100%;
-}
-
-.btn-clear-search {
-  background: transparent;
-  border: none;
-  color: var(--text-muted);
-  font-size: 12px;
-  cursor: pointer;
-}
-
-.sort-pills {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.sort-pills-label {
-  font-size: 12px;
-  color: var(--text-muted);
-  margin-right: 2px;
-}
-
-.sort-pill {
-  font-size: 11px;
-  font-weight: 500;
-  padding: 3px 10px;
-  border-radius: var(--radius-full);
-  background: var(--bg-secondary);
-  border: 1px solid var(--border-color);
-  color: var(--text-secondary);
-  cursor: pointer;
-  transition: all var(--transition-fast);
-}
-
-.sort-pill:hover {
-  background: var(--bg-tertiary);
-  color: var(--text-primary);
-}
-
-.sort-pill.active {
-  background: var(--text-primary);
-  color: var(--bg-primary);
-  border-color: transparent;
-  font-weight: 600;
-}
-
 /* 临时排序提示条 */
 .temporary-sort-banner {
   display: flex;
@@ -672,6 +756,22 @@ async function handleDeleteNode(node: FocusNode) {
 .banner-text {
   color: var(--text-primary);
   font-weight: 500;
+}
+
+.sort-tag-item {
+  color: #10B981;
+  font-weight: 600;
+  margin: 0 2px;
+}
+
+.sort-dir-arrow {
+  font-size: 10px;
+  margin-left: 2px;
+}
+
+.sort-arrow-sep {
+  color: var(--text-muted);
+  margin: 0 4px;
 }
 
 .banner-actions {
@@ -713,7 +813,7 @@ async function handleDeleteNode(node: FocusNode) {
 
 .table-header {
   display: grid;
-  grid-template-columns: 32px 70px 1.4fr 1.1fr 1fr 75px 75px 85px 95px;
+  grid-template-columns: 32px 70px 1.3fr 1fr 1.3fr 80px 80px 85px 115px;
   padding: 10px 16px;
   background: var(--bg-secondary);
   border-bottom: 1px solid var(--border-color);
@@ -721,6 +821,64 @@ async function handleDeleteNode(node: FocusNode) {
   color: var(--text-muted);
   font-weight: 600;
   align-items: center;
+}
+
+.sortable-header {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+  user-select: none;
+  transition: color var(--transition-fast);
+}
+
+.sortable-header:hover {
+  color: var(--text-primary);
+}
+
+.sort-indicator {
+  display: inline-flex;
+  align-items: center;
+  color: var(--text-muted);
+  opacity: 0.5;
+  transition: all var(--transition-fast);
+}
+
+.sortable-header:hover .sort-indicator {
+  opacity: 0.9;
+}
+
+.sort-indicator.is-active {
+  color: #10B981;
+  opacity: 1;
+  font-weight: 700;
+}
+
+.sort-idle-icon {
+  font-size: 11px;
+  line-height: 1;
+}
+
+.priority-badge {
+  font-size: 10px;
+  font-weight: 700;
+  color: #10B981;
+  margin-left: 2px;
+}
+
+.center-header {
+  justify-content: center;
+}
+
+.header-actions-col {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  text-align: center;
+}
+
+.non-sortable {
+  cursor: default;
 }
 
 .table-body {
@@ -736,12 +894,11 @@ async function handleDeleteNode(node: FocusNode) {
 
 .table-row {
   display: grid;
-  grid-template-columns: 32px 70px 1.4fr 1.1fr 1fr 75px 75px 85px 95px;
+  grid-template-columns: 32px 70px 1.3fr 1fr 1.3fr 80px 80px 85px 115px;
   padding: 11px 16px;
   align-items: center;
   border-bottom: 1px solid var(--border-color);
   transition: background-color var(--transition-fast);
-  cursor: pointer;
   user-select: none;
   position: relative;
 }
@@ -861,6 +1018,37 @@ async function handleDeleteNode(node: FocusNode) {
   font-size: 12px;
   color: var(--text-secondary);
   font-family: var(--font-mono);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.exact-time-badge {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: var(--radius-sm);
+  background: rgba(16, 185, 129, 0.12);
+  color: #10B981;
+  border: 1px solid rgba(16, 185, 129, 0.3);
+  flex-shrink: 0;
+}
+
+.scene-desc-text {
+  font-size: 12px;
+  color: var(--text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.scene-desc-text.is-dimmed {
+  color: var(--text-muted);
+  opacity: 0.6;
 }
 
 .col-cur-level,
@@ -891,6 +1079,17 @@ async function handleDeleteNode(node: FocusNode) {
   justify-content: center;
   gap: 6px;
   font-size: 12px;
+}
+
+.col-status-clickable {
+  cursor: pointer;
+  padding: 4px 6px;
+  border-radius: var(--radius-sm);
+  transition: all var(--transition-fast);
+}
+
+.col-status-clickable:hover {
+  background: var(--bg-tertiary);
 }
 
 .status-indicator-dot {
@@ -925,11 +1124,12 @@ async function handleDeleteNode(node: FocusNode) {
   font-weight: 600;
 }
 
-/* 行级操作按钮 */
+/* 行级操作按钮：居中对齐表头“操作”文字 */
 .col-actions {
   display: flex;
   gap: 6px;
-  justify-content: flex-end;
+  justify-content: center;
+  align-items: center;
 }
 
 .btn-row-action {

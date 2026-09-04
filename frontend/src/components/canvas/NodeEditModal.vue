@@ -18,9 +18,10 @@ const form = ref<FocusNode>({
   code: '',
   name: '',
   groupId: null,
-  triggerTime: '全天候',
+  triggerTime: null,
+  triggerScene: '全天候',
   hasExactTime: false,
-  timeValueMinutes: undefined,
+  timeValueMinutes: null,
   level: 0,
   maxLevel: 0,
   isLit: false,
@@ -34,18 +35,36 @@ const form = ref<FocusNode>({
   }
 });
 
+// 标记场景描述是否被人为自定义修改过（若已自定义，则后续再改时间不再覆盖描述）
+const isSceneCustomized = ref(false);
+
 function initForm() {
   if (props.node) {
-    form.value = JSON.parse(JSON.stringify(props.node));
+    const cloned = JSON.parse(JSON.stringify(props.node));
+    form.value = {
+      ...cloned,
+      triggerTime: cloned.triggerTime ?? null,
+      triggerScene: cloned.triggerScene ?? (cloned.triggerTime || '全天候'),
+      hasExactTime: Boolean(cloned.triggerTime),
+      timeValueMinutes: cloned.timeValueMinutes ?? null
+    };
+    // 判断此前是否已被自定义：如果场景描述存在，且不等于时间，也不等于全天候，则视为已自定义
+    isSceneCustomized.value = Boolean(
+      form.value.triggerScene &&
+      form.value.triggerScene !== form.value.triggerTime &&
+      form.value.triggerScene !== '全天候'
+    );
   } else {
-    // 每次新建时完全重置表单，生成全新唯一 ID，初始等级与最高等级均为 0 级
+    // 每次新建时完全重置表单，生成全新唯一 ID，初始等级与最高等级均为 0 级，时间默认为 null
     form.value = {
       id: `node-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`,
       code: '',
       name: '',
       groupId: null,
-      triggerTime: '全天候',
+      triggerTime: null,
+      triggerScene: '全天候',
       hasExactTime: false,
+      timeValueMinutes: null,
       level: 0,
       maxLevel: 0,
       isLit: false,
@@ -58,6 +77,7 @@ function initForm() {
         notes: ''
       }
     };
+    isSceneCustomized.value = false;
   }
 }
 
@@ -81,12 +101,60 @@ watch(
   }
 );
 
+function onTimeChange(e: Event) {
+  const val = (e.target as HTMLInputElement).value;
+  form.value.triggerTime = val || null;
+  if (form.value.triggerTime) {
+    // 首次设置时间，或此前未人为自定义过描述：自动将场景描述同步填充为该时间
+    if (!isSceneCustomized.value) {
+      form.value.triggerScene = form.value.triggerTime;
+    }
+  } else {
+    if (!isSceneCustomized.value) {
+      form.value.triggerScene = '全天候';
+    }
+  }
+}
+
+function clearTime() {
+  form.value.triggerTime = null;
+  if (!isSceneCustomized.value) {
+    form.value.triggerScene = '全天候';
+  }
+}
+
+function onSceneInput() {
+  // 用户人为输入或修改场景描述，立即锁定为已自定义
+  isSceneCustomized.value = true;
+}
+
 function handleSave() {
   if (!form.value.code.trim() || !form.value.name.trim()) {
     alert('请填写国策纯文本编号与名称');
     return;
   }
-  emit('save', JSON.parse(JSON.stringify(form.value)));
+
+  const finalScene = form.value.triggerScene?.trim() || form.value.triggerTime || '全天候';
+  let hasExactTime = false;
+  let timeValueMinutes: number | null = null;
+
+  if (form.value.triggerTime) {
+    const match = form.value.triggerTime.match(/^(\d{1,2})[:：](\d{2})$/);
+    if (match) {
+      hasExactTime = true;
+      timeValueMinutes = parseInt(match[1], 10) * 60 + parseInt(match[2], 10);
+    }
+  }
+
+  const payload: FocusNode = {
+    ...form.value,
+    triggerTime: form.value.triggerTime || null,
+    triggerScene: finalScene,
+    hasExactTime,
+    timeValueMinutes
+  };
+
+  emit('save', JSON.parse(JSON.stringify(payload)));
   emit('close');
 }
 </script>
@@ -134,13 +202,41 @@ function handleSave() {
               </select>
             </div>
             <div class="form-group flex-1">
-              <label class="form-label">触发时间 / 场景描述</label>
+              <div class="label-with-action">
+                <label class="form-label">触发时间 (可选具体时间)</label>
+                <button 
+                  v-if="form.triggerTime" 
+                  type="button" 
+                  class="btn-text-clear font-mono" 
+                  @click="clearTime" 
+                  title="设为无特定触发时间 (null)"
+                >
+                  清除时间
+                </button>
+              </div>
               <input 
-                v-model="form.triggerTime" 
-                class="form-input font-mono" 
-                placeholder="例如: 07:30, 闹钟后3m, 全天候" 
+                :value="form.triggerTime || ''" 
+                type="time" 
+                class="form-input font-mono time-picker-input" 
+                @input="onTimeChange" 
+                @change="onTimeChange"
               />
             </div>
+          </div>
+
+          <div class="form-group">
+            <div class="label-with-action">
+              <label class="form-label">触发场景描述</label>
+              <span class="scene-hint-badge" :class="{ 'is-custom': isSceneCustomized }">
+                {{ isSceneCustomized ? '已人为自定义' : '跟随时间自动同步' }}
+              </span>
+            </div>
+            <input 
+              v-model="form.triggerScene" 
+              class="form-input" 
+              placeholder="例如: 起床后5分钟内下床, 晨净洗漱, 全天候" 
+              @input="onSceneInput"
+            />
           </div>
 
           <div class="form-row">
@@ -299,6 +395,47 @@ function handleSave() {
   font-size: 12px;
   font-weight: 600;
   color: var(--text-secondary);
+}
+
+.label-with-action {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.btn-text-clear {
+  background: transparent;
+  border: none;
+  font-size: 11px;
+  color: var(--color-danger);
+  cursor: pointer;
+  padding: 0 4px;
+  opacity: 0.8;
+  transition: opacity 0.15s;
+}
+
+.btn-text-clear:hover {
+  opacity: 1;
+  text-decoration: underline;
+}
+
+.scene-hint-badge {
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-tertiary);
+  color: var(--text-muted);
+  border: 1px solid var(--border-color);
+}
+
+.scene-hint-badge.is-custom {
+  color: #10B981;
+  border-color: rgba(16, 185, 129, 0.3);
+  background: rgba(16, 185, 129, 0.08);
+}
+
+.time-picker-input {
+  min-height: 35px;
 }
 
 .form-label-danger {
