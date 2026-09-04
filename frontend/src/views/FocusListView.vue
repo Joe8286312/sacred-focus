@@ -273,11 +273,13 @@ function handleSaveNode(nodeData: FocusNode) {
   editingNode.value = null;
 }
 
-async function handleDeleteNode(node: FocusNode) {
-  const confirmed = window.confirm(`严正确认：您确定要彻底删除国策【${node.name}】吗？\n所有以此节点为起终点的有向连线也将一并物理清理。此操作不可撤销。`);
-  if (!confirmed) return;
+// 行内删除确认状态跟踪
+const confirmingDeleteNodeId = ref<string | null>(null);
+
+async function confirmDeleteNode(node: FocusNode) {
   await store.deleteNode(node.id);
   localNodeList.value = localNodeList.value.filter(n => n.id !== node.id);
+  confirmingDeleteNodeId.value = null;
   isSpecModalOpen.value = false;
 }
 </script>
@@ -536,12 +538,22 @@ async function handleDeleteNode(node: FocusNode) {
 
           <!-- 行级操作项（与表头绝对居中对齐） -->
           <div class="col-actions" @click.stop>
-            <button class="btn-row-action btn-row-edit" @click="openEditModal(node)" title="编辑国策属性">
-              修改
-            </button>
-            <button class="btn-row-action btn-row-delete" @click="handleDeleteNode(node)" title="删除国策及关联连线">
-              删除
-            </button>
+            <template v-if="confirmingDeleteNodeId === node.id">
+              <button class="btn-confirm-del-inline" @click="confirmDeleteNode(node)" title="确认彻底删除此国策">
+                确认
+              </button>
+              <button class="btn-cancel-del-inline" @click="confirmingDeleteNodeId = null" title="取消删除">
+                取消
+              </button>
+            </template>
+            <template v-else>
+              <button class="btn-row-action btn-row-edit" @click="openEditModal(node)" title="编辑国策属性">
+                修改
+              </button>
+              <button class="btn-row-action btn-row-delete" @click="confirmingDeleteNodeId = node.id" title="删除国策及关联连线">
+                删除
+              </button>
+            </template>
           </div>
         </div>
 
@@ -555,7 +567,7 @@ async function handleDeleteNode(node: FocusNode) {
       :is-edit-mode="false"
       @close="isSpecModalOpen = false"
       @edit="openEditModal($event); isSpecModalOpen = false"
-      @delete="handleDeleteNode"
+      @delete="confirmDeleteNode"
     />
 
     <!-- 编辑/新建国策模态窗 -->
@@ -1186,5 +1198,38 @@ async function handleDeleteNode(node: FocusNode) {
 
 .btn-row-delete:hover {
   background: rgba(220, 38, 38, 0.1);
+}
+
+.btn-confirm-del-inline {
+  background: #DC2626;
+  color: #fff;
+  border: none;
+  border-radius: var(--radius-sm);
+  font-size: 11px;
+  font-weight: 600;
+  padding: 3px 8px;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.btn-confirm-del-inline:hover {
+  background: #B91C1C;
+  box-shadow: 0 0 6px rgba(220, 38, 38, 0.4);
+}
+
+.btn-cancel-del-inline {
+  background: transparent;
+  color: var(--text-muted);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  font-size: 11px;
+  padding: 2px 6px;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.btn-cancel-del-inline:hover {
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
 }
 </style>

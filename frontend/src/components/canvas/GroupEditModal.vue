@@ -1,13 +1,18 @@
 <script setup lang="ts">
 import { ref, watch, computed } from 'vue';
-import type { FocusGroup } from '../../types';
+import type { FocusGroup, FocusNode } from '../../types';
 import { useFocusTreeStore } from '../../stores/focusTree';
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   isOpen: boolean;
   group?: FocusGroup | null; // 可选的指定预设编辑分组
   currentGroupId?: string | null; // 从国策弹窗打开时，当前国策绑定的分组ID
-}>();
+  isDraftMode?: boolean; // 是否处于画布沙盒草稿模式（草稿模式下增删改仅在内存中生效，不直接发网络请求）
+  draftGroups?: FocusGroup[]; // 草稿分组数据源
+  draftNodes?: FocusNode[]; // 草稿国策数据源
+}>(), {
+  isDraftMode: false
+});
 
 const emit = defineEmits<{
   (e: 'close'): void;
@@ -34,6 +39,15 @@ const isCreating = ref(false);
 const isConfirmingDeleteId = ref<string | null>(null);
 const saveSuccessTip = ref<string | null>(null);
 
+// 依据模式动态决定数据源（持久库 vs 沙盒草稿）
+const effectiveGroups = computed(() => {
+  return props.isDraftMode && props.draftGroups ? props.draftGroups : store.groups;
+});
+
+const effectiveNodes = computed(() => {
+  return props.isDraftMode && props.draftNodes ? props.draftNodes : store.nodes;
+});
+
 const form = ref<FocusGroup>({
   id: '',
   name: '',
@@ -47,7 +61,7 @@ function initCreateForm() {
   selectedGroupId.value = null;
   isConfirmingDeleteId.value = null;
   saveSuccessTip.value = null;
-  const nextColor = presetColors[store.groups.length % presetColors.length];
+  const nextColor = presetColors[effectiveGroups.value.length % presetColors.length];
   form.value = {
     id: `group-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
     name: '',
@@ -72,7 +86,7 @@ function initModal() {
   if (props.group) {
     selectGroupToEdit(props.group);
   } else if (props.currentGroupId) {
-    const found = store.groups.find(g => g.id === props.currentGroupId);
+    const found = effectiveGroups.value.find(g => g.id === props.currentGroupId);
     if (found) {
       selectGroupToEdit(found);
     } else {
@@ -105,11 +119,11 @@ watch(
 
 // 统计组内节点数量与详情
 function getNodeCount(groupId: string): number {
-  return store.nodes.filter(n => n.groupId === groupId).length;
+  return effectiveNodes.value.filter(n => n.groupId === groupId).length;
 }
 
 function getGroupNodes(groupId: string) {
-  return store.nodes.filter(n => n.groupId === groupId);
+  return effectiveNodes.value.filter(n => n.groupId === groupId);
 }
 
 const currentGroupMembers = computed(() => {
@@ -128,7 +142,9 @@ async function handleSave(keepCreating = false) {
   if (isCreating.value) {
     // 自动按公式计算落盘坐标 (baseX + count * stepY)
     payload.position = store.calculateSmartGroupPlacement();
-    await store.addGroup(payload);
+    if (!props.isDraftMode) {
+      await store.addGroup(payload);
+    }
     emit('save', payload);
     emit('select-group', payload.id);
 
@@ -142,7 +158,9 @@ async function handleSave(keepCreating = false) {
       emit('close');
     }
   } else {
-    await store.updateGroup(payload.id, payload);
+    if (!props.isDraftMode) {
+      await store.updateGroup(payload.id, payload);
+    }
     emit('save', payload);
     saveSuccessTip.value = `分组【${payload.name}】修改已保存！`;
     setTimeout(() => {
@@ -152,7 +170,9 @@ async function handleSave(keepCreating = false) {
 }
 
 async function handleDelete(groupId: string) {
-  await store.deleteGroup(groupId);
+  if (!props.isDraftMode) {
+    await store.deleteGroup(groupId);
+  }
   emit('delete', groupId);
   isConfirmingDeleteId.value = null;
 
@@ -161,8 +181,8 @@ async function handleDelete(groupId: string) {
   }
 
   if (selectedGroupId.value === groupId) {
-    if (store.groups.length > 0) {
-      selectGroupToEdit(store.groups[0]);
+    if (effectiveGroups.value.length > 0) {
+      selectGroupToEdit(effectiveGroups.value[0]);
     } else {
       initCreateForm();
     }
@@ -183,7 +203,7 @@ function handleApplyCurrent(groupId: string) {
         <div class="modal-header">
           <div class="header-titles">
             <h2 class="modal-title">国策分组管理</h2>
-            <span class="header-count-tag font-mono">共 {{ store.groups.length }} 个分组外框</span>
+            <span class="header-count-tag font-mono">共 {{ effectiveGroups.length }} 个分组外框</span>
           </div>
           <button class="btn-close" @click="$emit('close')">×</button>
         </div>
@@ -207,7 +227,7 @@ function handleApplyCurrent(groupId: string) {
 
             <div class="groups-list">
               <div 
-                v-for="g in store.groups" 
+                v-for="g in effectiveGroups" 
                 :key="g.id"
                 class="group-list-item"
                 :class="{ 
@@ -253,7 +273,7 @@ function handleApplyCurrent(groupId: string) {
                 </div>
               </div>
 
-              <div v-if="store.groups.length === 0" class="empty-groups-notice">
+              <div v-if="effectiveGroups.length === 0" class="empty-groups-notice">
                 <span>暂无分组</span>
                 <span class="sub-notice">点击上方按钮创建第一个外框</span>
               </div>

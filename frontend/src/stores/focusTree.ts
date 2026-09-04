@@ -102,6 +102,31 @@ export const useFocusTreeStore = defineStore('focusTree', () => {
     }
   }
 
+  // 全量覆盖持久化树数据（事务性提交画布草稿）
+  async function saveWholeTree(tree: { nodes: FocusNode[]; groups: FocusGroup[]; edges: FocusEdge[] }) {
+    try {
+      const res = await fetch('/api/focus-tree', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          nodes: tree.nodes,
+          edges: tree.edges,
+          groups: tree.groups
+        })
+      });
+      if (res.ok) {
+        nodes.value = JSON.parse(JSON.stringify(tree.nodes));
+        groups.value = JSON.parse(JSON.stringify(tree.groups));
+        edges.value = JSON.parse(JSON.stringify(tree.edges));
+        return true;
+      }
+      return false;
+    } catch (e) {
+      console.error('Failed to save whole tree', e);
+      return false;
+    }
+  }
+
   async function toggleNodeLit(nodeId: string) {
     const node = nodes.value.find(n => n.id === nodeId);
     if (!node) return;
@@ -341,6 +366,7 @@ export const useFocusTreeStore = defineStore('focusTree', () => {
     calculateSmartGroupPlacement,
     fetchTree,
     syncTree,
+    saveWholeTree,
     toggleNodeLit,
     reorderNodes,
     saveReorder,

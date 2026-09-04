@@ -22,6 +22,7 @@ import OrthogonalEdge from '../components/canvas/OrthogonalEdge.vue';
 import NodeSpecModal from '../components/canvas/NodeSpecModal.vue';
 import NodeEditModal from '../components/canvas/NodeEditModal.vue';
 import GroupEditModal from '../components/canvas/GroupEditModal.vue';
+import DeletionAuditModal from '../components/canvas/DeletionAuditModal.vue';
 import type { FocusNode, FocusGroup, FocusEdge } from '../types';
 
 const route = useRoute();
@@ -49,9 +50,21 @@ const editingNode = ref<FocusNode | null>(null);
 const isGroupEditModalOpen = ref(false);
 const editingGroup = ref<FocusGroup | null>(null);
 
-// 排版无损撤销快照
-let preEditNodesSnapshot: { id: string; x: number; y: number }[] = [];
-let preEditGroupsSnapshot: { id: string; x: number; y: number; width: number; height: number }[] = [];
+// 临时草稿沙盒数据（编辑模式专属）
+const draftNodes = ref<FocusNode[]>([]);
+const draftGroups = ref<FocusGroup[]>([]);
+const draftEdges = ref<FocusEdge[]>([]);
+
+// 当前画布活跃数据源（展示模式读持久库，编辑模式读写内存草稿）
+const activeNodes = computed(() => isEditMode.value ? draftNodes.value : store.nodes);
+const activeGroups = computed(() => isEditMode.value ? draftGroups.value : store.groups);
+const activeEdges = computed(() => isEditMode.value ? draftEdges.value : store.edges);
+
+// 审计弹窗状态
+const isAuditModalOpen = ref(false);
+const auditDeletedNodes = ref<FocusNode[]>([]);
+const auditDeletedGroups = ref<FocusGroup[]>([]);
+const auditCascadeEdgesCount = ref(0);
 
 // 选中状态跟踪
 const selectedNodeId = ref<string | null>(null);
@@ -77,9 +90,12 @@ function syncToFlow() {
   }
 
   const nodesList: any[] = [];
+  const sourceGroups = activeGroups.value;
+  const sourceNodes = activeNodes.value;
+  const sourceEdges = activeEdges.value;
 
   // 1. 分组外框节点 (处于下层 zIndex: 1)
-  for (const g of store.groups) {
+  for (const g of sourceGroups) {
     const pos = (isEditMode.value && currentPosMap.has(g.id))
       ? currentPosMap.get(g.id)!
       : { ...g.position };
@@ -100,7 +116,7 @@ function syncToFlow() {
   }
 
   // 2. 国策节点 (处于上层 zIndex: 10)
-  for (const n of store.nodes) {
+  for (const n of sourceNodes) {
     const pos = (isEditMode.value && currentPosMap.has(n.id))
       ? currentPosMap.get(n.id)!
       : { ...n.position };
@@ -123,7 +139,7 @@ function syncToFlow() {
   flowNodes.value = nodesList;
 
   // 3. 拓扑连线 (层级处于中间偏上)
-  flowEdges.value = store.edges.map(e => ({
+  flowEdges.value = sourceEdges.map(e => ({
     id: e.id,
     source: e.sourceId,
     target: e.targetId,
@@ -135,9 +151,22 @@ function syncToFlow() {
   }));
 }
 
-watch([() => store.nodes, () => store.groups, () => store.edges, isEditMode, activeConnectingHandle], () => {
-  syncToFlow();
-}, { deep: true });
+watch(
+  [
+    () => store.nodes, 
+    () => store.groups, 
+    () => store.edges, 
+    draftNodes, 
+    draftGroups, 
+    draftEdges, 
+    isEditMode, 
+    activeConnectingHandle
+  ], 
+  () => {
+    syncToFlow();
+  }, 
+  { deep: true }
+);
 
 // -----------------------------------------------------------------------------
 // 交互事件处理 (遵循用户最新核心定调：展示模式下单击点亮、双击规范；编辑模式下双击编辑)
@@ -154,18 +183,19 @@ function onNodeClick({ node }: NodeMouseEvent) {
   }
 }
 
-// 拖拽停止后同步内存坐标
+// 拖拽停止后同步草稿内存坐标
 function onNodeDragStop({ node, nodes }: NodeDragEvent) {
+  if (!isEditMode.value) return;
   const targetNodes = nodes && nodes.length > 0 ? nodes : (node ? [node] : []);
   for (const n of targetNodes) {
     if (n.type === 'focusNode') {
-      const found = store.nodes.find(item => item.id === n.id);
+      const found = draftNodes.value.find(item => item.id === n.id);
       if (found) {
         found.position.x = Math.round(n.position.x);
         found.position.y = Math.round(n.position.y);
       }
     } else if (n.type === 'focusGroup') {
-      const found = store.groups.find(item => item.id === n.id);
+      const found = draftGroups.value.find(item => item.id === n.id);
       if (found) {
         found.position.x = Math.round(n.position.x);
         found.position.y = Math.round(n.position.y);
@@ -182,14 +212,14 @@ function onNodeDoubleClick({ node }: NodeMouseEvent) {
       openSpecCard(node.id);
     } else {
       // 模式 B 编辑模式：双击呼出【国策编辑表单】
-      const found = store.nodes.find(n => n.id === node.id);
+      const found = draftNodes.value.find(n => n.id === node.id);
       if (found) {
         editingNode.value = found;
         isNodeEditModalOpen.value = true;
       }
     }
   } else if (node.type === 'focusGroup' && isEditMode.value) {
-    const found = store.groups.find(g => g.id === node.id);
+    const found = draftGroups.value.find(g => g.id === node.id);
     if (found) {
       editingGroup.value = found;
       isGroupEditModalOpen.value = true;
@@ -198,7 +228,8 @@ function onNodeDoubleClick({ node }: NodeMouseEvent) {
 }
 
 function openSpecCard(nodeId: string) {
-  const found = store.nodes.find(n => n.id === nodeId);
+  const sourceNodes = isEditMode.value ? draftNodes.value : store.nodes;
+  const found = sourceNodes.find(n => n.id === nodeId);
   if (found) {
     activeSpecNode.value = found;
     isSpecModalOpen.value = true;
@@ -229,11 +260,11 @@ function onHandleClick(payload: { nodeId: string; anchor: 'TOP' | 'BOTTOM' | 'LE
     const source = activeConnectingHandle.value;
     const target = payload;
 
-    const isSourceGroup = store.groups.some(g => g.id === source.nodeId);
-    const isTargetGroup = store.groups.some(g => g.id === target.nodeId);
+    const isSourceGroup = draftGroups.value.some(g => g.id === source.nodeId);
+    const isTargetGroup = draftGroups.value.some(g => g.id === target.nodeId);
 
     const newEdge: FocusEdge = {
-      id: `edge-${Date.now()}`,
+      id: `edge-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
       sourceId: source.nodeId,
       sourceType: isSourceGroup ? 'GROUP' : 'NODE',
       targetId: target.nodeId,
@@ -243,7 +274,7 @@ function onHandleClick(payload: { nodeId: string; anchor: 'TOP' | 'BOTTOM' | 'LE
       style: 'SOLID'
     };
 
-    store.addEdge(newEdge);
+    draftEdges.value.push(newEdge);
     activeConnectingHandle.value = null;
   }
 }
@@ -254,8 +285,8 @@ function onConnect(connection: Connection) {
   if (!connection.source || !connection.target) return;
   if (connection.source === connection.target) return;
 
-  const isSourceGroup = store.groups.some(g => g.id === connection.source);
-  const isTargetGroup = store.groups.some(g => g.id === connection.target);
+  const isSourceGroup = draftGroups.value.some(g => g.id === connection.source);
+  const isTargetGroup = draftGroups.value.some(g => g.id === connection.target);
 
   const parseAnchor = (handle?: string | null): 'TOP' | 'BOTTOM' | 'LEFT' | 'RIGHT' => {
     if (!handle) return 'RIGHT';
@@ -267,7 +298,7 @@ function onConnect(connection: Connection) {
   };
 
   const newEdge: FocusEdge = {
-    id: `edge-${Date.now()}`,
+    id: `edge-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
     sourceId: connection.source,
     sourceType: isSourceGroup ? 'GROUP' : 'NODE',
     targetId: connection.target,
@@ -277,7 +308,7 @@ function onConnect(connection: Connection) {
     style: 'SOLID'
   };
 
-  store.addEdge(newEdge);
+  draftEdges.value.push(newEdge);
 }
 
 // 单击连线
@@ -289,12 +320,16 @@ function onEdgeClick({ edge }: EdgeMouseEvent) {
 // 双击连线删除
 function onEdgeDoubleClick({ edge }: EdgeMouseEvent) {
   if (isEditMode.value) {
-    store.deleteEdge(edge.id);
+    onDeleteEdge(edge.id);
   }
 }
 
 function onDeleteEdge(edgeId: string) {
-  store.deleteEdge(edgeId);
+  if (!isEditMode.value) return;
+  draftEdges.value = draftEdges.value.filter(e => e.id !== edgeId);
+  if (selectedEdgeId.value === edgeId) {
+    selectedEdgeId.value = null;
+  }
 }
 
 function onPaneClick() {
@@ -307,66 +342,60 @@ function onPaneClick() {
 }
 
 // -----------------------------------------------------------------------------
-// 模式切换与排版保存/撤销
+// 模式切换与排版保存/撤销（彻底沙盒化体系）
 // -----------------------------------------------------------------------------
 
-function toggleEditMode() {
-  if (!isEditMode.value) {
-    preEditNodesSnapshot = store.nodes.map(n => ({ id: n.id, x: n.position.x, y: n.position.y }));
-    preEditGroupsSnapshot = store.groups.map(g => ({ 
-      id: g.id, 
-      x: g.position.x, 
-      y: g.position.y,
-      width: g.size?.width || 360,
-      height: g.size?.height || 260
-    }));
-    isEditMode.value = true;
-  } else {
-    saveLayoutChanges();
-    isEditMode.value = false;
-    activeConnectingHandle.value = null;
-  }
-}
-
-function cancelLayoutChanges() {
-  if (!isEditMode.value) return;
-  for (const snap of preEditNodesSnapshot) {
-    const node = store.nodes.find(n => n.id === snap.id);
-    if (node) {
-      node.position.x = snap.x;
-      node.position.y = snap.y;
-    }
-  }
-  for (const snap of preEditGroupsSnapshot) {
-    const group = store.groups.find(g => g.id === snap.id);
-    if (group) {
-      group.position.x = snap.x;
-      group.position.y = snap.y;
-      group.size = { width: snap.width, height: snap.height };
-    }
-  }
-  isEditMode.value = false;
+function enterEditMode() {
+  draftNodes.value = JSON.parse(JSON.stringify(store.nodes));
+  draftGroups.value = JSON.parse(JSON.stringify(store.groups));
+  draftEdges.value = JSON.parse(JSON.stringify(store.edges));
+  isEditMode.value = true;
   activeConnectingHandle.value = null;
   syncToFlow();
 }
 
+function cancelLayoutChanges() {
+  if (!isEditMode.value) return;
+  // 彻底丢弃草稿，零脏数据残留，还原持久状态
+  draftNodes.value = [];
+  draftGroups.value = [];
+  draftEdges.value = [];
+  isEditMode.value = false;
+  activeConnectingHandle.value = null;
+  selectedNodeId.value = null;
+  selectedEdgeId.value = null;
+  syncToFlow();
+}
+
+function toggleEditMode() {
+  if (!isEditMode.value) {
+    enterEditMode();
+  } else {
+    // 关键修正：在编辑模式下点击中间按钮，属于“退出/放弃”排版，直接回退持久画布
+    cancelLayoutChanges();
+  }
+}
+
 function onResizeGroup(payload: { id: string; size: { width: number; height: number } }) {
-  const found = store.groups.find(g => g.id === payload.id);
+  if (!isEditMode.value) return;
+  const found = draftGroups.value.find(g => g.id === payload.id);
   if (found) {
     found.size = { ...payload.size };
   }
 }
 
-async function saveLayoutChanges() {
+// 点击右侧“保存排版”：前置差异比对审计
+function initiateSaveLayout() {
+  // 1. 同步 flowNodes 的当前坐标与尺寸至草稿
   for (const fn of flowNodes.value) {
     if (fn.type === 'focusNode') {
-      const node = store.nodes.find(n => n.id === fn.id);
+      const node = draftNodes.value.find(n => n.id === fn.id);
       if (node) {
         node.position.x = Math.round(fn.position.x);
         node.position.y = Math.round(fn.position.y);
       }
     } else if (fn.type === 'focusGroup') {
-      const group = store.groups.find(g => g.id === fn.id);
+      const group = draftGroups.value.find(g => g.id === fn.id);
       if (group) {
         group.position.x = Math.round(fn.position.x);
         group.position.y = Math.round(fn.position.y);
@@ -376,14 +405,51 @@ async function saveLayoutChanges() {
       }
     }
   }
-  await store.syncTree();
+
+  // 2. 差异比对 (Diff): 比对持久库中有但在草稿中被移出的节点与分组
+  const deletedNodes = store.nodes.filter(pn => !draftNodes.value.some(dn => dn.id === pn.id));
+  const deletedGroups = store.groups.filter(pg => !draftGroups.value.some(dg => dg.id === pg.id));
+
+  if (deletedNodes.length > 0 || deletedGroups.length > 0) {
+    auditDeletedNodes.value = deletedNodes;
+    auditDeletedGroups.value = deletedGroups;
+    const deletedNodeIds = new Set(deletedNodes.map(n => n.id));
+    const deletedGroupIds = new Set(deletedGroups.map(g => g.id));
+    const cascadeEdges = store.edges.filter(e => 
+      deletedNodeIds.has(e.sourceId) || 
+      deletedNodeIds.has(e.targetId) ||
+      deletedGroupIds.has(e.sourceId) || 
+      deletedGroupIds.has(e.targetId)
+    );
+    auditCascadeEdgesCount.value = cascadeEdges.length;
+    isAuditModalOpen.value = true;
+  } else {
+    executeSaveLayout();
+  }
+}
+
+// 执行全量覆盖持久化保存
+async function executeSaveLayout() {
+  isAuditModalOpen.value = false;
+  await store.saveWholeTree({
+    nodes: draftNodes.value,
+    groups: draftGroups.value,
+    edges: draftEdges.value
+  });
+  // 成功保存后清空草稿并退出编辑模式
+  draftNodes.value = [];
+  draftGroups.value = [];
+  draftEdges.value = [];
   isEditMode.value = false;
   activeConnectingHandle.value = null;
+  syncToFlow();
 }
 
 function handleKeyDown(e: KeyboardEvent) {
   if (e.key === 'Escape') {
-    if (activeConnectingHandle.value) {
+    if (isAuditModalOpen.value) {
+      isAuditModalOpen.value = false;
+    } else if (activeConnectingHandle.value) {
       activeConnectingHandle.value = null;
     } else if (isSpecModalOpen.value) {
       isSpecModalOpen.value = false;
@@ -399,24 +465,25 @@ function handleKeyDown(e: KeyboardEvent) {
     if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
 
     if (selectedEdgeId.value) {
-      store.deleteEdge(selectedEdgeId.value);
+      draftEdges.value = draftEdges.value.filter(edge => edge.id !== selectedEdgeId.value);
       selectedEdgeId.value = null;
     } else if (selectedNodeId.value) {
-      const node = store.nodes.find(n => n.id === selectedNodeId.value);
+      const node = draftNodes.value.find(n => n.id === selectedNodeId.value);
       if (node) {
-        const confirmed = window.confirm(`严正确认：您确定要彻底删除国策【${node.name}】吗？\n所有关联连线也将一并物理清理。此操作不可撤销。`);
-        if (confirmed) {
-          store.deleteNode(node.id);
-          selectedNodeId.value = null;
-        }
+        // 无弹窗打扰，仅从草稿中移除
+        draftNodes.value = draftNodes.value.filter(n => n.id !== node.id);
+        draftEdges.value = draftEdges.value.filter(edge => edge.sourceId !== node.id && edge.targetId !== node.id);
+        selectedNodeId.value = null;
       } else {
-        const group = store.groups.find(g => g.id === selectedNodeId.value);
+        const group = draftGroups.value.find(g => g.id === selectedNodeId.value);
         if (group) {
-          const confirmed = window.confirm(`严正确认：您确定要彻底删除分组【${group.name}】吗？\n组内国策将变为独立国策。此操作不可撤销。`);
-          if (confirmed) {
-            store.deleteGroup(group.id);
-            selectedNodeId.value = null;
-          }
+          // 无弹窗打扰，仅从草稿中移除分组
+          draftGroups.value = draftGroups.value.filter(g => g.id !== group.id);
+          draftNodes.value.forEach(n => {
+            if (n.groupId === group.id) n.groupId = null;
+          });
+          draftEdges.value = draftEdges.value.filter(edge => edge.sourceId !== group.id && edge.targetId !== group.id);
+          selectedNodeId.value = null;
         }
       }
     }
@@ -434,32 +501,59 @@ function openNewGroupModal() {
 }
 
 function handleSaveNode(nodeData: FocusNode) {
-  const existing = store.nodes.find(n => n.id === nodeData.id);
-  if (existing) {
-    store.updateNode(nodeData.id, nodeData);
+  if (!isEditMode.value) return;
+  const idx = draftNodes.value.findIndex(n => n.id === nodeData.id);
+  if (idx !== -1) {
+    draftNodes.value[idx] = { ...draftNodes.value[idx], ...nodeData };
   } else {
-    store.addNode(nodeData);
+    if (!nodeData.id) {
+      nodeData.id = `node-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
+    }
+    if (!nodeData.position || (nodeData.position.x === 0 && nodeData.position.y === 0)) {
+      nodeData.position = store.calculateSmartPlacement(nodeData.groupId);
+    }
+    draftNodes.value.push(nodeData);
+    store.lastCreatedNodeId = nodeData.id;
   }
+  isNodeEditModalOpen.value = false;
+  editingNode.value = null;
 }
 
 function handleDeleteNode(node: FocusNode) {
-  store.deleteNode(node.id);
+  if (!isEditMode.value) return;
+  draftNodes.value = draftNodes.value.filter(n => n.id !== node.id);
+  draftEdges.value = draftEdges.value.filter(e => e.sourceId !== node.id && e.targetId !== node.id);
   if (selectedNodeId.value === node.id) {
     selectedNodeId.value = null;
   }
+  isNodeEditModalOpen.value = false;
+  editingNode.value = null;
 }
 
 function handleSaveGroup(groupData: FocusGroup) {
-  const existing = store.groups.find(g => g.id === groupData.id);
-  if (existing) {
-    store.updateGroup(groupData.id, groupData);
+  if (!isEditMode.value) return;
+  const idx = draftGroups.value.findIndex(g => g.id === groupData.id);
+  if (idx !== -1) {
+    draftGroups.value[idx] = { ...draftGroups.value[idx], ...groupData };
   } else {
-    store.addGroup(groupData);
+    if (!groupData.id) {
+      groupData.id = `group-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
+    }
+    if (!groupData.position || (groupData.position.x === 0 && groupData.position.y === 0)) {
+      groupData.position = store.calculateSmartGroupPlacement();
+    }
+    draftGroups.value.push(groupData);
+    store.lastCreatedGroupId = groupData.id;
   }
 }
 
 function handleDeleteGroup(groupId: string) {
-  store.deleteGroup(groupId);
+  if (!isEditMode.value) return;
+  draftGroups.value = draftGroups.value.filter(g => g.id !== groupId);
+  draftNodes.value.forEach(n => {
+    if (n.groupId === groupId) n.groupId = null;
+  });
+  draftEdges.value = draftEdges.value.filter(e => e.sourceId !== groupId && e.targetId !== groupId);
   if (selectedNodeId.value === groupId) {
     selectedNodeId.value = null;
   }
@@ -473,7 +567,7 @@ onMounted(async () => {
 
   // 若通过路由参数携带 edit=true (例如从重构弹窗一键跳转)，自动开启编辑模式
   if (route.query.edit === 'true') {
-    isEditMode.value = true;
+    enterEditMode();
   }
 
   // 监听跨页面/弹窗联动标记
@@ -553,9 +647,10 @@ onUnmounted(() => {
           class="mode-toggle-btn"
           :class="{ 'is-editing': isEditMode }"
           @click="toggleEditMode"
+          :title="isEditMode ? '点击退出编辑模式并放弃修改' : '点击进入编辑排版与连线模式'"
         >
           <span v-if="!isEditMode">展示模式 (单击点亮 · 双击规范)</span>
-          <span v-else>编辑模式 (拖拽排版 · 点击连线)</span>
+          <span v-else>编辑模式 (点击退出并放弃修改)</span>
         </button>
       </div>
 
@@ -568,7 +663,7 @@ onUnmounted(() => {
           <button class="btn-action-tool" @click="openNewGroupModal">
             + 新建分组
           </button>
-          <button class="btn-action-tool btn-save-layout" @click="saveLayoutChanges">
+          <button class="btn-action-tool btn-save-layout" @click="initiateSaveLayout">
             保存排版
           </button>
           <button class="btn-action-tool btn-cancel-layout" @click="cancelLayoutChanges" title="按 Esc 键放弃排版修改">
@@ -672,18 +767,32 @@ onUnmounted(() => {
     <NodeEditModal
       :is-open="isNodeEditModalOpen"
       :node="editingNode"
-      :groups="store.groups"
+      :groups="isEditMode ? draftGroups : store.groups"
       @close="isNodeEditModalOpen = false"
       @save="handleSaveNode"
+      @delete="handleDeleteNode"
     />
 
     <!-- 弹窗三：新建/编辑分组外框 -->
     <GroupEditModal
       :is-open="isGroupEditModalOpen"
       :group="editingGroup"
+      :is-draft-mode="isEditMode"
+      :draft-groups="draftGroups"
+      :draft-nodes="draftNodes"
       @close="isGroupEditModalOpen = false"
       @save="handleSaveGroup"
       @delete="handleDeleteGroup"
+    />
+
+    <!-- 弹窗四：排版删除集中审计确认弹窗 -->
+    <DeletionAuditModal
+      :is-open="isAuditModalOpen"
+      :deleted-nodes="auditDeletedNodes"
+      :deleted-groups="auditDeletedGroups"
+      :cascade-edges-count="auditCascadeEdgesCount"
+      @close="isAuditModalOpen = false"
+      @confirm="executeSaveLayout"
     />
   </div>
 </template>
