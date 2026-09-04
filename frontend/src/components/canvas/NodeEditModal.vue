@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { ref, watch, computed, onMounted, onUnmounted, nextTick } from 'vue';
 import type { FocusNode, FocusGroup } from '../../types';
+import GroupEditModal from './GroupEditModal.vue';
+import { useFocusTreeStore } from '../../stores/focusTree';
 
 const props = defineProps<{
   isOpen: boolean;
@@ -34,6 +36,42 @@ const form = ref<FocusNode>({
     notes: ''
   }
 });
+
+const store = useFocusTreeStore();
+
+// 分组弹窗管理状态
+const isGroupModalOpen = ref(false);
+const editingGroup = ref<FocusGroup | null>(null);
+
+function openGroupModal() {
+  if (form.value.groupId) {
+    const list = store.groups.length > 0 ? store.groups : props.groups;
+    const found = list.find(g => g.id === form.value.groupId);
+    editingGroup.value = found ? JSON.parse(JSON.stringify(found)) : null;
+  } else {
+    editingGroup.value = null;
+  }
+  isGroupModalOpen.value = true;
+}
+
+async function handleSaveGroup(groupData: FocusGroup) {
+  const existing = store.groups.find(g => g.id === groupData.id);
+  if (existing) {
+    await store.updateGroup(groupData.id, groupData);
+  } else {
+    await store.addGroup(groupData);
+    form.value.groupId = groupData.id;
+  }
+  isGroupModalOpen.value = false;
+}
+
+async function handleDeleteGroup(groupId: string) {
+  await store.deleteGroup(groupId);
+  if (form.value.groupId === groupId) {
+    form.value.groupId = null;
+  }
+  isGroupModalOpen.value = false;
+}
 
 // 标记场景描述是否被人为自定义修改过（若已自定义，则后续再改时间不再覆盖描述）
 const isSceneCustomized = ref(false);
@@ -358,19 +396,29 @@ function handleSave() {
             </div>
           </div>
 
-          <div class="form-row">
-            <div class="form-group flex-1">
+          <div class="form-row form-row-group-time">
+            <div class="form-group flex-1 group-field-wrap">
               <label class="form-label">归属分组 (默认独立无外框)</label>
-              <select v-model="form.groupId" class="form-select">
-                <option :value="null">-- 独立国策 (无外框) --</option>
-                <option v-for="g in groups" :key="g.id" :value="g.id">
-                  {{ g.name }}
-                </option>
-              </select>
+              <div class="group-select-row">
+                <select v-model="form.groupId" class="form-select group-select-input">
+                  <option :value="null">-- 独立国策 (无外框) --</option>
+                  <option v-for="g in (store.groups.length > 0 ? store.groups : groups)" :key="g.id" :value="g.id">
+                    {{ g.name }}
+                  </option>
+                </select>
+                <button 
+                  type="button" 
+                  class="btn-edit-group" 
+                  @click="openGroupModal"
+                  :title="form.groupId ? '编辑当前选中的分组属性' : '新建分组外框'"
+                >
+                  编辑分组
+                </button>
+              </div>
             </div>
-            <div class="form-group flex-1">
+            <div class="form-group time-fixed-group">
               <div class="label-with-action">
-                <label class="form-label">触发时间 (可选具体时间)</label>
+                <label class="form-label" title="触发时间 (可选具体时间)">触发时间 (可选具体时间)</label>
                 <button 
                   v-if="form.triggerTime" 
                   type="button" 
@@ -393,7 +441,7 @@ function handleSave() {
                     type="text" 
                     maxlength="5"
                     class="form-input font-mono custom-time-field" 
-                    placeholder="例如: 08:30 (点击滚动或键盘输入)" 
+                    placeholder="例如: 08:30" 
                     :value="form.triggerTime || ''"
                     @focus="onInputFocus"
                     @click="openTimePicker"
@@ -574,6 +622,15 @@ function handleSave() {
       </div>
     </div>
   </Transition>
+
+  <!-- 嵌套分组编辑/新建弹窗 -->
+  <GroupEditModal 
+    :is-open="isGroupModalOpen" 
+    :group="editingGroup" 
+    @close="isGroupModalOpen = false" 
+    @save="handleSaveGroup" 
+    @delete="handleDeleteGroup" 
+  />
 </template>
 
 <style scoped>
@@ -636,6 +693,53 @@ function handleSave() {
 .form-row {
   display: flex;
   gap: 12px;
+}
+
+.group-field-wrap {
+  min-width: 0;
+}
+
+.group-select-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.group-select-input {
+  flex: 1;
+  min-width: 0;
+  height: 35px;
+  box-sizing: border-box;
+}
+
+.btn-edit-group {
+  flex-shrink: 0;
+  height: 35px;
+  padding: 0 12px;
+  font-size: 12px;
+  font-weight: 500;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+  cursor: pointer;
+  white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  transition: all var(--transition-fast);
+}
+
+.btn-edit-group:hover {
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+  border-color: var(--border-focus);
+}
+
+.time-fixed-group {
+  width: 190px;
+  flex: 0 0 190px;
 }
 
 .flex-1 { flex: 1; }
@@ -762,12 +866,14 @@ function handleSave() {
   color: #10B981;
 }
 
-/* 极简双列平滑滚动时间选择浮层 */
+/* 极简双列平滑滚动时间选择浮层 (与输入框左右对齐) */
 .scroll-time-popover {
   position: absolute;
   top: calc(100% + 4px);
+  left: 0;
   right: 0;
-  width: 190px;
+  width: 100%;
+  box-sizing: border-box;
   background: var(--bg-primary);
   border: 1px solid var(--border-focus);
   border-radius: var(--radius-md);

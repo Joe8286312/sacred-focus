@@ -8,6 +8,7 @@ const props = defineProps<{
   data: FocusGroup & { 
     isEditMode?: boolean;
     activeConnectingHandle?: { nodeId: string; anchor: string } | null;
+    isHighlighted?: boolean;
   };
   selected?: boolean;
 }>();
@@ -111,7 +112,12 @@ function startResize(direction: 'br' | 'r' | 'b', e: MouseEvent | TouchEvent) {
   <div 
     class="focus-group-frame" 
     :style="frameStyle" 
-    :class="{ 'is-selected': selected, 'is-edit-mode': data.isEditMode, 'is-resizing': isResizing }"
+    :class="{ 
+      'is-selected': selected, 
+      'is-edit-mode': data.isEditMode, 
+      'is-resizing': isResizing,
+      'pulse-highlight': data.isHighlighted 
+    }"
   >
     <!-- 分组四向连接锚点，支持全场景拓扑连线 (Group-to-Group, Group-to-Node, Node-to-Group) -->
     <Handle 
@@ -339,5 +345,22 @@ function startResize(direction: 'br' | 'r' | 'b', e: MouseEvent | TouchEvent) {
   height: 8px;
   cursor: ns-resize;
   z-index: 35;
+}
+
+/* 新建/定位分组时的微光呼吸脉冲动画 */
+.focus-group-frame.pulse-highlight {
+  animation: pulse-group-glow 1.1s infinite alternate ease-in-out;
+  z-index: 25 !important;
+}
+
+@keyframes pulse-group-glow {
+  0% {
+    box-shadow: 0 0 10px rgba(2, 132, 199, 0.45);
+    transform: scale(1);
+  }
+  100% {
+    box-shadow: 0 0 32px rgba(2, 132, 199, 0.95);
+    transform: scale(1.015);
+  }
 }
 </style>

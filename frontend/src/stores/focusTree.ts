@@ -12,7 +12,25 @@ export const useFocusTreeStore = defineStore('focusTree', () => {
   });
   const loading = ref(false);
   const lastCreatedNodeId = ref<string | null>(null);
+  const lastCreatedGroupId = ref<string | null>(null);
   const pendingResetSummary = ref<{ resetNodes: any[]; settlementDate: string } | null>(null);
+
+  // 新建分组自适应坐标初始化
+  function calculateSmartGroupPlacement(): { x: number; y: number } {
+    if (groups.value.length === 0) {
+      return { x: 80, y: 80 };
+    }
+    let maxRight = 0;
+    let maxTop = 80;
+    for (const g of groups.value) {
+      const right = (g.position?.x || 0) + (g.size?.width || 360);
+      if (right > maxRight) {
+        maxRight = right;
+        maxTop = g.position?.y || 80;
+      }
+    }
+    return { x: Math.round(maxRight + 60), y: Math.round(maxTop) };
+  }
 
   // 新建国策固定坐标初始化（遵循用户设计定调：固定初始落点，交由画布自由拖拽排布）
   function calculateSmartPlacement(groupId: string | null): { x: number; y: number } {
@@ -252,7 +270,11 @@ export const useFocusTreeStore = defineStore('focusTree', () => {
   }
 
   async function addGroup(group: FocusGroup) {
+    if (!group.position || (group.position.x === 0 && group.position.y === 0)) {
+      group.position = calculateSmartGroupPlacement();
+    }
     groups.value.push(group);
+    lastCreatedGroupId.value = group.id;
     try {
       await fetch('/api/focus-tree/groups', {
         method: 'POST',
@@ -302,9 +324,11 @@ export const useFocusTreeStore = defineStore('focusTree', () => {
     evolution,
     loading,
     lastCreatedNodeId,
+    lastCreatedGroupId,
     pendingResetSummary,
     dismissResetAlert,
     calculateSmartPlacement,
+    calculateSmartGroupPlacement,
     fetchTree,
     syncTree,
     toggleNodeLit,

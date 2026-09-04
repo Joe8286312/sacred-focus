@@ -79,11 +79,12 @@ function syncToFlow() {
       data: { 
         ...g, 
         isEditMode: isEditMode.value,
-        activeConnectingHandle: activeConnectingHandle.value
+        activeConnectingHandle: activeConnectingHandle.value,
+        isHighlighted: highlightedNodeId.value === g.id
       },
       draggable: isEditMode.value,
       selectable: isEditMode.value,
-      style: { zIndex: 1 }
+      style: { zIndex: highlightedNodeId.value === g.id ? 25 : 1 }
     });
   }
 
@@ -441,7 +442,12 @@ onMounted(async () => {
     isEditMode.value = true;
   }
 
-  // 跨页面联动：若刚从列表页新建了节点，自动平滑平移至该卡片，并激发脉冲微光呼吸动画
+  // 监听跨页面/弹窗联动标记
+  checkCanvasLinkage();
+});
+
+function checkCanvasLinkage() {
+  // 联动 1：新建节点自动平滑平移至该卡片，并激发脉冲微光呼吸动画
   if (store.lastCreatedNodeId) {
     const targetId = store.lastCreatedNodeId;
     store.lastCreatedNodeId = null;
@@ -458,7 +464,37 @@ onMounted(async () => {
       }
     }, 250);
   }
-});
+
+  // 联动 2：新建/编辑分组自动平滑平移至该分组外框并激发光晕微光呼吸动画
+  if (store.lastCreatedGroupId) {
+    const targetGroupId = store.lastCreatedGroupId;
+    store.lastCreatedGroupId = null;
+    setTimeout(() => {
+      const found = flowNodes.value.find(n => n.id === targetGroupId);
+      if (found) {
+        const w = (found.data as any)?.size?.width || (found.data as any)?.width || 360;
+        const h = (found.data as any)?.size?.height || (found.data as any)?.height || 260;
+        setCenter(found.position.x + w / 2, found.position.y + h / 2, { duration: 800 });
+        highlightedNodeId.value = targetGroupId;
+        syncToFlow();
+        setTimeout(() => {
+          highlightedNodeId.value = null;
+          syncToFlow();
+        }, 2600);
+      }
+    }, 250);
+  }
+}
+
+// 实时监听来自当前页面弹窗或外部触发的创建标记
+watch(
+  [() => store.lastCreatedNodeId, () => store.lastCreatedGroupId],
+  ([newNodeId, newGroupId]) => {
+    if (newNodeId || newGroupId) {
+      checkCanvasLinkage();
+    }
+  }
+);
 
 onUnmounted(() => {
   window.removeEventListener('keydown', handleKeyDown);
