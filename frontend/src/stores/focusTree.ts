@@ -18,12 +18,12 @@ export const useFocusTreeStore = defineStore('focusTree', () => {
   let sessionGroupSpawnCount = 0;
   let sessionNodeSpawnCount = 0;
 
-  // 新建分组落盘点：紧随左侧早起破晓组下方 (Y 从 240 舒适起始，步长 290px，杜绝跳跃至 1500px 遥远深渊)
+  // 新建分组落盘点：起始槽位坐标 (0, 0)，步长 290px
   function calculateSmartGroupPlacement(): { x: number; y: number } {
-    const baseX = 80;
-    const baseY = 240;
+    const baseX = 0;
+    const baseY = 0;
     const stepY = 290; // 外框高 260px + 30px 紧凑呼吸间隙
-    const slot = sessionGroupSpawnCount % 3;
+    const slot = sessionGroupSpawnCount % 5;
     sessionGroupSpawnCount++;
     return {
       x: baseX,
@@ -31,21 +31,20 @@ export const useFocusTreeStore = defineStore('focusTree', () => {
     };
   }
 
-  // 新建国策落盘点：
+  // 新建国策落盘点：起始槽位坐标 (400, 0)，步长 105px
   function calculateSmartPlacement(groupId: string | null): { x: number; y: number } {
     if (groupId) {
       const group = groups.value.find(g => g.id === groupId);
       if (group) {
         const countInGroup = nodes.value.filter(n => n.groupId === groupId).length;
-        const innerX = (group.position?.x ?? 80) + 30;
-        const innerY = (group.position?.y ?? 80) + 60 + (countInGroup % 3) * 90;
+        const innerX = (group.position?.x ?? 0) + 30;
+        const innerY = (group.position?.y ?? 0) + 60 + (countInGroup % 4) * 90;
         return { x: Math.round(innerX), y: Math.round(innerY) };
       }
     }
-    // 独立国策：位于右侧专属待排布列 (X: 960, Y 从 120 舒适起始，步长 105px)
-    // 紧凑排布在专注作战组右侧核心视野内，绝对物理级杜绝飞到 Y = 2000+ 荒芜盲区
-    const baseNodeX = 960;
-    const baseNodeY = 120;
+    // 独立国策：固定起始槽位 (400, 0)，步长 105px
+    const baseNodeX = 400;
+    const baseNodeY = 0;
     const stepNodeY = 105; // 国策卡片高 72px + 33px 紧凑呼吸间距
     const slot = sessionNodeSpawnCount % 5;
     sessionNodeSpawnCount++;
@@ -281,7 +280,7 @@ export const useFocusTreeStore = defineStore('focusTree', () => {
   }
 
   async function addGroup(group: FocusGroup) {
-    if (!group.position || (group.position.x === 0 && group.position.y === 0)) {
+    if (!group.position) {
       group.position = calculateSmartGroupPlacement();
     }
     groups.value.push(group);
