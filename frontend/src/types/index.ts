@@ -100,6 +100,8 @@ export interface FocusTreeData {
 
 // 8. 国策树演化版本快照与日志
 export interface EvolutionSnapshot {
+  id?: string;
+  slotIndex?: number;             // 0 ~ 4 槽位索引
   version: string;                // 如 "v1.0", "v1.1"
   timestamp: string;
   changelogNotes: string;

@@ -220,6 +220,50 @@ export const useFocusTreeStore = defineStore('focusTree', () => {
     }
   }
 
+  async function exportSystemBackup() {
+    try {
+      const res = await fetch('/api/evolution/export');
+      if (!res.ok) throw new Error('Failed to export backup');
+      const data = await res.json();
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      const now = new Date();
+      const pad = (n: number) => n.toString().padStart(2, '0');
+      const timeStr = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}_${pad(now.getHours())}${pad(now.getMinutes())}`;
+      a.href = url;
+      a.download = `sacred-focus-backup-${timeStr}.json`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      return true;
+    } catch (e) {
+      console.error('Failed to export system backup', e);
+      return false;
+    }
+  }
+
+  async function importSystemBackup(backupData: any) {
+    try {
+      const res = await fetch('/api/evolution/import', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(backupData)
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || 'Import failed');
+      }
+      await fetchTree();
+      await fetchEvolution();
+      return true;
+    } catch (e) {
+      console.error('Failed to import system backup', e);
+      return false;
+    }
+  }
+
   async function addNode(node: FocusNode) {
     if (!node.position || (node.position.x === 0 && node.position.y === 0)) {
       node.position = calculateSmartPlacement(node.groupId);
@@ -373,6 +417,8 @@ export const useFocusTreeStore = defineStore('focusTree', () => {
     fetchEvolution,
     createSnapshot,
     rollbackToSlot,
+    exportSystemBackup,
+    importSystemBackup,
     addNode,
     updateNode,
     deleteNode,

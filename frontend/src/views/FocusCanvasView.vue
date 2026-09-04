@@ -23,6 +23,7 @@ import NodeSpecModal from '../components/canvas/NodeSpecModal.vue';
 import NodeEditModal from '../components/canvas/NodeEditModal.vue';
 import GroupEditModal from '../components/canvas/GroupEditModal.vue';
 import DeletionAuditModal from '../components/canvas/DeletionAuditModal.vue';
+import EvolutionModal from '../components/canvas/EvolutionModal.vue';
 import type { FocusNode, FocusGroup, FocusEdge } from '../types';
 
 const route = useRoute();
@@ -49,6 +50,14 @@ const editingNode = ref<FocusNode | null>(null);
 
 const isGroupEditModalOpen = ref(false);
 const editingGroup = ref<FocusGroup | null>(null);
+
+const isEvolutionModalOpen = ref(false);
+
+const currentActiveVersion = computed(() => {
+  const p = store.evolution.activePointerIndex;
+  const found = store.evolution.snapshots.find(s => s.slotIndex === p);
+  return found ? found.version : 'v1.0';
+});
 
 // 临时草稿沙盒数据（编辑模式专属）
 const draftNodes = ref<FocusNode[]>([]);
@@ -449,6 +458,8 @@ function handleKeyDown(e: KeyboardEvent) {
   if (e.key === 'Escape') {
     if (isAuditModalOpen.value) {
       isAuditModalOpen.value = false;
+    } else if (isEvolutionModalOpen.value) {
+      isEvolutionModalOpen.value = false;
     } else if (activeConnectingHandle.value) {
       activeConnectingHandle.value = null;
     } else if (isSpecModalOpen.value) {
@@ -672,6 +683,9 @@ onUnmounted(() => {
         </template>
         <!-- 展示模式快捷项 -->
         <template v-else>
+          <button class="btn-action-tool btn-evolution-tool" @click="isEvolutionModalOpen = true" title="演化日志与5槽位防震荡快照回滚">
+            演化快照 ({{ currentActiveVersion }})
+          </button>
           <button class="btn-action-tool" @click="fitView({ padding: 0.15, minZoom: 0.05, maxZoom: 1 })" title="自适应居中对齐">
             居中全景
           </button>
@@ -794,6 +808,12 @@ onUnmounted(() => {
       @close="isAuditModalOpen = false"
       @confirm="executeSaveLayout"
     />
+
+    <!-- 弹窗五：国策演化与 5 槽位防震荡环形快照回滚中枢 -->
+    <EvolutionModal
+      :is-open="isEvolutionModalOpen"
+      @close="isEvolutionModalOpen = false"
+    />
   </div>
 </template>
 
@@ -908,6 +928,19 @@ onUnmounted(() => {
 .btn-action-tool:hover {
   background: var(--bg-tertiary);
   border-color: var(--border-focus);
+}
+
+.btn-evolution-tool {
+  background: rgba(16, 185, 129, 0.08);
+  border-color: rgba(16, 185, 129, 0.4);
+  color: #10B981;
+  font-weight: 600;
+}
+
+.btn-evolution-tool:hover {
+  background: rgba(16, 185, 129, 0.16);
+  border-color: #10B981;
+  color: #34D399;
 }
 
 .btn-save-layout {

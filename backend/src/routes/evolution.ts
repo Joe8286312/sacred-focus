@@ -13,6 +13,8 @@ router.get('/', (_req: Request, res: Response) => {
   const snapshots: EvolutionSnapshot[] = rows.map(r => {
     const parsed = JSON.parse(r.dataJson);
     return {
+      id: r.id,
+      slotIndex: r.slotIndex,
       version: r.version,
       timestamp: r.timestamp,
       changelogNotes: r.changelogNotes,
@@ -104,7 +106,13 @@ router.post('/snapshot', (req: Request, res: Response) => {
     // 5. 更新活跃指针
     db.prepare('UPDATE evolution_state SET activePointerIndex = ? WHERE id = 1').run(targetSlotIndex);
 
-    return { nextVersion, targetSlotIndex };
+    return { 
+      version: nextVersion,
+      nextVersion, 
+      slotIndex: targetSlotIndex,
+      targetSlotIndex,
+      activePointerIndex: targetSlotIndex
+    };
   });
 
   const result = snapshotTx();
@@ -156,29 +164,41 @@ router.post('/rollback', (req: Request, res: Response) => {
     // 恢复节点
     const insertNode = db.prepare(`
       INSERT INTO focus_nodes (
-        id, code, name, groupId, triggerTime, hasExactTime, timeValueMinutes,
-        level, maxLevel, isLit, isFrozen, positionX, positionY,
+        id, code, name, groupId, triggerTime, triggerScene, hasExactTime, timeValueMinutes,
+        level, maxLevel, isLit, isFrozen, lastLitDate, previousLevel, positionX, positionY,
         specInstruction, specFailCondition, specBenefitMechanism, specNotes, sortOrder
       ) VALUES (
-        @id, @code, @name, @groupId, @triggerTime, @hasExactTime, @timeValueMinutes,
-        @level, @maxLevel, @isLit, @isFrozen, @positionX, @positionY,
+        @id, @code, @name, @groupId, @triggerTime, @triggerScene, @hasExactTime, @timeValueMinutes,
+        @level, @maxLevel, @isLit, @isFrozen, @lastLitDate, @previousLevel, @positionX, @positionY,
         @specInstruction, @specFailCondition, @specBenefitMechanism, @specNotes, @sortOrder
       )
     `);
     for (let i = 0; i < snapshotData.nodes.length; i++) {
       const n = snapshotData.nodes[i];
+      let hasExactTime = 0;
+      let timeValueMinutes: number | null = null;
+      if (n.triggerTime) {
+        const match = n.triggerTime.match(/^(\d{1,2})[:：](\d{2})$/);
+        if (match) {
+          hasExactTime = 1;
+          timeValueMinutes = parseInt(match[1], 10) * 60 + parseInt(match[2], 10);
+        }
+      }
       insertNode.run({
         id: n.id,
         code: n.code,
         name: n.name,
         groupId: n.groupId,
-        triggerTime: n.triggerTime,
-        hasExactTime: n.hasExactTime ? 1 : 0,
-        timeValueMinutes: n.timeValueMinutes ?? null,
-        level: n.level,
-        maxLevel: n.maxLevel,
+        triggerTime: n.triggerTime || '',
+        triggerScene: n.triggerScene || n.triggerTime || '全天候',
+        hasExactTime,
+        timeValueMinutes,
+        level: n.level ?? 0,
+        maxLevel: n.maxLevel ?? 0,
         isLit: n.isLit ? 1 : 0,
         isFrozen: n.isFrozen ? 1 : 0,
+        lastLitDate: n.lastLitDate ?? null,
+        previousLevel: n.previousLevel ?? 0,
         positionX: n.position.x,
         positionY: n.position.y,
         specInstruction: n.specCard?.instruction || '',
@@ -205,9 +225,191 @@ router.post('/rollback', (req: Request, res: Response) => {
   res.json({
     message: `Successfully rolled back to slot ${targetSlotIndex} (${restoredVersion})`,
     activePointerIndex: targetSlotIndex,
+    restoredSlotIndex: targetSlotIndex,
     restoredVersion,
+    version: restoredVersion,
     liveTree: getFullFocusTreeData()
   });
+});
+
+// 全量导出系统配置（稳态备份）
+router.get('/export', (_req: Request, res: Response) => {
+  try {
+    const liveTree = getFullFocusTreeData();
+    const sacredSeatConfig = db.prepare('SELECT * FROM sacred_seat_config WHERE id = 1').get();
+    const precedentCases = db.prepare('SELECT * FROM precedent_cases ORDER BY date DESC, createdAt DESC').all();
+    const evolutionState = db.prepare('SELECT * FROM evolution_state WHERE id = 1').get();
+    const evolutionSnapshots = db.prepare('SELECT * FROM evolution_snapshots ORDER BY slotIndex ASC').all();
+    const sessionLogs = db.prepare('SELECT * FROM focus_session_logs ORDER BY startTime DESC').all();
+
+    const backupData = {
+      schemaVersion: '1.0',
+      exportedAt: new Date().toISOString(),
+      focusTree: liveTree,
+      liveTree: liveTree,
+      sacredSeatConfig,
+      precedentCases,
+      evolution: {
+        state: evolutionState,
+        snapshots: evolutionSnapshots
+      },
+      sessionLogs
+    };
+
+    res.json(backupData);
+  } catch (e: any) {
+    console.error('Failed to export backup', e);
+    res.status(500).json({ error: 'Failed to export backup', details: e.message });
+  }
+});
+
+// 全量导入灾备配置
+router.post('/import', (req: Request, res: Response) => {
+  const backup = req.body;
+  const tree = backup?.focusTree || backup?.liveTree;
+  if (!backup || !tree) {
+    return res.status(400).json({ error: 'Invalid backup file format: missing focusTree or liveTree' });
+  }
+
+  try {
+    const importTx = db.transaction(() => {
+      // 1. 恢复国策树 (groups, nodes, edges)
+      const groups = tree.groups || [];
+      const nodes = tree.nodes || [];
+      const edges = tree.edges || [];
+
+      db.prepare('DELETE FROM focus_edges').run();
+      db.prepare('DELETE FROM focus_nodes').run();
+      db.prepare('DELETE FROM focus_groups').run();
+
+      const insertGroup = db.prepare(`
+        INSERT INTO focus_groups (id, name, themeColor, positionX, positionY, width, height)
+        VALUES (@id, @name, @themeColor, @positionX, @positionY, @width, @height)
+      `);
+      for (const g of groups) {
+        insertGroup.run({
+          id: g.id,
+          name: g.name,
+          themeColor: g.themeColor,
+          positionX: g.position.x,
+          positionY: g.position.y,
+          width: g.size.width,
+          height: g.size.height
+        });
+      }
+
+      const insertNode = db.prepare(`
+        INSERT INTO focus_nodes (
+          id, code, name, groupId, triggerTime, triggerScene, hasExactTime, timeValueMinutes,
+          level, maxLevel, isLit, isFrozen, lastLitDate, previousLevel, positionX, positionY,
+          specInstruction, specFailCondition, specBenefitMechanism, specNotes, sortOrder
+        ) VALUES (
+          @id, @code, @name, @groupId, @triggerTime, @triggerScene, @hasExactTime, @timeValueMinutes,
+          @level, @maxLevel, @isLit, @isFrozen, @lastLitDate, @previousLevel, @positionX, @positionY,
+          @specInstruction, @specFailCondition, @specBenefitMechanism, @specNotes, @sortOrder
+        )
+      `);
+      for (let i = 0; i < nodes.length; i++) {
+        const n = nodes[i];
+        let hasExactTime = 0;
+        let timeValueMinutes: number | null = null;
+        if (n.triggerTime) {
+          const match = n.triggerTime.match(/^(\d{1,2})[:：](\d{2})$/);
+          if (match) {
+            hasExactTime = 1;
+            timeValueMinutes = parseInt(match[1], 10) * 60 + parseInt(match[2], 10);
+          }
+        }
+        insertNode.run({
+          id: n.id,
+          code: n.code,
+          name: n.name,
+          groupId: n.groupId,
+          triggerTime: n.triggerTime || '',
+          triggerScene: n.triggerScene || n.triggerTime || '全天候',
+          hasExactTime,
+          timeValueMinutes,
+          level: n.level ?? 0,
+          maxLevel: n.maxLevel ?? 0,
+          isLit: n.isLit ? 1 : 0,
+          isFrozen: n.isFrozen ? 1 : 0,
+          lastLitDate: n.lastLitDate ?? null,
+          previousLevel: n.previousLevel ?? 0,
+          positionX: n.position.x,
+          positionY: n.position.y,
+          specInstruction: n.specCard?.instruction || '',
+          specFailCondition: n.specCard?.failCondition || '',
+          specBenefitMechanism: n.specCard?.benefitMechanism || '',
+          specNotes: n.specCard?.notes ?? null,
+          sortOrder: i
+        });
+      }
+
+      const insertEdge = db.prepare(`
+        INSERT INTO focus_edges (id, sourceId, sourceType, targetId, targetType, sourceAnchor, targetAnchor, style)
+        VALUES (@id, @sourceId, @sourceType, @targetId, @targetType, @sourceAnchor, @targetAnchor, @style)
+      `);
+      for (const e of edges) {
+        insertEdge.run(e);
+      }
+
+      // 2. 恢复神圣座位配置
+      if (backup.sacredSeatConfig) {
+        const cfg = backup.sacredSeatConfig;
+        db.prepare(`
+          INSERT OR REPLACE INTO sacred_seat_config (id, sacredToken, reservationSignal, defaultFocusDuration, regretWindowSeconds, currentStreak, maxStreak, updatedAt)
+          VALUES (1, @sacredToken, @reservationSignal, @defaultFocusDuration, @regretWindowSeconds, @currentStreak, @maxStreak, @updatedAt)
+        `).run(cfg);
+      }
+
+      // 3. 恢复判例法典
+      if (Array.isArray(backup.precedentCases)) {
+        db.prepare('DELETE FROM precedent_cases').run();
+        const insertCase = db.prepare(`
+          INSERT INTO precedent_cases (id, date, behavior, verdict, boundaryCondition, createdAt)
+          VALUES (@id, @date, @behavior, @verdict, @boundaryCondition, @createdAt)
+        `);
+        for (const c of backup.precedentCases) {
+          insertCase.run(c);
+        }
+      }
+
+      // 4. 恢复演化状态与快照
+      if (backup.evolution) {
+        if (backup.evolution.state) {
+          db.prepare('UPDATE evolution_state SET activePointerIndex = ? WHERE id = 1').run(backup.evolution.state.activePointerIndex ?? 0);
+        }
+        if (Array.isArray(backup.evolution.snapshots)) {
+          db.prepare('DELETE FROM evolution_snapshots').run();
+          const insertSnap = db.prepare(`
+            INSERT INTO evolution_snapshots (slotIndex, id, version, timestamp, changelogNotes, isMajor, dataJson)
+            VALUES (@slotIndex, @id, @version, @timestamp, @changelogNotes, @isMajor, @dataJson)
+          `);
+          for (const s of backup.evolution.snapshots) {
+            insertSnap.run(s);
+          }
+        }
+      }
+
+      // 5. 恢复流水日志（若存在）
+      if (Array.isArray(backup.sessionLogs)) {
+        db.prepare('DELETE FROM focus_session_logs').run();
+        const insertLog = db.prepare(`
+          INSERT INTO focus_session_logs (id, type, startTime, endTime, targetDurationMinutes, actualDurationSeconds, status, note)
+          VALUES (@id, @type, @startTime, @endTime, @targetDurationMinutes, @actualDurationSeconds, @status, @note)
+        `);
+        for (const l of backup.sessionLogs) {
+          insertLog.run(l);
+        }
+      }
+    });
+
+    importTx();
+    res.json({ message: 'Backup successfully imported and restored' });
+  } catch (e: any) {
+    console.error('Failed to import backup', e);
+    res.status(500).json({ error: 'Failed to import backup', details: e.message });
+  }
 });
 
 export default router;
