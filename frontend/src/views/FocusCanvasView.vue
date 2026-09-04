@@ -8,7 +8,8 @@ import {
   ConnectionMode,
   type Connection,
   type NodeMouseEvent,
-  type EdgeMouseEvent
+  type EdgeMouseEvent,
+  type NodeDragEvent
 } from '@vue-flow/core';
 import '@vue-flow/core/dist/style.css';
 import '@vue-flow/core/dist/theme-default.css';
@@ -68,14 +69,24 @@ const flowNodes = ref<any[]>([]);
 const flowEdges = ref<any[]>([]);
 
 function syncToFlow() {
+  const currentPosMap = new Map<string, { x: number; y: number }>();
+  for (const fn of flowNodes.value) {
+    if (fn && fn.position) {
+      currentPosMap.set(fn.id, { x: fn.position.x, y: fn.position.y });
+    }
+  }
+
   const nodesList: any[] = [];
 
   // 1. 分组外框节点 (处于下层 zIndex: 1)
   for (const g of store.groups) {
+    const pos = (isEditMode.value && currentPosMap.has(g.id))
+      ? currentPosMap.get(g.id)!
+      : { ...g.position };
     nodesList.push({
       id: g.id,
       type: 'focusGroup',
-      position: { ...g.position },
+      position: pos,
       data: { 
         ...g, 
         isEditMode: isEditMode.value,
@@ -90,10 +101,13 @@ function syncToFlow() {
 
   // 2. 国策节点 (处于上层 zIndex: 10)
   for (const n of store.nodes) {
+    const pos = (isEditMode.value && currentPosMap.has(n.id))
+      ? currentPosMap.get(n.id)!
+      : { ...n.position };
     nodesList.push({
       id: n.id,
       type: 'focusNode',
-      position: { ...n.position },
+      position: pos,
       data: { 
         ...n, 
         isEditMode: isEditMode.value,
@@ -137,6 +151,26 @@ function onNodeClick({ node }: NodeMouseEvent) {
   if (!isEditMode.value && node.type === 'focusNode') {
     // 模式 A 展示模式：单击快速切换【点亮 / 熄灭】
     store.toggleNodeLit(node.id);
+  }
+}
+
+// 拖拽停止后同步内存坐标
+function onNodeDragStop({ node, nodes }: NodeDragEvent) {
+  const targetNodes = nodes && nodes.length > 0 ? nodes : (node ? [node] : []);
+  for (const n of targetNodes) {
+    if (n.type === 'focusNode') {
+      const found = store.nodes.find(item => item.id === n.id);
+      if (found) {
+        found.position.x = Math.round(n.position.x);
+        found.position.y = Math.round(n.position.y);
+      }
+    } else if (n.type === 'focusGroup') {
+      const found = store.groups.find(item => item.id === n.id);
+      if (found) {
+        found.position.x = Math.round(n.position.x);
+        found.position.y = Math.round(n.position.y);
+      }
+    }
   }
 }
 
@@ -311,9 +345,9 @@ function cancelLayoutChanges() {
       group.size = { width: snap.width, height: snap.height };
     }
   }
-  syncToFlow();
   isEditMode.value = false;
   activeConnectingHandle.value = null;
+  syncToFlow();
 }
 
 function onResizeGroup(payload: { id: string; size: { width: number; height: number } }) {
@@ -580,6 +614,7 @@ onUnmounted(() => {
         class="focus-tree-flow"
         @node-click="onNodeClick"
         @node-double-click="onNodeDoubleClick"
+        @node-drag-stop="onNodeDragStop"
         @node-mouse-enter="isHoveringNode = true"
         @node-mouse-leave="isHoveringNode = false"
         @pane-mouse-enter="isHoveringNode = false"
