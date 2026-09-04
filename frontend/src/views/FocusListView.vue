@@ -375,71 +375,64 @@ async function handleDeleteNode(node: FocusNode) {
         
         <div class="col-code sortable-header" @click="toggleColumnSort('code')" title="点击切换代码排序">
           <span>代码</span>
-          <span class="sort-indicator" :class="{ 'is-active': getSortInfo('code') }">
+          <span v-if="getSortInfo('code')" class="sort-indicator is-active">
             <svg v-if="getSortInfo('code')?.dir === 'asc'" viewBox="0 0 24 24" width="10" height="10" fill="currentColor"><polygon points="12 4 4 18 20 18"></polygon></svg>
             <svg v-else-if="getSortInfo('code')?.dir === 'desc'" viewBox="0 0 24 24" width="10" height="10" fill="currentColor"><polygon points="12 20 4 6 20 6"></polygon></svg>
-            <span v-else class="sort-idle-icon">⇅</span>
-            <sup v-if="getSortInfo('code') && sortStack.length > 1" class="priority-badge font-mono">{{ getSortPriority('code') }}</sup>
+            <sup v-if="sortStack.length > 1" class="priority-badge font-mono">{{ getSortPriority('code') }}</sup>
           </span>
         </div>
 
         <div class="col-name sortable-header" @click="toggleColumnSort('name')" title="点击切换名称排序">
           <span>国策名称</span>
-          <span class="sort-indicator" :class="{ 'is-active': getSortInfo('name') }">
+          <span v-if="getSortInfo('name')" class="sort-indicator is-active">
             <svg v-if="getSortInfo('name')?.dir === 'asc'" viewBox="0 0 24 24" width="10" height="10" fill="currentColor"><polygon points="12 4 4 18 20 18"></polygon></svg>
             <svg v-else-if="getSortInfo('name')?.dir === 'desc'" viewBox="0 0 24 24" width="10" height="10" fill="currentColor"><polygon points="12 20 4 6 20 6"></polygon></svg>
-            <span v-else class="sort-idle-icon">⇅</span>
-            <sup v-if="getSortInfo('name') && sortStack.length > 1" class="priority-badge font-mono">{{ getSortPriority('name') }}</sup>
+            <sup v-if="sortStack.length > 1" class="priority-badge font-mono">{{ getSortPriority('name') }}</sup>
           </span>
         </div>
 
         <div class="col-group sortable-header" @click="toggleColumnSort('group')" title="点击切换分组排序">
           <span>分组</span>
-          <span class="sort-indicator" :class="{ 'is-active': getSortInfo('group') }">
+          <span v-if="getSortInfo('group')" class="sort-indicator is-active">
             <svg v-if="getSortInfo('group')?.dir === 'asc'" viewBox="0 0 24 24" width="10" height="10" fill="currentColor"><polygon points="12 4 4 18 20 18"></polygon></svg>
             <svg v-else-if="getSortInfo('group')?.dir === 'desc'" viewBox="0 0 24 24" width="10" height="10" fill="currentColor"><polygon points="12 20 4 6 20 6"></polygon></svg>
-            <span v-else class="sort-idle-icon">⇅</span>
-            <sup v-if="getSortInfo('group') && sortStack.length > 1" class="priority-badge font-mono">{{ getSortPriority('group') }}</sup>
+            <sup v-if="sortStack.length > 1" class="priority-badge font-mono">{{ getSortPriority('group') }}</sup>
           </span>
         </div>
 
         <div class="col-time sortable-header" @click="toggleColumnSort('time')" title="点击切换时间排序（无特定时间的场景稳定置底）">
           <span>触发时间 / 场景</span>
-          <span class="sort-indicator" :class="{ 'is-active': getSortInfo('time') }">
+          <span v-if="getSortInfo('time')" class="sort-indicator is-active">
             <svg v-if="getSortInfo('time')?.dir === 'asc'" viewBox="0 0 24 24" width="10" height="10" fill="currentColor"><polygon points="12 4 4 18 20 18"></polygon></svg>
             <svg v-else-if="getSortInfo('time')?.dir === 'desc'" viewBox="0 0 24 24" width="10" height="10" fill="currentColor"><polygon points="12 20 4 6 20 6"></polygon></svg>
-            <span v-else class="sort-idle-icon">⇅</span>
-            <sup v-if="getSortInfo('time') && sortStack.length > 1" class="priority-badge font-mono">{{ getSortPriority('time') }}</sup>
+            <sup v-if="sortStack.length > 1" class="priority-badge font-mono">{{ getSortPriority('time') }}</sup>
           </span>
         </div>
 
         <div class="col-cur-level sortable-header center-header" @click="toggleColumnSort('level')" title="点击切换当前等级排序">
           <span>当前等级</span>
-          <span class="sort-indicator" :class="{ 'is-active': getSortInfo('level') }">
+          <span v-if="getSortInfo('level')" class="sort-indicator is-active">
             <svg v-if="getSortInfo('level')?.dir === 'asc'" viewBox="0 0 24 24" width="10" height="10" fill="currentColor"><polygon points="12 4 4 18 20 18"></polygon></svg>
             <svg v-else-if="getSortInfo('level')?.dir === 'desc'" viewBox="0 0 24 24" width="10" height="10" fill="currentColor"><polygon points="12 20 4 6 20 6"></polygon></svg>
-            <span v-else class="sort-idle-icon">⇅</span>
-            <sup v-if="getSortInfo('level') && sortStack.length > 1" class="priority-badge font-mono">{{ getSortPriority('level') }}</sup>
+            <sup v-if="sortStack.length > 1" class="priority-badge font-mono">{{ getSortPriority('level') }}</sup>
           </span>
         </div>
 
         <div class="col-max-level sortable-header center-header" @click="toggleColumnSort('maxLevel')" title="点击切换最高等级排序">
           <span>最高等级</span>
-          <span class="sort-indicator" :class="{ 'is-active': getSortInfo('maxLevel') }">
+          <span v-if="getSortInfo('maxLevel')" class="sort-indicator is-active">
             <svg v-if="getSortInfo('maxLevel')?.dir === 'asc'" viewBox="0 0 24 24" width="10" height="10" fill="currentColor"><polygon points="12 4 4 18 20 18"></polygon></svg>
             <svg v-else-if="getSortInfo('maxLevel')?.dir === 'desc'" viewBox="0 0 24 24" width="10" height="10" fill="currentColor"><polygon points="12 20 4 6 20 6"></polygon></svg>
-            <span v-else class="sort-idle-icon">⇅</span>
-            <sup v-if="getSortInfo('maxLevel') && sortStack.length > 1" class="priority-badge font-mono">{{ getSortPriority('maxLevel') }}</sup>
+            <sup v-if="sortStack.length > 1" class="priority-badge font-mono">{{ getSortPriority('maxLevel') }}</sup>
           </span>
         </div>
 
         <div class="col-status sortable-header center-header" @click="toggleColumnSort('status')" title="点击切换状态排序">
           <span>状态</span>
-          <span class="sort-indicator" :class="{ 'is-active': getSortInfo('status') }">
+          <span v-if="getSortInfo('status')" class="sort-indicator is-active">
             <svg v-if="getSortInfo('status')?.dir === 'asc'" viewBox="0 0 24 24" width="10" height="10" fill="currentColor"><polygon points="12 4 4 18 20 18"></polygon></svg>
             <svg v-else-if="getSortInfo('status')?.dir === 'desc'" viewBox="0 0 24 24" width="10" height="10" fill="currentColor"><polygon points="12 20 4 6 20 6"></polygon></svg>
-            <span v-else class="sort-idle-icon">⇅</span>
-            <sup v-if="getSortInfo('status') && sortStack.length > 1" class="priority-badge font-mono">{{ getSortPriority('status') }}</sup>
+            <sup v-if="sortStack.length > 1" class="priority-badge font-mono">{{ getSortPriority('status') }}</sup>
           </span>
         </div>
 
