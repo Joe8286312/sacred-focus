@@ -425,7 +425,7 @@ async function handleDeleteNode(node: FocusNode) {
 
           <!-- 当前等级（居中） -->
           <div class="col-cur-level font-mono">
-            <span class="level-badge" :class="{ 'is-max': node.level >= node.maxLevel }">
+            <span class="level-badge" :class="{ 'is-max': node.level > 0 && node.level >= node.maxLevel }">
               Lv.{{ node.level }}
             </span>
           </div>

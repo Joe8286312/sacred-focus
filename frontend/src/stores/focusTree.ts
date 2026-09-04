@@ -12,6 +12,7 @@ export const useFocusTreeStore = defineStore('focusTree', () => {
   });
   const loading = ref(false);
   const lastCreatedNodeId = ref<string | null>(null);
+  const pendingResetSummary = ref<{ resetNodes: any[]; settlementDate: string } | null>(null);
 
   // 新建国策固定坐标初始化（遵循用户设计定调：固定初始落点，交由画布自由拖拽排布）
   function calculateSmartPlacement(groupId: string | null): { x: number; y: number } {
@@ -25,6 +26,13 @@ export const useFocusTreeStore = defineStore('focusTree', () => {
     return { x: 1060, y: 120 };
   }
 
+  function dismissResetAlert() {
+    if (pendingResetSummary.value) {
+      sessionStorage.setItem('dismissedResetAlertDate', pendingResetSummary.value.settlementDate);
+      pendingResetSummary.value = null;
+    }
+  }
+
   async function fetchTree() {
     loading.value = true;
     try {
@@ -34,6 +42,12 @@ export const useFocusTreeStore = defineStore('focusTree', () => {
         nodes.value = data.nodes;
         edges.value = data.edges;
         groups.value = data.groups;
+        if (data.resetSummary && data.resetSummary.resetNodes && data.resetSummary.resetNodes.length > 0) {
+          const dismissed = sessionStorage.getItem('dismissedResetAlertDate');
+          if (dismissed !== data.resetSummary.settlementDate) {
+            pendingResetSummary.value = data.resetSummary;
+          }
+        }
       }
     } catch (e) {
       console.error('Failed to fetch focus tree', e);
@@ -61,20 +75,33 @@ export const useFocusTreeStore = defineStore('focusTree', () => {
   }
 
   async function toggleNodeLit(nodeId: string) {
-    // 乐观更新
     const node = nodes.value.find(n => n.id === nodeId);
-    if (node) {
-      node.isLit = !node.isLit;
-    }
+    if (!node) return;
+    const prevLit = node.isLit;
+    const prevLevel = node.level;
+    const prevMaxLevel = node.maxLevel;
+    const prevLastLitDate = node.lastLitDate;
+
     try {
       const res = await fetch(`/api/focus-tree/nodes/${nodeId}/toggle-lit`, { method: 'PATCH' });
-      if (!res.ok && node) {
-        // 回滚
-        node.isLit = !node.isLit;
+      if (res.ok) {
+        const updated = await res.json();
+        node.isLit = updated.isLit;
+        node.level = updated.level;
+        node.maxLevel = updated.maxLevel;
+        node.lastLitDate = updated.lastLitDate;
+      } else {
+        node.isLit = prevLit;
+        node.level = prevLevel;
+        node.maxLevel = prevMaxLevel;
+        node.lastLitDate = prevLastLitDate;
       }
     } catch (e) {
       console.error('Failed to toggle lit state', e);
-      if (node) node.isLit = !node.isLit;
+      node.isLit = prevLit;
+      node.level = prevLevel;
+      node.maxLevel = prevMaxLevel;
+      node.lastLitDate = prevLastLitDate;
     }
   }
 
@@ -275,6 +302,8 @@ export const useFocusTreeStore = defineStore('focusTree', () => {
     evolution,
     loading,
     lastCreatedNodeId,
+    pendingResetSummary,
+    dismissResetAlert,
     calculateSmartPlacement,
     fetchTree,
     syncTree,

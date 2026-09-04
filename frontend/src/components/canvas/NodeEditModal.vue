@@ -21,8 +21,8 @@ const form = ref<FocusNode>({
   triggerTime: '全天候',
   hasExactTime: false,
   timeValueMinutes: undefined,
-  level: 1,
-  maxLevel: 3,
+  level: 0,
+  maxLevel: 0,
   isLit: false,
   isFrozen: false,
   position: { x: 100, y: 100 },
@@ -38,7 +38,7 @@ function initForm() {
   if (props.node) {
     form.value = JSON.parse(JSON.stringify(props.node));
   } else {
-    // 每次新建时完全重置表单，生成全新唯一 ID，并将 position 设为 {x: 0, y: 0} 触发智能投放
+    // 每次新建时完全重置表单，生成全新唯一 ID，初始等级与最高等级均为 0 级
     form.value = {
       id: `node-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`,
       code: '',
@@ -46,8 +46,8 @@ function initForm() {
       groupId: null,
       triggerTime: '全天候',
       hasExactTime: false,
-      level: 1,
-      maxLevel: 3,
+      level: 0,
+      maxLevel: 0,
       isLit: false,
       isFrozen: false,
       position: { x: 0, y: 0 },
@@ -145,22 +145,22 @@ function handleSave() {
 
           <div class="form-row">
             <div class="form-group flex-1">
-              <label class="form-label">当前等级</label>
+              <label class="form-label">当前等级 (连续天数)</label>
               <input 
                 v-model.number="form.level" 
                 type="number" 
-                min="1" 
-                max="10" 
+                min="0" 
+                max="99" 
                 class="form-input font-mono" 
               />
             </div>
             <div class="form-group flex-1">
-              <label class="form-label">最高等级</label>
+              <label class="form-label">最高等级 (历史峰值)</label>
               <input 
                 v-model.number="form.maxLevel" 
                 type="number" 
-                min="1" 
-                max="10" 
+                min="0" 
+                max="99" 
                 class="form-input font-mono" 
               />
             </div>

@@ -46,10 +46,12 @@ export interface FocusNode {
   triggerTime: string;            // 纯文本触发时间或场景描述（如 "07:30", "闹钟后3m", "全天候"）
   hasExactTime: boolean;          // 是否为精确时间点（用于列表排序）
   timeValueMinutes?: number;      // 转化为分钟数便于比较大小（如 07:30 -> 450）
-  level: number;                  // 当前强化等级
-  maxLevel: number;               // 最高强化等级（如 3, 5）
-  isLit: boolean;                 // 当前是否点亮 (🟢 / ⚪)
-  isFrozen: boolean;              // 是否处于水密隔舱冻结态 (❄️)
+  level: number;                  // 当前强化等级（连续点亮天数）
+  maxLevel: number;               // 历史最高强化等级（峰值）
+  isLit: boolean;                 // 当前是否点亮 (已点亮 / 待命)
+  isFrozen: boolean;              // 是否处于水密隔舱冻结态
+  lastLitDate?: string;           // 最后一次点亮的业务日期 (YYYY-MM-DD，以凌晨4点为界)
+  previousLevel?: number;         // 点亮前的备份等级（用于当天反悔回退）
   position: { x: number; y: number }; // 画布坐标
   specCard: FocusNodeSpecCard;
 }
@@ -75,11 +77,24 @@ export interface FocusGroup {
   size: { width: number; height: number };
 }
 
-// 7. 国策树全景数据包
+// 7. 每日结算断签项定义
+export interface ResetNodeItem {
+  id: string;
+  code: string;
+  name: string;
+  lostLevel: number;
+  maxLevel: number;
+}
+
+// 8. 国策树全景数据包
 export interface FocusTreeData {
   nodes: FocusNode[];
   edges: FocusEdge[];
   groups: FocusGroup[];
+  resetSummary?: {
+    resetNodes: ResetNodeItem[];
+    settlementDate: string;
+  };
 }
 
 // 8. 国策树演化版本快照与日志

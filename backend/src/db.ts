@@ -8,6 +8,7 @@ import type {
   FocusEdge, 
   FocusGroup, 
   FocusTreeData, 
+  ResetNodeItem,
   EvolutionSnapshot, 
   EvolutionState 
 } from './types.js';
@@ -121,7 +122,22 @@ export function initDatabase() {
       id INTEGER PRIMARY KEY CHECK (id = 1),
       activePointerIndex INTEGER NOT NULL DEFAULT 0
     );
+
+    -- 9. 系统元数据与审计标记表
+    CREATE TABLE IF NOT EXISTS system_meta (
+      key TEXT PRIMARY KEY,
+      value TEXT NOT NULL
+    );
   `);
+
+  // 数据库平滑迁移：为 focus_nodes 增加 lastLitDate 与 previousLevel 字段
+  const nodeCols = (db.prepare('PRAGMA table_info(focus_nodes)').all() as Array<{ name: string }>).map(c => c.name);
+  if (!nodeCols.includes('lastLitDate')) {
+    db.prepare('ALTER TABLE focus_nodes ADD COLUMN lastLitDate TEXT').run();
+  }
+  if (!nodeCols.includes('previousLevel')) {
+    db.prepare('ALTER TABLE focus_nodes ADD COLUMN previousLevel INTEGER NOT NULL DEFAULT 0').run();
+  }
 
   seedDefaultData();
 }
@@ -418,6 +434,8 @@ export function getFullFocusTreeData(): FocusTreeData {
     maxLevel: row.maxLevel,
     isLit: Boolean(row.isLit),
     isFrozen: Boolean(row.isFrozen),
+    lastLitDate: row.lastLitDate || undefined,
+    previousLevel: row.previousLevel ?? 0,
     position: { x: row.positionX, y: row.positionY },
     specCard: {
       instruction: row.specInstruction,
@@ -440,4 +458,80 @@ export function getFullFocusTreeData(): FocusTreeData {
   }));
 
   return { nodes, edges, groups };
+}
+
+// -----------------------------------------------------------------------------
+// 自控工程学：业务日计算与每日首次上线结算系统 (以凌晨 04:00 为分界)
+// -----------------------------------------------------------------------------
+
+// 计算当前所属的业务日（以每天凌晨 04:00 为新一天开始，早于 4 点归属前一日）
+export function getBusinessDay(date: Date = new Date()): string {
+  const shifted = new Date(date.getTime() - 4 * 60 * 60 * 1000);
+  const y = shifted.getFullYear();
+  const m = String(shifted.getMonth() + 1).padStart(2, '0');
+  const d = String(shifted.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
+
+// 计算前一个业务日
+export function getPreviousBusinessDay(businessDay: string): string {
+  const [y, m, d] = businessDay.split('-').map(Number);
+  const date = new Date(y, m - 1, d);
+  date.setDate(date.getDate() - 1);
+  const prevY = date.getFullYear();
+  const prevM = String(date.getMonth() + 1).padStart(2, '0');
+  const prevD = String(date.getDate()).padStart(2, '0');
+  return `${prevY}-${prevM}-${prevD}`;
+}
+
+// 每日首次上线结算引擎：
+// 严格确保每天仅在第一次上线时执行断签判断，后续刷新绝不重复触发
+export function settleFocusTreeDailyState(): { resetNodes: ResetNodeItem[]; settlementDate: string } | null {
+  const today = getBusinessDay();
+  const yesterday = getPreviousBusinessDay(today);
+
+  // 1. 读取数据库中持久化的“最后每日结算日期”
+  const metaRow = db.prepare('SELECT value FROM system_meta WHERE key = ?').get('lastDailySettlementDate') as { value: string } | undefined;
+  if (metaRow && metaRow.value === today) {
+    // 当日已经完成过首次上线结算，直接静默跳过
+    return null;
+  }
+
+  const resetNodes: ResetNodeItem[] = [];
+
+  const settleTx = db.transaction(() => {
+    const allNodes = db.prepare('SELECT id, code, name, level, maxLevel, isLit, lastLitDate FROM focus_nodes').all() as any[];
+
+    for (const node of allNodes) {
+      const isLitToday = node.lastLitDate === today;
+      const isLitYesterday = node.lastLitDate === yesterday;
+
+      if (!isLitToday && !isLitYesterday) {
+        // 昨日未能点亮（发生断签）
+        if (node.level > 0) {
+          resetNodes.push({
+            id: node.id,
+            code: node.code,
+            name: node.name,
+            lostLevel: node.level,
+            maxLevel: node.maxLevel
+          });
+          // 当前等级清空至 0 级，待命熄灭，保留历史最高等级
+          db.prepare('UPDATE focus_nodes SET level = 0, previousLevel = 0, isLit = 0 WHERE id = ?').run(node.id);
+        } else if (node.isLit === 1) {
+          db.prepare('UPDATE focus_nodes SET isLit = 0 WHERE id = ?').run(node.id);
+        }
+      } else if (isLitYesterday && !isLitToday) {
+        // 昨日已点亮，今日尚未点亮：重置为待命状态，保留 level 等待今日点亮升级
+        db.prepare('UPDATE focus_nodes SET isLit = 0 WHERE id = ?').run(node.id);
+      }
+    }
+
+    // 2. 写入/更新今日结算标记，确保当天后续所有刷新绝不再重复触发
+    db.prepare('INSERT OR REPLACE INTO system_meta (key, value) VALUES (?, ?)').run('lastDailySettlementDate', today);
+  });
+
+  settleTx();
+
+  return { resetNodes, settlementDate: today };
 }

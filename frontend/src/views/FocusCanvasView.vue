@@ -13,6 +13,7 @@ import {
 import '@vue-flow/core/dist/style.css';
 import '@vue-flow/core/dist/theme-default.css';
 
+import { useRoute } from 'vue-router';
 import { useFocusTreeStore } from '../stores/focusTree';
 import FocusNodeCard from '../components/canvas/FocusNodeCard.vue';
 import FocusGroupFrame from '../components/canvas/FocusGroupFrame.vue';
@@ -22,6 +23,7 @@ import NodeEditModal from '../components/canvas/NodeEditModal.vue';
 import GroupEditModal from '../components/canvas/GroupEditModal.vue';
 import type { FocusNode, FocusGroup, FocusEdge } from '../types';
 
+const route = useRoute();
 const store = useFocusTreeStore();
 const { fitView, setCenter } = useVueFlow();
 
@@ -433,6 +435,11 @@ onMounted(async () => {
   store.fetchEvolution();
   syncToFlow();
   window.addEventListener('keydown', handleKeyDown);
+
+  // 若通过路由参数携带 edit=true (例如从重构弹窗一键跳转)，自动开启编辑模式
+  if (route.query.edit === 'true') {
+    isEditMode.value = true;
+  }
 
   // 跨页面联动：若刚从列表页新建了节点，自动平滑平移至该卡片，并激发脉冲微光呼吸动画
   if (store.lastCreatedNodeId) {

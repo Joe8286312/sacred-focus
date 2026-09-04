@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue';
 import { RouterView, useRouter, useRoute } from 'vue-router';
+import ReconstructPromptModal from './components/canvas/ReconstructPromptModal.vue';
 
 const router = useRouter();
 const route = useRoute();
@@ -86,6 +87,7 @@ onMounted(() => {
     <!-- 视图主区域 -->
     <main class="app-main">
       <RouterView />
+      <ReconstructPromptModal />
     </main>
   </div>
 </template>

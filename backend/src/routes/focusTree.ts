@@ -1,12 +1,22 @@
 import { Router, Request, Response } from 'express';
-import { db, getFullFocusTreeData } from '../db.js';
+import { 
+  db, 
+  getFullFocusTreeData, 
+  getBusinessDay, 
+  getPreviousBusinessDay, 
+  settleFocusTreeDailyState 
+} from '../db.js';
 import type { FocusNode, FocusEdge, FocusGroup } from '../types.js';
 
 const router = Router();
 
-// 获取当前完整国策树（节点、连线、分组）
+// 获取当前完整国策树（节点、连线、分组），并在每日首次上线时执行自控跨天结算审计
 router.get('/', (_req: Request, res: Response) => {
+  const settlement = settleFocusTreeDailyState();
   const data = getFullFocusTreeData();
+  if (settlement && settlement.resetNodes.length > 0) {
+    data.resetSummary = settlement;
+  }
   res.json(data);
 });
 
@@ -45,11 +55,11 @@ router.put('/', (req: Request, res: Response) => {
       const insertNode = db.prepare(`
         INSERT INTO focus_nodes (
           id, code, name, groupId, triggerTime, hasExactTime, timeValueMinutes,
-          level, maxLevel, isLit, isFrozen, positionX, positionY,
+          level, maxLevel, isLit, isFrozen, lastLitDate, previousLevel, positionX, positionY,
           specInstruction, specFailCondition, specBenefitMechanism, specNotes, sortOrder
         ) VALUES (
           @id, @code, @name, @groupId, @triggerTime, @hasExactTime, @timeValueMinutes,
-          @level, @maxLevel, @isLit, @isFrozen, @positionX, @positionY,
+          @level, @maxLevel, @isLit, @isFrozen, @lastLitDate, @previousLevel, @positionX, @positionY,
           @specInstruction, @specFailCondition, @specBenefitMechanism, @specNotes, @sortOrder
         )
       `);
@@ -63,10 +73,12 @@ router.put('/', (req: Request, res: Response) => {
           triggerTime: n.triggerTime,
           hasExactTime: n.hasExactTime ? 1 : 0,
           timeValueMinutes: n.timeValueMinutes ?? null,
-          level: n.level,
-          maxLevel: n.maxLevel,
+          level: n.level ?? 0,
+          maxLevel: n.maxLevel ?? 0,
           isLit: n.isLit ? 1 : 0,
           isFrozen: n.isFrozen ? 1 : 0,
+          lastLitDate: n.lastLitDate ?? null,
+          previousLevel: n.previousLevel ?? 0,
           positionX: n.position.x,
           positionY: n.position.y,
           specInstruction: n.specCard?.instruction || '',
@@ -95,19 +107,95 @@ router.put('/', (req: Request, res: Response) => {
   res.json({ message: 'Focus tree synchronized successfully', data: getFullFocusTreeData() });
 });
 
-// 快速双击点亮/熄灭节点
+// 点亮/反悔取消点亮节点（基于连续天数与凌晨 4 点业务日状态机）
 router.patch('/nodes/:id/toggle-lit', (req: Request, res: Response) => {
   const { id } = req.params;
-  const current = db.prepare('SELECT isLit FROM focus_nodes WHERE id = ?').get(id) as { isLit: number } | undefined;
+  const current = db.prepare('SELECT id, level, maxLevel, isLit, lastLitDate, previousLevel FROM focus_nodes WHERE id = ?').get(id) as {
+    id: string;
+    level: number;
+    maxLevel: number;
+    isLit: number;
+    lastLitDate?: string | null;
+    previousLevel?: number;
+  } | undefined;
 
   if (!current) {
     return res.status(404).json({ error: 'Node not found' });
   }
 
-  const nextLit = current.isLit === 1 ? 0 : 1;
-  db.prepare('UPDATE focus_nodes SET isLit = ? WHERE id = ?').run(nextLit, id);
+  const today = getBusinessDay();
+  const yesterday = getPreviousBusinessDay(today);
 
-  res.json({ id, isLit: Boolean(nextLit) });
+  let nextLit: boolean;
+  let nextLevel: number;
+  let nextMaxLevel: number;
+  let nextLastLitDate: string | null;
+  let nextPreviousLevel = current.previousLevel ?? 0;
+
+  if (current.isLit === 0) {
+    // 动作：执行今日点亮升级
+    nextLit = true;
+    nextPreviousLevel = current.level; // 备份当前等级供反悔回退
+
+    if (current.lastLitDate === yesterday) {
+      // 连续天数：昨日已点亮，今日连续打卡，等级 +1
+      nextLevel = current.level + 1;
+    } else if (current.lastLitDate === today) {
+      // 今日此前点亮过又撤销，今日再次点亮
+      nextLevel = Math.max((current.previousLevel ?? 0) + 1, 1);
+    } else {
+      // 初始首次点亮或断签后首次点亮：升级至 1 级
+      nextLevel = 1;
+    }
+
+    nextMaxLevel = Math.max(current.maxLevel, nextLevel);
+    nextLastLitDate = today;
+  } else {
+    // 动作：当天反悔取消点亮
+    nextLit = false;
+    // 等级回退到今日点亮前的备份等级
+    nextLevel = Math.max(current.previousLevel ?? 0, 0);
+
+    // 最高等级：若最高等级恰好由今日点亮所抬升，则同步减回；否则保留历史最高
+    if (current.maxLevel === current.level) {
+      nextMaxLevel = nextLevel;
+    } else {
+      nextMaxLevel = current.maxLevel;
+    }
+
+    // 用户明确要求：“反悔时业务天数也要回退一天”
+    // 若回退后等级 > 0，则业务日期回退至昨日；若回退后归零，则回退为 null
+    if (nextLevel > 0) {
+      nextLastLitDate = yesterday;
+    } else {
+      nextLastLitDate = null;
+    }
+  }
+
+  db.prepare(`
+    UPDATE focus_nodes SET
+      isLit = @isLit,
+      level = @level,
+      maxLevel = @maxLevel,
+      lastLitDate = @lastLitDate,
+      previousLevel = @previousLevel
+    WHERE id = @id
+  `).run({
+    id,
+    isLit: nextLit ? 1 : 0,
+    level: nextLevel,
+    maxLevel: nextMaxLevel,
+    lastLitDate: nextLastLitDate,
+    previousLevel: nextPreviousLevel
+  });
+
+  res.json({
+    id,
+    isLit: nextLit,
+    level: nextLevel,
+    maxLevel: nextMaxLevel,
+    lastLitDate: nextLastLitDate
+  });
 });
 
 // 保存列表基准排序
@@ -141,11 +229,11 @@ router.post('/nodes', (req: Request, res: Response) => {
   db.prepare(`
     INSERT INTO focus_nodes (
       id, code, name, groupId, triggerTime, hasExactTime, timeValueMinutes,
-      level, maxLevel, isLit, isFrozen, positionX, positionY,
+      level, maxLevel, isLit, isFrozen, lastLitDate, previousLevel, positionX, positionY,
       specInstruction, specFailCondition, specBenefitMechanism, specNotes, sortOrder
     ) VALUES (
       @id, @code, @name, @groupId, @triggerTime, @hasExactTime, @timeValueMinutes,
-      @level, @maxLevel, @isLit, @isFrozen, @positionX, @positionY,
+      @level, @maxLevel, @isLit, @isFrozen, @lastLitDate, @previousLevel, @positionX, @positionY,
       @specInstruction, @specFailCondition, @specBenefitMechanism, @specNotes, @sortOrder
     )
   `).run({
@@ -156,10 +244,12 @@ router.post('/nodes', (req: Request, res: Response) => {
     triggerTime: n.triggerTime || '全天候',
     hasExactTime: n.hasExactTime ? 1 : 0,
     timeValueMinutes: n.timeValueMinutes ?? null,
-    level: n.level || 1,
-    maxLevel: n.maxLevel || 3,
+    level: n.level ?? 0,
+    maxLevel: n.maxLevel ?? 0,
     isLit: n.isLit ? 1 : 0,
     isFrozen: n.isFrozen ? 1 : 0,
+    lastLitDate: n.lastLitDate ?? null,
+    previousLevel: n.previousLevel ?? 0,
     positionX: n.position?.x ?? 0,
     positionY: n.position?.y ?? 0,
     specInstruction: n.specCard?.instruction || '',
@@ -193,6 +283,8 @@ router.put('/nodes/:id', (req: Request, res: Response) => {
       maxLevel = @maxLevel,
       isLit = @isLit,
       isFrozen = @isFrozen,
+      lastLitDate = @lastLitDate,
+      previousLevel = @previousLevel,
       positionX = @positionX,
       positionY = @positionY,
       specInstruction = @specInstruction,
@@ -208,10 +300,12 @@ router.put('/nodes/:id', (req: Request, res: Response) => {
     triggerTime: n.triggerTime ?? current.triggerTime,
     hasExactTime: n.hasExactTime !== undefined ? (n.hasExactTime ? 1 : 0) : current.hasExactTime,
     timeValueMinutes: n.timeValueMinutes !== undefined ? n.timeValueMinutes : current.timeValueMinutes,
-    level: n.level ?? current.level,
-    maxLevel: n.maxLevel ?? current.maxLevel,
+    level: n.level !== undefined ? n.level : current.level,
+    maxLevel: n.maxLevel !== undefined ? n.maxLevel : current.maxLevel,
     isLit: n.isLit !== undefined ? (n.isLit ? 1 : 0) : current.isLit,
     isFrozen: n.isFrozen !== undefined ? (n.isFrozen ? 1 : 0) : current.isFrozen,
+    lastLitDate: n.lastLitDate !== undefined ? n.lastLitDate : current.lastLitDate,
+    previousLevel: n.previousLevel !== undefined ? n.previousLevel : current.previousLevel,
     positionX: n.position?.x ?? current.positionX,
     positionY: n.position?.y ?? current.positionY,
     specInstruction: n.specCard?.instruction ?? current.specInstruction,
