@@ -15,37 +15,43 @@ export const useFocusTreeStore = defineStore('focusTree', () => {
   const lastCreatedGroupId = ref<string | null>(null);
   const pendingResetSummary = ref<{ resetNodes: any[]; settlementDate: string } | null>(null);
 
-  // 新建分组固定坐标及沿 Y 轴向下递增平移（用户指定：baseX + 当前分组数 * stepY）
+  let sessionGroupSpawnCount = 0;
+  let sessionNodeSpawnCount = 0;
+
+  // 新建分组落盘点：紧随左侧早起破晓组下方 (Y 从 240 舒适起始，步长 290px，杜绝跳跃至 1500px 遥远深渊)
   function calculateSmartGroupPlacement(): { x: number; y: number } {
     const baseX = 80;
-    const baseY = 80;
-    const stepY = 300; // 每个分组默认高 260px，加 40px 呼吸间距
-    const count = groups.value.length;
+    const baseY = 240;
+    const stepY = 290; // 外框高 260px + 30px 紧凑呼吸间隙
+    const slot = sessionGroupSpawnCount % 3;
+    sessionGroupSpawnCount++;
     return {
       x: baseX,
-      y: Math.round(baseY + count * stepY)
+      y: Math.round(baseY + slot * stepY)
     };
   }
 
-  // 新建国策固定坐标及向下平移（用户指定：按当前数量向下平移固定像素，避免连续新建重叠）
+  // 新建国策落盘点：
   function calculateSmartPlacement(groupId: string | null): { x: number; y: number } {
     if (groupId) {
       const group = groups.value.find(g => g.id === groupId);
       if (group) {
         const countInGroup = nodes.value.filter(n => n.groupId === groupId).length;
         const innerX = (group.position?.x ?? 80) + 30;
-        const innerY = (group.position?.y ?? 80) + 60 + countInGroup * 95;
+        const innerY = (group.position?.y ?? 80) + 60 + (countInGroup % 3) * 90;
         return { x: Math.round(innerX), y: Math.round(innerY) };
       }
     }
-    // 独立国策：固定 X 轴，按已有独立国策数依次向下平移 110px (卡片高 72px + 间距 38px)
-    const independentCount = nodes.value.filter(n => !n.groupId).length;
-    const baseNodeX = 600;
-    const baseNodeY = 80;
-    const stepNodeY = 110;
+    // 独立国策：位于右侧专属待排布列 (X: 960, Y 从 120 舒适起始，步长 105px)
+    // 紧凑排布在专注作战组右侧核心视野内，绝对物理级杜绝飞到 Y = 2000+ 荒芜盲区
+    const baseNodeX = 960;
+    const baseNodeY = 120;
+    const stepNodeY = 105; // 国策卡片高 72px + 33px 紧凑呼吸间距
+    const slot = sessionNodeSpawnCount % 5;
+    sessionNodeSpawnCount++;
     return {
       x: baseNodeX,
-      y: Math.round(baseNodeY + independentCount * stepNodeY)
+      y: Math.round(baseNodeY + slot * stepNodeY)
     };
   }
 
