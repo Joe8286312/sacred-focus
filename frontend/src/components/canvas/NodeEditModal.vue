@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, watch } from 'vue';
+import { ref, watch, computed, onMounted, onUnmounted } from 'vue';
 import type { FocusNode, FocusGroup } from '../../types';
 
 const props = defineProps<{
@@ -38,7 +38,135 @@ const form = ref<FocusNode>({
 // 标记场景描述是否被人为自定义修改过（若已自定义，则后续再改时间不再覆盖描述）
 const isSceneCustomized = ref(false);
 
+// 自定义高性能零延迟时间选择器状态
+const isTimePickerOpen = ref(false);
+const timePickerRef = ref<HTMLElement | null>(null);
+const timeInputRef = ref<HTMLInputElement | null>(null);
+
+const PRESET_TIMES = ['06:30', '07:00', '07:30', '08:00', '08:30', '09:00', '12:00', '14:00', '18:00', '21:30', '22:00', '23:00'];
+const HOURS_LIST = Array.from({ length: 24 }, (_, i) => String(i).padStart(2, '0'));
+const MINUTES_LIST = ['00', '05', '10', '15', '20', '25', '30', '35', '40', '45', '50', '55'];
+
+const currentHour = computed(() => {
+  if (!form.value.triggerTime) return null;
+  const parts = form.value.triggerTime.split(/[:：]/);
+  return parts[0] ? parts[0].padStart(2, '0') : null;
+});
+
+const currentMinute = computed(() => {
+  if (!form.value.triggerTime) return null;
+  const parts = form.value.triggerTime.split(/[:：]/);
+  return parts[1] ? parts[1].padStart(2, '0') : null;
+});
+
+function applyTime(timeStr: string | null) {
+  form.value.triggerTime = timeStr;
+  if (timeStr) {
+    if (!isSceneCustomized.value) {
+      form.value.triggerScene = timeStr;
+    }
+  } else {
+    if (!isSceneCustomized.value) {
+      form.value.triggerScene = '全天候';
+    }
+  }
+}
+
+function selectTimePreset(t: string) {
+  applyTime(t);
+}
+
+function selectHour(h: string) {
+  const min = currentMinute.value || '00';
+  applyTime(`${h}:${min}`);
+}
+
+function selectMinute(m: string) {
+  const hr = currentHour.value || '08';
+  applyTime(`${hr}:${m}`);
+}
+
+function setNowTime() {
+  const d = new Date();
+  const h = String(d.getHours()).padStart(2, '0');
+  const m = String(d.getMinutes()).padStart(2, '0');
+  applyTime(`${h}:${m}`);
+}
+
+function clearTime() {
+  applyTime(null);
+}
+
+function clearTimeAndClose() {
+  applyTime(null);
+  isTimePickerOpen.value = false;
+}
+
+function openTimePicker() {
+  isTimePickerOpen.value = true;
+}
+
+function toggleTimePicker() {
+  isTimePickerOpen.value = !isTimePickerOpen.value;
+}
+
+function closeTimePicker() {
+  isTimePickerOpen.value = false;
+}
+
+function onTimeTextInput(e: Event) {
+  const raw = (e.target as HTMLInputElement).value.trim();
+  if (!raw) {
+    applyTime(null);
+    return;
+  }
+  const m = raw.match(/^([0-1]?[0-9]|2[0-3])[:：]([0-5]?[0-9])$/);
+  if (m) {
+    const h = m[1].padStart(2, '0');
+    const min = m[2].padStart(2, '0');
+    applyTime(`${h}:${min}`);
+  }
+}
+
+function onTimeTextBlur(e: Event) {
+  const raw = (e.target as HTMLInputElement).value.trim();
+  if (!raw) {
+    applyTime(null);
+    return;
+  }
+  const matchCol = raw.match(/^([0-1]?[0-9]|2[0-3])[:：]([0-5]?[0-9])$/);
+  if (matchCol) {
+    const h = matchCol[1].padStart(2, '0');
+    const min = matchCol[2].padStart(2, '0');
+    applyTime(`${h}:${min}`);
+    return;
+  }
+  const matchNum = raw.match(/^([0-1]?[0-9]|2[0-3])([0-5][0-9])$/);
+  if (matchNum) {
+    const h = matchNum[1].padStart(2, '0');
+    const min = matchNum[2];
+    applyTime(`${h}:${min}`);
+    return;
+  }
+  (e.target as HTMLInputElement).value = form.value.triggerTime || '';
+}
+
+function handleClickOutside(e: PointerEvent) {
+  if (isTimePickerOpen.value && timePickerRef.value && !timePickerRef.value.contains(e.target as Node)) {
+    closeTimePicker();
+  }
+}
+
+onMounted(() => {
+  document.addEventListener('pointerdown', handleClickOutside);
+});
+
+onUnmounted(() => {
+  document.removeEventListener('pointerdown', handleClickOutside);
+});
+
 function initForm() {
+  isTimePickerOpen.value = false;
   if (props.node) {
     const cloned = JSON.parse(JSON.stringify(props.node));
     form.value = {
@@ -48,14 +176,12 @@ function initForm() {
       hasExactTime: Boolean(cloned.triggerTime),
       timeValueMinutes: cloned.timeValueMinutes ?? null
     };
-    // 判断此前是否已被自定义：如果场景描述存在，且不等于时间，也不等于全天候，则视为已自定义
     isSceneCustomized.value = Boolean(
       form.value.triggerScene &&
       form.value.triggerScene !== form.value.triggerTime &&
       form.value.triggerScene !== '全天候'
     );
   } else {
-    // 每次新建时完全重置表单，生成全新唯一 ID，初始等级与最高等级均为 0 级，时间默认为 null
     form.value = {
       id: `node-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`,
       code: '',
@@ -81,12 +207,13 @@ function initForm() {
   }
 }
 
-// 核心修复：监听 isOpen，每次打开弹窗时彻底根据 props.node 初始化，绝不残留上次新建输入
 watch(
   () => props.isOpen,
-  (open) => {
-    if (open) {
+  (val) => {
+    if (val) {
       initForm();
+    } else {
+      closeTimePicker();
     }
   },
   { immediate: true }
@@ -100,28 +227,6 @@ watch(
     }
   }
 );
-
-function onTimeChange(e: Event) {
-  const val = (e.target as HTMLInputElement).value;
-  form.value.triggerTime = val || null;
-  if (form.value.triggerTime) {
-    // 首次设置时间，或此前未人为自定义过描述：自动将场景描述同步填充为该时间
-    if (!isSceneCustomized.value) {
-      form.value.triggerScene = form.value.triggerTime;
-    }
-  } else {
-    if (!isSceneCustomized.value) {
-      form.value.triggerScene = '全天候';
-    }
-  }
-}
-
-function clearTime() {
-  form.value.triggerTime = null;
-  if (!isSceneCustomized.value) {
-    form.value.triggerScene = '全天候';
-  }
-}
 
 function onSceneInput() {
   // 用户人为输入或修改场景描述，立即锁定为已自定义
@@ -214,13 +319,118 @@ function handleSave() {
                   清除时间
                 </button>
               </div>
-              <input 
-                :value="form.triggerTime || ''" 
-                type="time" 
-                class="form-input font-mono time-picker-input" 
-                @input="onTimeChange" 
-                @change="onTimeChange"
-              />
+
+              <!-- 自定义高响应度时间选择器 -->
+              <div ref="timePickerRef" class="custom-time-picker-root">
+                <div 
+                  class="custom-time-input-wrap"
+                  :class="{ 'is-open': isTimePickerOpen }"
+                  @click="openTimePicker"
+                >
+                  <input 
+                    ref="timeInputRef"
+                    type="text" 
+                    class="form-input font-mono custom-time-field" 
+                    placeholder="点击呼出面板或输入, 如: 08:30" 
+                    :value="form.triggerTime || ''"
+                    @input="onTimeTextInput"
+                    @blur="onTimeTextBlur"
+                    @keydown.enter.prevent="closeTimePicker"
+                  />
+                  <div class="time-input-adornments">
+                    <button 
+                      v-if="form.triggerTime" 
+                      type="button" 
+                      class="btn-clear-time-inline" 
+                      @click.stop="clearTime" 
+                      title="清空具体时间"
+                    >
+                      ✕
+                    </button>
+                    <button 
+                      type="button" 
+                      class="btn-toggle-picker" 
+                      @click.stop="toggleTimePicker" 
+                      title="展开/收起时间面板"
+                    >
+                      <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="12" cy="12" r="10"></circle>
+                        <polyline points="12 6 12 12 16 14"></polyline>
+                      </svg>
+                    </button>
+                  </div>
+                </div>
+
+                <!-- 零延迟自定义时间面板浮层 (Popover) -->
+                <div v-if="isTimePickerOpen" class="time-popover-panel" @click.stop>
+                  <!-- 常用快捷时点 -->
+                  <div class="popover-section-label">快捷常用时点</div>
+                  <div class="popover-preset-chips">
+                    <button 
+                      v-for="t in PRESET_TIMES" 
+                      :key="t" 
+                      type="button" 
+                      class="chip-time-preset font-mono" 
+                      :class="{ 'is-selected': form.triggerTime === t }"
+                      @click="selectTimePreset(t)"
+                    >
+                      {{ t }}
+                    </button>
+                  </div>
+
+                  <!-- 小时与分钟矩阵 -->
+                  <div class="time-picker-matrix">
+                    <!-- 小时列 (00 - 23) -->
+                    <div class="matrix-column">
+                      <div class="matrix-column-title">小时 ({{ currentHour || '--' }})</div>
+                      <div class="matrix-btn-grid hours-grid">
+                        <button 
+                          v-for="h in HOURS_LIST" 
+                          :key="h" 
+                          type="button"
+                          class="matrix-btn font-mono"
+                          :class="{ 'is-active': currentHour === h }"
+                          @click="selectHour(h)"
+                        >
+                          {{ h }}
+                        </button>
+                      </div>
+                    </div>
+
+                    <!-- 分钟列 (00 - 55 常用步长) -->
+                    <div class="matrix-column">
+                      <div class="matrix-column-title">分钟 ({{ currentMinute || '--' }})</div>
+                      <div class="matrix-btn-grid minutes-grid">
+                        <button 
+                          v-for="m in MINUTES_LIST" 
+                          :key="m" 
+                          type="button"
+                          class="matrix-btn font-mono"
+                          :class="{ 'is-active': currentMinute === m }"
+                          @click="selectMinute(m)"
+                        >
+                          {{ m }}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+
+                  <!-- 底部控制栏 -->
+                  <div class="popover-footer">
+                    <div class="footer-left">
+                      <button type="button" class="btn-popover-ghost" @click="setNowTime">
+                        当前时间
+                      </button>
+                      <button type="button" class="btn-popover-ghost text-danger" @click="clearTimeAndClose">
+                        设为全天候
+                      </button>
+                    </div>
+                    <button type="button" class="btn-popover-confirm" @click="closeTimePicker">
+                      完成
+                    </button>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
 
@@ -434,8 +644,243 @@ function handleSave() {
   background: rgba(16, 185, 129, 0.08);
 }
 
-.time-picker-input {
+.custom-time-picker-root {
+  position: relative;
+  width: 100%;
+}
+
+.custom-time-input-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+  width: 100%;
+}
+
+.custom-time-field {
+  width: 100%;
+  padding-right: 56px;
+  cursor: text;
+  box-sizing: border-box;
   min-height: 35px;
+}
+
+.custom-time-input-wrap.is-open .custom-time-field {
+  border-color: #10B981;
+}
+
+.time-input-adornments {
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.btn-clear-time-inline {
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  font-size: 11px;
+  cursor: pointer;
+  padding: 2px 4px;
+  border-radius: var(--radius-sm);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all var(--transition-fast);
+}
+
+.btn-clear-time-inline:hover {
+  color: var(--color-danger);
+  background: rgba(239, 68, 68, 0.1);
+}
+
+.btn-toggle-picker {
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 2px 4px;
+  border-radius: var(--radius-sm);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all var(--transition-fast);
+}
+
+.custom-time-input-wrap.is-open .btn-toggle-picker,
+.btn-toggle-picker:hover {
+  color: #10B981;
+}
+
+/* 浮层面板 */
+.time-popover-panel {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  width: 310px;
+  background: var(--bg-primary);
+  border: 1px solid var(--border-focus);
+  border-radius: var(--radius-md);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+  padding: 12px;
+  z-index: 100;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.popover-section-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+  letter-spacing: 0.5px;
+}
+
+.popover-preset-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.chip-time-preset {
+  font-size: 11px;
+  font-weight: 500;
+  padding: 2px 6px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.chip-time-preset:hover {
+  border-color: #10B981;
+  color: var(--text-primary);
+}
+
+.chip-time-preset.is-selected {
+  background: rgba(16, 185, 129, 0.15);
+  border-color: #10B981;
+  color: #10B981;
+  font-weight: 700;
+}
+
+.time-picker-matrix {
+  display: flex;
+  gap: 10px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  padding: 8px;
+}
+
+.matrix-column {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.matrix-column-title {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-align: center;
+}
+
+.matrix-btn-grid {
+  display: grid;
+  gap: 3px;
+}
+
+.hours-grid {
+  grid-template-columns: repeat(4, 1fr);
+  max-height: 140px;
+  overflow-y: auto;
+}
+
+.minutes-grid {
+  grid-template-columns: repeat(3, 1fr);
+  max-height: 140px;
+  overflow-y: auto;
+}
+
+.matrix-btn {
+  background: var(--bg-tertiary);
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  font-size: 11px;
+  padding: 4px 0;
+  text-align: center;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.matrix-btn:hover {
+  background: var(--bg-primary);
+  border-color: var(--border-focus);
+  color: var(--text-primary);
+}
+
+.matrix-btn.is-active {
+  background: #10B981;
+  color: #fff;
+  font-weight: 700;
+  border-color: #10B981;
+}
+
+.popover-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding-top: 6px;
+  border-top: 1px solid var(--border-color);
+}
+
+.footer-left {
+  display: flex;
+  gap: 6px;
+}
+
+.btn-popover-ghost {
+  background: transparent;
+  border: none;
+  font-size: 11px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  padding: 2px 4px;
+  border-radius: var(--radius-sm);
+  transition: color var(--transition-fast);
+}
+
+.btn-popover-ghost:hover {
+  color: var(--text-primary);
+}
+
+.btn-popover-ghost.text-danger:hover {
+  color: var(--color-danger);
+}
+
+.btn-popover-confirm {
+  background: var(--text-primary);
+  color: var(--bg-primary);
+  border: none;
+  border-radius: var(--radius-sm);
+  font-size: 11px;
+  font-weight: 600;
+  padding: 4px 12px;
+  cursor: pointer;
+  transition: opacity var(--transition-fast);
+}
+
+.btn-popover-confirm:hover {
+  opacity: 0.9;
 }
 
 .form-label-danger {

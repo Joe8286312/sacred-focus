@@ -639,18 +639,28 @@ async function handleDeleteNode(node: FocusNode) {
   background: var(--bg-secondary);
   border: 1px solid var(--border-color);
   border-radius: var(--radius-sm);
-  padding: 6px 12px;
+  padding: 0 12px;
+  height: 34px;
+  box-sizing: border-box;
   flex: 1;
   color: var(--text-secondary);
+  transition: border-color var(--transition-fast);
+}
+
+.search-box:focus-within {
+  border-color: var(--border-focus);
 }
 
 .search-box input {
+  height: 100%;
   background: transparent;
   border: none;
   outline: none;
   font-size: 12px;
   color: var(--text-primary);
   width: 100%;
+  padding: 0;
+  line-height: 32px;
 }
 
 .btn-clear-search {
@@ -659,6 +669,15 @@ async function handleDeleteNode(node: FocusNode) {
   color: var(--text-muted);
   font-size: 12px;
   cursor: pointer;
+  padding: 0 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+}
+
+.btn-clear-search:hover {
+  color: var(--text-primary);
 }
 
 .group-filter-wrap {
@@ -667,14 +686,19 @@ async function handleDeleteNode(node: FocusNode) {
 }
 
 .group-filter-select {
+  height: 34px;
+  box-sizing: border-box;
   background: var(--bg-secondary);
   border: 1px solid var(--border-color);
   border-radius: var(--radius-sm);
-  padding: 6px 10px;
+  padding: 0 10px;
   font-size: 12px;
   color: var(--text-primary);
   outline: none;
   cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  line-height: 32px;
   transition: all var(--transition-fast);
 }
 
@@ -689,11 +713,17 @@ async function handleDeleteNode(node: FocusNode) {
 }
 
 .btn-tool {
-  padding: 6px 14px;
+  height: 34px;
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 14px;
   border-radius: var(--radius-sm);
   font-size: 12px;
   font-weight: 500;
   cursor: pointer;
+  line-height: 1;
   transition: all var(--transition-fast);
 }
 
@@ -724,16 +754,22 @@ async function handleDeleteNode(node: FocusNode) {
 }
 
 .btn-create-node {
+  height: 34px;
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 16px;
   background: var(--text-primary);
   color: var(--bg-primary);
   border: 1px solid transparent;
   font-weight: 600;
-  padding: 6px 16px;
   border-radius: var(--radius-sm);
   font-size: 12px;
   cursor: pointer;
   transition: all var(--transition-fast);
   white-space: nowrap;
+  line-height: 1;
 }
 
 .btn-create-node:hover {
