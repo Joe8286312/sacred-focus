@@ -30,6 +30,12 @@ const isWarningModalOpen = ref(false);
 const isCaseModalOpen = ref(false);
 const isSettingsModalOpen = ref(false);
 const isHistoryModalOpen = ref(false);
+const historyModalInitialTab = ref<'LOGS' | 'HEATMAP'>('LOGS');
+
+function openHistoryModal(tab: 'LOGS' | 'HEATMAP' = 'LOGS') {
+  historyModalInitialTab.value = tab;
+  isHistoryModalOpen.value = true;
+}
 
 // 后悔药即时提示气泡
 const regretNotice = ref('');
@@ -319,6 +325,7 @@ function handleBeforeUnload(e: BeforeUnloadEvent) {
 onMounted(() => {
   store.fetchConfig();
   store.fetchLogs();
+  store.fetchHeatmapData();
   window.addEventListener('beforeunload', handleBeforeUnload);
 });
 
@@ -354,12 +361,21 @@ onUnmounted(() => {
             <span class="streak-node">当前主链: #{{ store.config.currentStreak }}</span>
             <span class="streak-max font-mono">最高: #{{ store.config.maxStreak }}</span>
           </div>
-          <button class="btn-history" @click="isHistoryModalOpen = true" title="查看专注历史档案">
+          <button class="btn-history" @click="openHistoryModal('LOGS')" title="查看专注历史档案">
             <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <circle cx="12" cy="12" r="10"></circle>
               <polyline points="12 6 12 12 16 14"></polyline>
             </svg>
             <span>专注历史</span>
+          </button>
+          <button class="btn-history btn-heatmap-entry" @click="openHistoryModal('HEATMAP')" title="查看全周期专注热力图">
+            <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="3" y="3" width="7" height="7"></rect>
+              <rect x="14" y="3" width="7" height="7"></rect>
+              <rect x="14" y="14" width="7" height="7"></rect>
+              <rect x="3" y="14" width="7" height="7"></rect>
+            </svg>
+            <span>专注热力图</span>
           </button>
           <button class="btn-icon" @click="isSettingsModalOpen = true" title="个性化设置">
             <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -557,8 +573,10 @@ onUnmounted(() => {
     <FocusHistoryModal
       :is-open="isHistoryModalOpen"
       :logs="store.logs"
+      :heatmap-data="store.heatmapData"
       :current-streak="store.config.currentStreak"
       :max-streak="store.config.maxStreak"
+      :initial-tab="historyModalInitialTab"
       @close="isHistoryModalOpen = false"
     />
   </div>
@@ -680,6 +698,11 @@ onUnmounted(() => {
   color: var(--text-primary);
   border-color: var(--border-focus);
   background: var(--bg-card-hover);
+}
+
+.btn-heatmap-entry:hover {
+  color: #10B981;
+  border-color: rgba(16, 185, 129, 0.5);
 }
 
 .focus-target-bar {

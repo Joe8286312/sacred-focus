@@ -22,6 +22,16 @@ export interface FocusSessionLog {
   note?: string;
 }
 
+// 2.1 全周期专注热力图日聚合数据项
+export interface DailyFocusHeatmapItem {
+  date: string;                   // YYYY-MM-DD
+  totalSessions: number;          // 当日专注总次数
+  successCount: number;           // 当日成功完成次数
+  regretCount: number;            // 当日后悔药撤回次数
+  failCount: number;              // 当日违规中断次数
+  totalSeconds: number;           // 当日实际物理专注累计总秒数
+}
+
 // 3. 下必为例判例记录
 export interface PrecedentCase {
   id: string;

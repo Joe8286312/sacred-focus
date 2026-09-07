@@ -1,29 +1,73 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue';
-import { formatCompactDuration } from '../../utils/time';
-import type { FocusSessionLog } from '../../types';
+import { ref, computed, watch } from 'vue';
+import type { FocusSessionLog, DailyFocusHeatmapItem } from '../../types';
+import FocusHeatmap from './FocusHeatmap.vue';
+import FocusSessionLogCard from './FocusSessionLogCard.vue';
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   isOpen: boolean;
   logs: FocusSessionLog[];
+  heatmapData?: DailyFocusHeatmapItem[];
   currentStreak: number;
   maxStreak: number;
-}>();
+  initialTab?: 'LOGS' | 'HEATMAP';
+}>(), {
+  heatmapData: () => [],
+  initialTab: 'LOGS'
+});
 
 const emit = defineEmits<{
   (e: 'close'): void;
 }>();
 
+// 模式选项卡：LOGS (流水明细) | HEATMAP (专注热力图)
+type ModalTab = 'LOGS' | 'HEATMAP';
+const activeTab = ref<ModalTab>(props.initialTab);
+
+// 弹窗打开时或 initialTab 变化时重置/同步选项卡
+watch(() => props.isOpen, (open) => {
+  if (open && props.initialTab) {
+    activeTab.value = props.initialTab;
+  }
+});
+
+watch(() => props.initialTab, (tab) => {
+  if (tab) {
+    activeTab.value = tab;
+  }
+});
+
+// 选中的热力图日期 (YYYY-MM-DD)
+const selectedHeatmapDate = ref<string | null>(null);
+
+function handleSelectDate(date: string | null) {
+  selectedHeatmapDate.value = date;
+}
+
+function clearDateFilter() {
+  selectedHeatmapDate.value = null;
+}
+
+// 选中日期的专属日志明细
+const selectedDateLogs = computed(() => {
+  if (!selectedHeatmapDate.value) return [];
+  return props.logs.filter(l => l.startTime && l.startTime.startsWith(selectedHeatmapDate.value!));
+});
+
 // 筛选状态：ALL | SUCCESS | REGRET | FAIL
 type FilterType = 'ALL' | 'SUCCESS' | 'REGRET' | 'FAIL';
 const currentFilter = ref<FilterType>('ALL');
 
-// 过滤后的流水日志
+// 过滤后的流水日志 (支持联动热力图选中日期)
 const filteredLogs = computed(() => {
-  if (currentFilter.value === 'ALL') {
-    return props.logs;
+  let list = props.logs;
+  if (selectedHeatmapDate.value) {
+    list = list.filter(l => l.startTime && l.startTime.startsWith(selectedHeatmapDate.value!));
   }
-  return props.logs.filter(l => l.status === currentFilter.value);
+  if (currentFilter.value === 'ALL') {
+    return list;
+  }
+  return list.filter(l => l.status === currentFilter.value);
 });
 
 // 统计核心指标
@@ -58,34 +102,6 @@ const stats = computed(() => {
     successRate
   };
 });
-
-// 格式化时间戳
-function formatDateTime(isoString: string): string {
-  if (!isoString) return '--';
-  const d = new Date(isoString);
-  if (isNaN(d.getTime())) return isoString;
-  const Y = d.getFullYear();
-  const M = String(d.getMonth() + 1).padStart(2, '0');
-  const D = String(d.getDate()).padStart(2, '0');
-  const h = String(d.getHours()).padStart(2, '0');
-  const m = String(d.getMinutes()).padStart(2, '0');
-  return `${Y}-${M}-${D} ${h}:${m}`;
-}
-
-// 格式化秒数
-function formatDuration(sec: number): string {
-  const total = Math.max(0, Math.floor(sec));
-  const h = Math.floor(total / 3600);
-  const m = Math.floor((total % 3600) / 60);
-  const s = total % 60;
-  if (h > 0) {
-    return `${h}小时 ${m}分钟`;
-  }
-  if (m > 0) {
-    return `${m}分钟${s > 0 ? ' ' + s + '秒' : ''}`;
-  }
-  return `${s}秒`;
-}
 </script>
 
 <template>
@@ -110,6 +126,40 @@ function formatDuration(sec: number): string {
               </div>
             </div>
 
+            <!-- 模式切换：流水明细 vs 专注热力图 -->
+            <div class="header-center-tabs">
+              <div class="mode-segmented-ctrl font-mono">
+                <button 
+                  class="mode-btn" 
+                  :class="{ active: activeTab === 'LOGS' }" 
+                  @click="activeTab = 'LOGS'"
+                >
+                  <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <line x1="8" y1="6" x2="21" y2="6"></line>
+                    <line x1="8" y1="12" x2="21" y2="12"></line>
+                    <line x1="8" y1="18" x2="21" y2="18"></line>
+                    <line x1="3" y1="6" x2="3.01" y2="6"></line>
+                    <line x1="3" y1="12" x2="3.01" y2="12"></line>
+                    <line x1="3" y1="18" x2="3.01" y2="18"></line>
+                  </svg>
+                  <span>流水明细</span>
+                </button>
+                <button 
+                  class="mode-btn" 
+                  :class="{ active: activeTab === 'HEATMAP' }" 
+                  @click="activeTab = 'HEATMAP'"
+                >
+                  <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <rect x="3" y="3" width="7" height="7"></rect>
+                    <rect x="14" y="3" width="7" height="7"></rect>
+                    <rect x="14" y="14" width="7" height="7"></rect>
+                    <rect x="3" y="14" width="7" height="7"></rect>
+                  </svg>
+                  <span>全周期热力图</span>
+                </button>
+              </div>
+            </div>
+
             <button class="btn-close" @click="emit('close')" title="关闭">
               <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
                 <line x1="18" y1="6" x2="6" y2="18"></line>
@@ -118,216 +168,186 @@ function formatDuration(sec: number): string {
             </button>
           </div>
 
-          <!-- 2. 核心统计数据看板 -->
-          <div class="stats-overview-grid">
-            <div class="stat-card">
-              <div class="stat-card-header">
-                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
-                  <circle cx="12" cy="12" r="10"></circle>
-                  <polyline points="12 6 12 12 14 10"></polyline>
-                </svg>
-                <span class="stat-label">累计专注时长</span>
+          <!-- ==================== 模式 A: 流水明细视图 ==================== -->
+          <div v-show="activeTab === 'LOGS'" class="logs-tab-wrapper">
+            <!-- 2. 核心统计数据看板 -->
+            <div class="stats-overview-grid">
+              <div class="stat-card">
+                <div class="stat-card-header">
+                  <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+                    <circle cx="12" cy="12" r="10"></circle>
+                    <polyline points="12 6 12 12 14 10"></polyline>
+                  </svg>
+                  <span class="stat-label">累计专注时长</span>
+                </div>
+                <div class="stat-val font-mono">
+                  {{ stats.totalHours }} <span class="stat-unit">小时</span>
+                </div>
+                <span class="stat-sub font-mono">全量秒数精确沉淀</span>
               </div>
-              <div class="stat-val font-mono">
-                {{ stats.totalHours }} <span class="stat-unit">小时</span>
+
+              <div class="stat-card">
+                <div class="stat-card-header">
+                  <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+                    <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
+                    <polyline points="22 4 12 14.01 9 11.01"></polyline>
+                  </svg>
+                  <span class="stat-label">专注完成率</span>
+                </div>
+                <div class="stat-val font-mono text-success">
+                  {{ stats.successRate }}
+                </div>
+                <span class="stat-sub font-mono">成功 {{ stats.successCount }} / 中断 {{ stats.failCount }}</span>
               </div>
-              <span class="stat-sub font-mono">全量秒数精确沉淀</span>
+
+              <div class="stat-card">
+                <div class="stat-card-header">
+                  <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+                    <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
+                  </svg>
+                  <span class="stat-label">当前主链连胜</span>
+                </div>
+                <div class="stat-val font-mono text-gold">
+                  #{{ currentStreak }}
+                </div>
+                <span class="stat-sub font-mono">连续点亮保持中</span>
+              </div>
+
+              <div class="stat-card">
+                <div class="stat-card-header">
+                  <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+                    <path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6"></path>
+                    <path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18"></path>
+                    <path d="M4 22h16"></path>
+                    <path d="M10 14.66V17c0 .55-.45 1-1 1H7c-.55 0-1-.45-1-1v-2.34"></path>
+                    <path d="M18 14.66V17c0 .55-.45 1-1 1h-2c-.55 0-1-.45-1-1v-2.34"></path>
+                    <path d="M18 2H6v7a6 6 0 0 0 12 0V2z"></path>
+                  </svg>
+                  <span class="stat-label">历史最高连胜</span>
+                </div>
+                <div class="stat-val font-mono">
+                  #{{ maxStreak }}
+                </div>
+                <span class="stat-sub font-mono">历史不败峰值</span>
+              </div>
             </div>
 
-            <div class="stat-card">
-              <div class="stat-card-header">
-                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
-                  <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
-                  <polyline points="22 4 12 14.01 9 11.01"></polyline>
-                </svg>
-                <span class="stat-label">专注完成率</span>
+            <!-- 3. 状态多维筛选工具栏（固定高度防挤压） -->
+            <div class="filter-tabs-wrapper">
+              <div class="filter-tabs custom-scrollbar">
+                <button 
+                  class="tab-pill" 
+                  :class="{ active: currentFilter === 'ALL' }" 
+                  @click="currentFilter = 'ALL'"
+                >
+                  <span>全部</span>
+                  <span class="tab-badge font-mono">{{ stats.total }}</span>
+                </button>
+                <button 
+                  class="tab-pill pill-success" 
+                  :class="{ active: currentFilter === 'SUCCESS' }" 
+                  @click="currentFilter = 'SUCCESS'"
+                >
+                  <span>圆满达成</span>
+                  <span class="tab-badge font-mono">{{ stats.successCount }}</span>
+                </button>
+                <button 
+                  class="tab-pill pill-regret" 
+                  :class="{ active: currentFilter === 'REGRET' }" 
+                  @click="currentFilter = 'REGRET'"
+                >
+                  <span>后悔药免责</span>
+                  <span class="tab-badge font-mono">{{ stats.regretCount }}</span>
+                </button>
+                <button 
+                  class="tab-pill pill-fail" 
+                  :class="{ active: currentFilter === 'FAIL' }" 
+                  @click="currentFilter = 'FAIL'"
+                >
+                  <span>违规中断</span>
+                  <span class="tab-badge font-mono">{{ stats.failCount }}</span>
+                </button>
               </div>
-              <div class="stat-val font-mono text-success">
-                {{ stats.successRate }}
-              </div>
-              <span class="stat-sub font-mono">成功 {{ stats.successCount }} / 中断 {{ stats.failCount }}</span>
             </div>
 
-            <div class="stat-card">
-              <div class="stat-card-header">
-                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
-                  <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
+            <!-- 日期联动筛选横幅 -->
+            <div v-if="selectedHeatmapDate" class="date-filter-banner">
+              <div class="banner-left font-mono">
+                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
+                  <line x1="16" y1="2" x2="16" y2="6"></line>
+                  <line x1="8" y1="2" x2="8" y2="6"></line>
+                  <line x1="3" y1="10" x2="21" y2="10"></line>
                 </svg>
-                <span class="stat-label">当前主链连胜</span>
+                <span>热力图联动筛选日期：<strong>{{ selectedHeatmapDate }}</strong></span>
+                <span class="banner-count">({{ filteredLogs.length }} 条记录)</span>
               </div>
-              <div class="stat-val font-mono text-gold">
-                #{{ currentStreak }}
-              </div>
-              <span class="stat-sub font-mono">连续点亮保持中</span>
+              <button class="btn-clear-date-filter font-mono" @click="clearDateFilter">
+                清除筛选 ✕
+              </button>
             </div>
 
-            <div class="stat-card">
-              <div class="stat-card-header">
-                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
-                  <path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6"></path>
-                  <path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18"></path>
-                  <path d="M4 22h16"></path>
-                  <path d="M10 14.66V17c0 .55-.45 1-1 1H7c-.55 0-1-.45-1-1v-2.34"></path>
-                  <path d="M18 14.66V17c0 .55-.45 1-1 1h-2c-.55 0-1-.45-1-1v-2.34"></path>
-                  <path d="M18 2H6v7a6 6 0 0 0 12 0V2z"></path>
-                </svg>
-                <span class="stat-label">历史最高连胜</span>
+            <!-- 4. 专注记录时间轴清单（独占弹性滚动区） -->
+            <div class="logs-scroll-area custom-scrollbar">
+              <div v-if="filteredLogs.length === 0" class="empty-state">
+                <div class="empty-icon-wrap">
+                  <svg viewBox="0 0 24 24" width="40" height="40" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                    <polyline points="14 2 14 8 20 8"></polyline>
+                    <line x1="16" y1="13" x2="8" y2="13"></line>
+                    <line x1="16" y1="17" x2="8" y2="17"></line>
+                    <polyline points="10 9 9 9 8 9"></polyline>
+                  </svg>
+                </div>
+                <p class="empty-title">暂无对应专注记录</p>
+                <span class="empty-desc font-mono">可通过上方分类标签或清除日期筛选查看其他心流</span>
               </div>
-              <div class="stat-val font-mono">
-                #{{ maxStreak }}
+
+              <div v-else class="logs-list">
+                <FocusSessionLogCard 
+                  v-for="log in filteredLogs" 
+                  :key="log.id" 
+                  :log="log" 
+                />
               </div>
-              <span class="stat-sub font-mono">历史不败峰值</span>
             </div>
           </div>
 
-          <!-- 3. 状态多维筛选工具栏（固定高度防挤压） -->
-          <div class="filter-tabs-wrapper">
-            <div class="filter-tabs custom-scrollbar">
-              <button 
-                class="tab-pill" 
-                :class="{ active: currentFilter === 'ALL' }" 
-                @click="currentFilter = 'ALL'"
-              >
-                <span>全部</span>
-                <span class="tab-badge font-mono">{{ stats.total }}</span>
-              </button>
-              <button 
-                class="tab-pill pill-success" 
-                :class="{ active: currentFilter === 'SUCCESS' }" 
-                @click="currentFilter = 'SUCCESS'"
-              >
-                <span>圆满达成</span>
-                <span class="tab-badge font-mono">{{ stats.successCount }}</span>
-              </button>
-              <button 
-                class="tab-pill pill-regret" 
-                :class="{ active: currentFilter === 'REGRET' }" 
-                @click="currentFilter = 'REGRET'"
-              >
-                <span>后悔药免责</span>
-                <span class="tab-badge font-mono">{{ stats.regretCount }}</span>
-              </button>
-              <button 
-                class="tab-pill pill-fail" 
-                :class="{ active: currentFilter === 'FAIL' }" 
-                @click="currentFilter = 'FAIL'"
-              >
-                <span>违规中断</span>
-                <span class="tab-badge font-mono">{{ stats.failCount }}</span>
-              </button>
-            </div>
-          </div>
+          <!-- ==================== 模式 B: 专注热力图视图 ==================== -->
+          <div v-show="activeTab === 'HEATMAP'" class="heatmap-tab-container custom-scrollbar">
+            <!-- 52周贡献热力图主组件 -->
+            <FocusHeatmap
+              :heatmap-data="heatmapData"
+              :selected-date="selectedHeatmapDate"
+              @select-date="handleSelectDate"
+            />
 
-          <!-- 4. 专注记录时间轴清单（独占弹性滚动区） -->
-          <div class="logs-scroll-area custom-scrollbar">
-            <div v-if="filteredLogs.length === 0" class="empty-state">
-              <div class="empty-icon-wrap">
-                <svg viewBox="0 0 24 24" width="40" height="40" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
-                  <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
-                  <polyline points="14 2 14 8 20 8"></polyline>
-                  <line x1="16" y1="13" x2="8" y2="13"></line>
-                  <line x1="16" y1="17" x2="8" y2="17"></line>
-                  <polyline points="10 9 9 9 8 9"></polyline>
-                </svg>
+            <!-- 选定日期的下钻明细面板 -->
+            <div v-if="selectedHeatmapDate" class="drilldown-section">
+              <div class="drilldown-header">
+                <div class="drilldown-title">
+                  <span class="drilldown-badge font-mono">{{ selectedHeatmapDate }}</span>
+                  <span class="drilldown-summary">当日专注明细 ({{ selectedDateLogs.length }} 条记录)</span>
+                </div>
+                <div class="drilldown-actions">
+                  <button class="btn-switch-to-logs" @click="activeTab = 'LOGS'">
+                    在流水明细中筛选此日
+                  </button>
+                  <button class="btn-clear-filter" @click="clearDateFilter" title="清除选中日期">
+                    ✕
+                  </button>
+                </div>
               </div>
-              <p class="empty-title">暂无对应专注记录</p>
-              <span class="empty-desc font-mono">可通过上方分类标签切换查看其他历史心流</span>
-            </div>
 
-            <div v-else class="logs-list">
-              <div 
-                v-for="log in filteredLogs" 
-                :key="log.id" 
-                class="log-card"
-                :class="{
-                  'status-success': log.status === 'SUCCESS',
-                  'status-regret': log.status === 'REGRET',
-                  'status-fail': log.status === 'FAIL'
-                }"
-              >
-                <!-- 卡片顶栏：状态徽标与时间戳 -->
-                <div class="log-card-header">
-                  <div class="log-status-tag font-mono">
-                    <template v-if="log.status === 'SUCCESS'">
-                      <span class="tag-icon text-success">✓</span>
-                      <span class="tag-text">圆满达成 · 主链推进</span>
-                    </template>
-                    <template v-else-if="log.status === 'REGRET'">
-                      <span class="tag-icon text-gold">⟲</span>
-                      <span class="tag-text">后悔药免责退出 · 主链保全</span>
-                    </template>
-                    <template v-else>
-                      <span class="tag-icon text-danger">✕</span>
-                      <span class="tag-text">违规中断放弃 · 主链清零</span>
-                    </template>
-                  </div>
-
-                  <span class="log-timestamp font-mono">
-                    <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" class="time-icon">
-                      <circle cx="12" cy="12" r="10"></circle>
-                      <polyline points="12 6 12 12 16 14"></polyline>
-                    </svg>
-                    {{ formatDateTime(log.startTime) }}
-                  </span>
-                </div>
-
-                <!-- 卡片主要内容：专注目标 -->
-                <div class="log-content-row">
-                  <span v-if="log.focusContent" class="content-title">
-                    {{ log.focusContent }}
-                  </span>
-                  <span v-else class="content-title text-placeholder">
-                    未记录具体专注目标
-                  </span>
-                </div>
-
-                <!-- 卡片指标行：实际时长 vs 设定目标 -->
-                <div class="log-meta-row font-mono">
-                  <div class="meta-tag">
-                    <span class="meta-label">实际心流</span>
-                    <span class="meta-val font-bold" :class="{
-                      'text-success': log.status === 'SUCCESS',
-                      'text-gold': log.status === 'REGRET',
-                      'text-danger': log.status === 'FAIL'
-                    }">
-                      {{ formatDuration(log.actualDurationSeconds) }}
-                    </span>
-                  </div>
-
-                  <div class="meta-divider">/</div>
-
-                  <div class="meta-tag">
-                    <span class="meta-label">预设目标</span>
-                    <span class="meta-val">{{ log.targetDurationMinutes }}分钟</span>
-                  </div>
-
-                  <!-- 顺水推舟超额增量药丸 -->
-                  <div 
-                    v-if="log.status === 'SUCCESS' && (log.actualDurationSeconds - log.targetDurationMinutes * 60) > 0" 
-                    class="over-pill font-mono"
-                    title="预设时长已满后自发顺水推舟深潜"
-                  >
-                    +{{ formatCompactDuration(log.actualDurationSeconds - log.targetDurationMinutes * 60) }} 顺水推舟
-                  </div>
-                </div>
-
-                <!-- 失败原因反思警示框（仅中断时呈现） -->
-                <div v-if="log.status === 'FAIL' && log.failureReason" class="failure-reason-card">
-                  <div class="reason-header">
-                    <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
-                      <circle cx="12" cy="12" r="10"></circle>
-                      <line x1="12" y1="8" x2="12" y2="12"></line>
-                      <line x1="12" y1="16" x2="12.01" y2="16"></line>
-                    </svg>
-                    <span>中断原因与自控反思：</span>
-                  </div>
-                  <p class="reason-text">{{ log.failureReason }}</p>
-                </div>
-
-                <!-- 附加备注信息 -->
-                <div v-if="log.note && log.note !== log.failureReason" class="log-note-row">
-                  <span class="note-text">{{ log.note }}</span>
-                </div>
+              <div v-if="selectedDateLogs.length === 0" class="drilldown-empty font-mono">
+                该日期无专注明细记录
+              </div>
+              <div v-else class="logs-list">
+                <FocusSessionLogCard 
+                  v-for="log in selectedDateLogs" 
+                  :key="log.id" 
+                  :log="log" 
+                />
               </div>
             </div>
           </div>
@@ -355,10 +375,10 @@ function formatDuration(sec: number): string {
   border: 1px solid var(--border-color);
   box-shadow: var(--shadow-md), 0 30px 70px rgba(0, 0, 0, 0.45);
   border-radius: var(--radius-lg, 16px);
-  max-width: 760px;
+  max-width: 840px;
   width: 100%;
-  height: 86vh;
-  max-height: 860px;
+  height: 88vh;
+  max-height: 880px;
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -373,12 +393,13 @@ function formatDuration(sec: number): string {
 /* 1. 头部 */
 .modal-header {
   flex-shrink: 0;
-  padding: 20px 28px;
+  padding: 18px 28px;
   border-bottom: 1px solid var(--border-color);
   display: flex;
   justify-content: space-between;
   align-items: center;
   background: var(--bg-secondary);
+  gap: 16px;
 }
 
 .header-left {
@@ -419,6 +440,48 @@ function formatDuration(sec: number): string {
   color: var(--text-secondary);
 }
 
+/* 头部中央分段控制器 (流水明细 vs 专注热力图) */
+.header-center-tabs {
+  display: flex;
+  align-items: center;
+}
+
+.mode-segmented-ctrl {
+  display: flex;
+  align-items: center;
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-full, 9999px);
+  padding: 3px;
+  gap: 2px;
+}
+
+.mode-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  border-radius: var(--radius-full, 9999px);
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.mode-btn:hover {
+  color: var(--text-primary);
+}
+
+.mode-btn.active {
+  background: var(--text-primary);
+  color: var(--bg-primary);
+  font-weight: 700;
+  box-shadow: var(--shadow-sm);
+}
+
 .btn-close {
   background: transparent;
   border: none;
@@ -435,6 +498,15 @@ function formatDuration(sec: number): string {
 .btn-close:hover {
   color: var(--text-primary);
   background: var(--bg-tertiary);
+}
+
+/* 模式 A: 流水明细包裹容器 */
+.logs-tab-wrapper {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
 }
 
 /* 2. 统计数据看板 */
@@ -504,7 +576,7 @@ function formatDuration(sec: number): string {
 .text-gold { color: var(--color-gold) !important; }
 .text-danger { color: var(--color-danger) !important; }
 
-/* 3. 筛选标签栏（关键修复：flex-shrink: 0 彻底杜绝挤压重叠） */
+/* 3. 筛选标签栏 */
 .filter-tabs-wrapper {
   flex-shrink: 0;
   padding: 14px 28px;
@@ -558,7 +630,6 @@ function formatDuration(sec: number): string {
   background: rgba(255, 255, 255, 0.1);
 }
 
-/* 激活态高质感配色 */
 .tab-pill.active {
   background: var(--text-primary);
   color: var(--bg-primary);
@@ -593,7 +664,51 @@ function formatDuration(sec: number): string {
   border-color: var(--color-danger);
 }
 
-/* 4. 清单滚动区（独占 flex: 1，独立滚轮） */
+/* 日期联动筛选提示条 */
+.date-filter-banner {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 28px;
+  background: rgba(245, 158, 11, 0.08);
+  border-bottom: 1px solid rgba(245, 158, 11, 0.25);
+  font-size: 12px;
+  color: var(--text-primary);
+}
+
+.banner-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-secondary);
+}
+
+.banner-left strong {
+  color: #F59E0B;
+}
+
+.banner-count {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.btn-clear-date-filter {
+  background: transparent;
+  border: 1px solid rgba(245, 158, 11, 0.4);
+  color: #F59E0B;
+  border-radius: var(--radius-sm, 6px);
+  padding: 3px 10px;
+  font-size: 11px;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.btn-clear-date-filter:hover {
+  background: rgba(245, 158, 11, 0.15);
+}
+
+/* 4. 清单滚动区 */
 .logs-scroll-area {
   flex: 1;
   min-height: 0;
@@ -643,165 +758,104 @@ function formatDuration(sec: number): string {
   gap: 14px;
 }
 
-/* 单条专注历史卡片 */
-.log-card {
+/* ==================== 模式 B: 热力图选项卡容器 ==================== */
+.heatmap-tab-container {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 24px 28px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  background: var(--bg-card);
+}
+
+/* 选定日期的下钻明细面板 */
+.drilldown-section {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
   background: var(--bg-secondary);
   border: 1px solid var(--border-color);
   border-radius: var(--radius-md, 10px);
-  padding: 16px 20px;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
+  padding: 18px 20px;
   box-shadow: var(--shadow-sm);
+}
+
+.drilldown-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid var(--border-color);
+  padding-bottom: 12px;
+}
+
+.drilldown-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.drilldown-badge {
+  font-size: 12px;
+  font-weight: 700;
+  color: #F59E0B;
+  background: rgba(245, 158, 11, 0.12);
+  border: 1px solid rgba(245, 158, 11, 0.3);
+  padding: 2px 8px;
+  border-radius: var(--radius-sm, 6px);
+}
+
+.drilldown-summary {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.drilldown-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.btn-switch-to-logs {
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  color: var(--text-secondary);
+  font-size: 11px;
+  padding: 4px 10px;
+  border-radius: var(--radius-sm, 6px);
+  cursor: pointer;
   transition: all var(--transition-fast);
 }
 
-.log-card:hover {
+.btn-switch-to-logs:hover {
+  color: var(--text-primary);
   border-color: var(--border-focus);
-  box-shadow: var(--shadow-md);
-  transform: translateY(-1px);
 }
 
-.log-card.status-success {
-  border-left: 4px solid var(--color-success);
-}
-
-.log-card.status-regret {
-  border-left: 4px solid var(--color-gold);
-}
-
-.log-card.status-fail {
-  border-left: 4px solid var(--color-danger);
-}
-
-.log-card-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-
-.log-status-tag {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 12px;
-  font-weight: 700;
-  color: var(--text-secondary);
-}
-
-.tag-icon {
-  font-weight: 900;
-  font-size: 13px;
-}
-
-.log-timestamp {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  font-size: 12px;
-  color: var(--text-secondary);
-}
-
-.time-icon {
+.btn-clear-filter {
+  background: transparent;
+  border: none;
   color: var(--text-muted);
+  cursor: pointer;
+  font-size: 14px;
+  padding: 4px 8px;
+  border-radius: var(--radius-sm, 6px);
+  line-height: 1;
+  transition: all var(--transition-fast);
 }
 
-.log-content-row {
-  display: flex;
-  align-items: center;
-}
-
-.content-title {
-  font-size: 15px;
-  font-weight: 700;
+.btn-clear-filter:hover {
   color: var(--text-primary);
-  line-height: 1.45;
-}
-
-.text-placeholder {
-  color: var(--text-muted);
-  font-weight: 500;
-  font-style: italic;
-}
-
-/* 指标与时长对比行 */
-.log-meta-row {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 10px;
-  font-size: 12px;
-}
-
-.meta-tag {
-  display: flex;
-  align-items: center;
-  gap: 6px;
   background: var(--bg-tertiary);
-  border: 1px solid var(--border-color);
-  padding: 4px 10px;
-  border-radius: var(--radius-sm, 6px);
 }
 
-.meta-label {
-  color: var(--text-muted);
-  font-size: 11px;
-}
-
-.meta-val {
-  color: var(--text-secondary);
-}
-
-.font-bold {
-  font-weight: 700;
-}
-
-.meta-divider {
-  color: var(--border-focus);
-}
-
-.over-pill {
-  font-size: 11px;
-  font-weight: 700;
-  color: var(--color-success);
-  background: rgba(16, 185, 129, 0.12);
-  border: 1px solid rgba(16, 185, 129, 0.3);
-  padding: 3px 8px;
-  border-radius: var(--radius-sm, 6px);
-}
-
-/* 失败归因高亮警告框 */
-.failure-reason-card {
-  background: rgba(244, 63, 94, 0.05);
-  border: 1px solid rgba(244, 63, 94, 0.25);
-  border-radius: var(--radius-sm, 6px);
-  padding: 10px 14px;
-  display: flex;
-  flex-direction: column;
-  gap: 5px;
-}
-
-.reason-header {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 12px;
-  font-weight: 700;
-  color: var(--color-danger);
-}
-
-.reason-text {
-  margin: 0;
-  font-size: 13px;
-  line-height: 1.55;
-  color: var(--text-primary);
-}
-
-.log-note-row {
+.drilldown-empty {
   font-size: 12px;
   color: var(--text-muted);
-  border-top: 1px dashed var(--border-color);
-  padding-top: 8px;
+  text-align: center;
+  padding: 20px 0;
 }
 
 /* 优雅滚动条 */

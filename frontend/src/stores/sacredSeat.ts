@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia';
 import { ref } from 'vue';
-import type { SacredSeatConfig, FocusSessionLog } from '../types';
+import type { SacredSeatConfig, FocusSessionLog, DailyFocusHeatmapItem } from '../types';
 
 export const useSacredSeatStore = defineStore('sacredSeat', () => {
   const config = ref<SacredSeatConfig>({
@@ -13,6 +13,7 @@ export const useSacredSeatStore = defineStore('sacredSeat', () => {
   });
 
   const logs = ref<FocusSessionLog[]>([]);
+  const heatmapData = ref<DailyFocusHeatmapItem[]>([]);
   const loading = ref(false);
 
   // 专注沉浸态全局响应变量
@@ -127,6 +128,17 @@ export const useSacredSeatStore = defineStore('sacredSeat', () => {
     }
   }
 
+  async function fetchHeatmapData(days = 365) {
+    try {
+      const res = await fetch(`/api/sacred-seat/heatmap?days=${days}`);
+      if (res.ok) {
+        heatmapData.value = await res.json();
+      }
+    } catch (e) {
+      console.error('Failed to fetch heatmap data', e);
+    }
+  }
+
   async function recordSession(session: FocusSessionLog) {
     try {
       const res = await fetch('/api/sacred-seat/logs', {
@@ -139,6 +151,7 @@ export const useSacredSeatStore = defineStore('sacredSeat', () => {
         config.value.currentStreak = data.currentStreak;
         config.value.maxStreak = data.maxStreak;
         logs.value.unshift(session);
+        fetchHeatmapData();
       }
     } catch (e) {
       console.error('Failed to record session', e);
@@ -148,6 +161,7 @@ export const useSacredSeatStore = defineStore('sacredSeat', () => {
   return {
     config,
     logs,
+    heatmapData,
     loading,
     isFocusMode,
     isFullscreen,
@@ -158,6 +172,7 @@ export const useSacredSeatStore = defineStore('sacredSeat', () => {
     updateConfig,
     resetStreak,
     fetchLogs,
+    fetchHeatmapData,
     recordSession
   };
 });

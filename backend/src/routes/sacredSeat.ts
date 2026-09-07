@@ -1,6 +1,6 @@
 import { Router, Request, Response } from 'express';
 import { db } from '../db.js';
-import type { SacredSeatConfig, FocusSessionLog } from '../types.js';
+import type { SacredSeatConfig, FocusSessionLog, DailyFocusHeatmapItem } from '../types.js';
 
 const router = Router();
 
@@ -98,6 +98,44 @@ router.get('/logs', (req: Request, res: Response) => {
   }));
 
   res.json(logs);
+});
+
+// 获取全周期专注热力图日级聚合数据 (支持 ?days=365 或全部)
+router.get('/heatmap', (req: Request, res: Response) => {
+  const days = parseInt((req.query.days as string) || '365', 10);
+  
+  let query = `
+    SELECT 
+      substr(startTime, 1, 10) AS date,
+      COUNT(*) AS totalSessions,
+      SUM(CASE WHEN status = 'SUCCESS' THEN 1 ELSE 0 END) AS successCount,
+      SUM(CASE WHEN status = 'REGRET' THEN 1 ELSE 0 END) AS regretCount,
+      SUM(CASE WHEN status = 'FAIL' THEN 1 ELSE 0 END) AS failCount,
+      SUM(actualDurationSeconds) AS totalSeconds
+    FROM focus_session_logs
+    WHERE type = 'FOCUS'
+  `;
+
+  const params: any = {};
+  if (days > 0) {
+    query += ` AND substr(startTime, 1, 10) >= date('now', '-' || @days || ' days')`;
+    params.days = days;
+  }
+
+  query += ` GROUP BY substr(startTime, 1, 10) ORDER BY date ASC`;
+
+  const rows = db.prepare(query).all(params) as any[];
+
+  const items: DailyFocusHeatmapItem[] = rows.map(r => ({
+    date: r.date,
+    totalSessions: Number(r.totalSessions || 0),
+    successCount: Number(r.successCount || 0),
+    regretCount: Number(r.regretCount || 0),
+    failCount: Number(r.failCount || 0),
+    totalSeconds: Number(r.totalSeconds || 0)
+  }));
+
+  res.json(items);
 });
 
 // 提交专注会话日志并自动结算主链连胜
