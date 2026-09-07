@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue';
+import { ref, onMounted, onUnmounted } from 'vue';
 import type { PrecedentCase } from '../types';
 import CaseEditModal from '../components/case/CaseEditModal.vue';
 
@@ -145,8 +145,17 @@ async function handleFileImport(e: Event) {
   }
 }
 
+function onCasesRefreshed() {
+  fetchCases();
+}
+
 onMounted(() => {
   fetchCases();
+  window.addEventListener('sacred-focus:refresh-cases', onCasesRefreshed);
+});
+
+onUnmounted(() => {
+  window.removeEventListener('sacred-focus:refresh-cases', onCasesRefreshed);
 });
 </script>
 

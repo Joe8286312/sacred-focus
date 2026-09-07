@@ -93,6 +93,7 @@ async function executeFullImport() {
       ]);
       isConfirmingFullImport.value = false;
       pendingFullBackup.value = null;
+      window.dispatchEvent(new CustomEvent('sacred-focus:refresh-cases'));
       showToast('全系统整机镜像已成功恢复！各模块数据均已就绪');
     } else {
       showToast(res.error || '整机恢复失败', true);
@@ -253,6 +254,7 @@ async function onCasesFileSelected(e: Event) {
     });
     const result = await res.json();
     if (!res.ok || !result.success) throw new Error(result.error || '导入失败');
+    window.dispatchEvent(new CustomEvent('sacred-focus:refresh-cases'));
     showToast(`成功增量导入 ${result.importedCount} 条判例 (共计 ${result.totalCases} 条)`);
   } catch (err: any) {
     showToast(err?.message || '导入判例失败', true);
@@ -1052,5 +1054,36 @@ async function onCasesFileSelected(e: Event) {
 .modal-fade-enter-from,
 .modal-fade-leave-to {
   opacity: 0;
+}
+
+@media (max-width: 768px) {
+  .modal-backdrop {
+    padding: 12px;
+  }
+  .modal-header {
+    padding: 14px 18px;
+  }
+  .modal-body {
+    padding: 16px 18px;
+    gap: 20px;
+  }
+  .full-actions-card {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .full-btn-group {
+    width: 100%;
+  }
+  .btn-full-export,
+  .btn-full-import {
+    flex: 1;
+    justify-content: center;
+  }
+  .confirm-stats-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .domains-grid {
+    grid-template-columns: 1fr;
+  }
 }
 </style>
