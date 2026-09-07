@@ -17,6 +17,8 @@ export interface FocusSessionLog {
   targetDurationMinutes: number;
   actualDurationSeconds: number;
   status: 'SUCCESS' | 'FAIL' | 'REGRET';
+  focusContent?: string;          // 专注内容 / 心流目标
+  failureReason?: string;         // 失败中断原因
   note?: string;
 }
 

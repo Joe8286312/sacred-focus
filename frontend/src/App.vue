@@ -3,11 +3,13 @@ import { ref, onMounted } from 'vue';
 import { RouterView, useRouter, useRoute } from 'vue-router';
 import ReconstructPromptModal from './components/canvas/ReconstructPromptModal.vue';
 import { useFocusTreeStore } from './stores/focusTree';
+import { useSacredSeatStore } from './stores/sacredSeat';
 
 const router = useRouter();
 const route = useRoute();
 const currentTheme = ref<'dark' | 'light'>('dark');
 const focusStore = useFocusTreeStore();
+const seatStore = useSacredSeatStore();
 
 function toggleTheme() {
   currentTheme.value = currentTheme.value === 'dark' ? 'light' : 'dark';
@@ -44,16 +46,25 @@ onMounted(() => {
 
 <template>
   <div class="app-container">
-    <!-- 顶部全局极简导航 -->
-    <header class="app-header">
-      <div class="brand" @click="router.push('/seat')">
+    <!-- 顶部全局极简导航（专注时隐藏导航链接，仅保留深浅切换与全屏） -->
+    <header class="app-header" :class="{ 'is-focus-mode': seatStore.isFocusMode }">
+      <div 
+        class="brand" 
+        :class="{ 'brand-disabled': seatStore.isFocusMode }"
+        @click="!seatStore.isFocusMode && router.push('/seat')"
+      >
         <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="brand-icon">
           <path d="M6 19v2M18 19v2M7 10h10M7 5h10a2 2 0 0 1 2 2v12H5V7a2 2 0 0 1 2-2z"></path>
         </svg>
         <span class="brand-title">Sacred Focus</span>
+        <span v-if="seatStore.isFocusMode" class="focus-live-badge">
+          <span class="pulse-dot"></span>
+          心流深潜中
+        </span>
       </div>
 
-      <nav class="nav-links">
+      <!-- 专注中时隐藏全部切换界面按钮，防止误触打断心流 -->
+      <nav v-if="!seatStore.isFocusMode" class="nav-links">
         <button 
           class="nav-btn" 
           :class="{ active: route.path === '/seat' }"
@@ -85,6 +96,22 @@ onMounted(() => {
       </nav>
 
       <div class="header-right">
+        <!-- 专注时提供全屏快捷控制按钮 -->
+        <button 
+          v-if="seatStore.isFocusMode"
+          class="fullscreen-toggle-btn"
+          @click="seatStore.toggleFullscreen"
+          :title="seatStore.isFullscreen ? '退出全屏 (ESC)' : '进入全屏沉浸 (F11)'"
+        >
+          <svg v-if="seatStore.isFullscreen" viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M8 3v3a2 2 0 0 1-2 2H3m18 0h-3a2 2 0 0 1-2-2V3m0 18v-3a2 2 0 0 1 2-2h3M3 16h3a2 2 0 0 1 2 2v3"></path>
+          </svg>
+          <svg v-else viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"></path>
+          </svg>
+        </button>
+
+        <!-- 始终保留深浅主题切换按钮 -->
         <button class="theme-toggle-btn" @click="toggleTheme" title="切换深浅主题">
           <svg v-if="currentTheme === 'dark'" viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <circle cx="12" cy="12" r="5"></circle>
@@ -183,6 +210,80 @@ onMounted(() => {
   padding: 6px 10px;
   border-radius: var(--radius-sm);
   background: var(--bg-tertiary);
+  color: var(--text-primary);
+  border: 1px solid var(--border-color);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.theme-toggle-btn:hover {
+  background: var(--bg-surface);
+  border-color: var(--color-lit);
+}
+
+.fullscreen-toggle-btn {
+  font-size: 14px;
+  padding: 6px 10px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
+  border: 1px solid var(--border-color);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.fullscreen-toggle-btn:hover {
+  color: var(--text-primary);
+  background: var(--bg-surface);
+  border-color: var(--border-lit);
+}
+
+/* 专注心流时的沉浸式极简顶栏 */
+.app-header.is-focus-mode {
+  background: var(--bg-primary);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  transition: all var(--transition-normal);
+}
+
+.brand.brand-disabled {
+  cursor: default;
+  user-select: none;
+}
+
+.focus-live-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: 8px;
+  padding: 2px 9px;
+  font-size: 11px;
+  font-weight: 600;
+  color: #10b981;
+  background: rgba(16, 185, 129, 0.12);
+  border: 1px solid rgba(16, 185, 129, 0.25);
+  border-radius: 9999px;
+  letter-spacing: 0.3px;
+}
+
+.pulse-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background-color: #10b981;
+  box-shadow: 0 0 8px #10b981;
+  animation: pulse-dot 1.8s infinite ease-in-out;
+}
+
+@keyframes pulse-dot {
+  0% { transform: scale(0.9); opacity: 0.6; }
+  50% { transform: scale(1.3); opacity: 1; }
+  100% { transform: scale(0.9); opacity: 0.6; }
 }
 
 .app-main {

@@ -395,11 +395,15 @@ router.post('/import', (req: Request, res: Response) => {
       if (Array.isArray(backup.sessionLogs)) {
         db.prepare('DELETE FROM focus_session_logs').run();
         const insertLog = db.prepare(`
-          INSERT INTO focus_session_logs (id, type, startTime, endTime, targetDurationMinutes, actualDurationSeconds, status, note)
-          VALUES (@id, @type, @startTime, @endTime, @targetDurationMinutes, @actualDurationSeconds, @status, @note)
+          INSERT INTO focus_session_logs (id, type, startTime, endTime, targetDurationMinutes, actualDurationSeconds, status, focusContent, failureReason, note)
+          VALUES (@id, @type, @startTime, @endTime, @targetDurationMinutes, @actualDurationSeconds, @status, @focusContent, @failureReason, @note)
         `);
         for (const l of backup.sessionLogs) {
-          insertLog.run(l);
+          insertLog.run({
+            ...l,
+            focusContent: l.focusContent ?? null,
+            failureReason: l.failureReason ?? null
+          });
         }
       }
     });

@@ -47,6 +47,8 @@ export function initDatabase() {
       targetDurationMinutes INTEGER NOT NULL,
       actualDurationSeconds INTEGER NOT NULL,
       status TEXT NOT NULL CHECK(status IN ('SUCCESS', 'FAIL', 'REGRET')),
+      focusContent TEXT,
+      failureReason TEXT,
       note TEXT
     );
 
@@ -141,6 +143,15 @@ export function initDatabase() {
   }
   if (!nodeCols.includes('triggerScene')) {
     db.prepare("ALTER TABLE focus_nodes ADD COLUMN triggerScene TEXT NOT NULL DEFAULT '全天候'").run();
+  }
+
+  // 数据库平滑迁移：为 focus_session_logs 增加 focusContent 与 failureReason 字段
+  const sessionLogCols = (db.prepare('PRAGMA table_info(focus_session_logs)').all() as Array<{ name: string }>).map(c => c.name);
+  if (!sessionLogCols.includes('focusContent')) {
+    db.prepare('ALTER TABLE focus_session_logs ADD COLUMN focusContent TEXT').run();
+  }
+  if (!sessionLogCols.includes('failureReason')) {
+    db.prepare('ALTER TABLE focus_session_logs ADD COLUMN failureReason TEXT').run();
   }
 
   // 历史数据平滑回填与校准迁移：确保旧节点时间与场景正确分离

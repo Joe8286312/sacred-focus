@@ -92,6 +92,8 @@ router.get('/logs', (req: Request, res: Response) => {
     targetDurationMinutes: r.targetDurationMinutes,
     actualDurationSeconds: r.actualDurationSeconds,
     status: r.status,
+    focusContent: r.focusContent ?? undefined,
+    failureReason: r.failureReason ?? undefined,
     note: r.note ?? undefined
   }));
 
@@ -100,15 +102,15 @@ router.get('/logs', (req: Request, res: Response) => {
 
 // 提交专注会话日志并自动结算主链连胜
 router.post('/logs', (req: Request, res: Response) => {
-  const { id, type, startTime, endTime, targetDurationMinutes, actualDurationSeconds, status, note } = req.body;
+  const { id, type, startTime, endTime, targetDurationMinutes, actualDurationSeconds, status, focusContent, failureReason, note } = req.body;
 
   if (!id || !type || !startTime || !endTime || !status) {
     return res.status(400).json({ error: 'Missing required session log fields' });
   }
 
   const insertStmt = db.prepare(`
-    INSERT INTO focus_session_logs (id, type, startTime, endTime, targetDurationMinutes, actualDurationSeconds, status, note)
-    VALUES (@id, @type, @startTime, @endTime, @targetDurationMinutes, @actualDurationSeconds, @status, @note)
+    INSERT INTO focus_session_logs (id, type, startTime, endTime, targetDurationMinutes, actualDurationSeconds, status, focusContent, failureReason, note)
+    VALUES (@id, @type, @startTime, @endTime, @targetDurationMinutes, @actualDurationSeconds, @status, @focusContent, @failureReason, @note)
   `);
 
   insertStmt.run({
@@ -119,6 +121,8 @@ router.post('/logs', (req: Request, res: Response) => {
     targetDurationMinutes: targetDurationMinutes || 0,
     actualDurationSeconds: actualDurationSeconds || 0,
     status,
+    focusContent: focusContent || null,
+    failureReason: failureReason || null,
     note: note || null
   });
 

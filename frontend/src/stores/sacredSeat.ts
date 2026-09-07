@@ -15,6 +15,68 @@ export const useSacredSeatStore = defineStore('sacredSeat', () => {
   const logs = ref<FocusSessionLog[]>([]);
   const loading = ref(false);
 
+  // 专注沉浸态全局响应变量
+  const isFocusMode = ref(false);
+  const isFullscreen = ref(false);
+
+  // 监听浏览器全屏状态变化（如按 ESC 退出全屏时同步）
+  if (typeof window !== 'undefined' && typeof document !== 'undefined') {
+    const handleFullscreenChange = () => {
+      isFullscreen.value = Boolean(
+        document.fullscreenElement ||
+        (document as any).webkitFullscreenElement ||
+        (document as any).mozFullScreenElement ||
+        (document as any).msFullscreenElement
+      );
+    };
+
+    document.addEventListener('fullscreenchange', handleFullscreenChange);
+    document.addEventListener('webkitfullscreenchange', handleFullscreenChange);
+    document.addEventListener('mozfullscreenchange', handleFullscreenChange);
+    document.addEventListener('MSFullscreenChange', handleFullscreenChange);
+  }
+
+  async function enterFullscreen() {
+    try {
+      const el = document.documentElement;
+      if (!document.fullscreenElement) {
+        if (el.requestFullscreen) {
+          await el.requestFullscreen();
+        } else if ((el as any).webkitRequestFullscreen) {
+          await (el as any).webkitRequestFullscreen();
+        } else if ((el as any).msRequestFullscreen) {
+          await (el as any).msRequestFullscreen();
+        }
+      }
+    } catch (e) {
+      console.warn('Fullscreen entry failed or user denied:', e);
+    }
+  }
+
+  async function exitFullscreen() {
+    try {
+      if (document.fullscreenElement || (document as any).webkitFullscreenElement) {
+        if (document.exitFullscreen) {
+          await document.exitFullscreen();
+        } else if ((document as any).webkitExitFullscreen) {
+          await (document as any).webkitExitFullscreen();
+        } else if ((document as any).msExitFullscreen) {
+          await (document as any).msExitFullscreen();
+        }
+      }
+    } catch (e) {
+      console.warn('Exit fullscreen failed:', e);
+    }
+  }
+
+  async function toggleFullscreen() {
+    if (isFullscreen.value) {
+      await exitFullscreen();
+    } else {
+      await enterFullscreen();
+    }
+  }
+
   async function fetchConfig() {
     try {
       const res = await fetch('/api/sacred-seat/config');
@@ -87,6 +149,11 @@ export const useSacredSeatStore = defineStore('sacredSeat', () => {
     config,
     logs,
     loading,
+    isFocusMode,
+    isFullscreen,
+    enterFullscreen,
+    exitFullscreen,
+    toggleFullscreen,
     fetchConfig,
     updateConfig,
     resetStreak,

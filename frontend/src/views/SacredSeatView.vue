@@ -1,10 +1,13 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted } from 'vue';
+import { ref, computed, watch, onMounted, onUnmounted } from 'vue';
+import { onBeforeRouteLeave } from 'vue-router';
 import { useSacredSeatStore } from '../stores/sacredSeat';
 import StreakWarningModal from '../components/seat/StreakWarningModal.vue';
 import PrecedentCaseModal from '../components/seat/PrecedentCaseModal.vue';
 import SeatSettingsModal from '../components/seat/SeatSettingsModal.vue';
+import FocusHistoryModal from '../components/seat/FocusHistoryModal.vue';
 import { playChimeSound } from '../utils/audio';
+import { formatCompactDuration } from '../utils/time';
 import type { FocusSessionLog } from '../types';
 
 const store = useSacredSeatStore();
@@ -13,13 +16,26 @@ const store = useSacredSeatStore();
 type SeatState = 'IDLE' | 'FOCUSING' | 'OVER_FOCUS' | 'RESERVING' | 'RESERVATION_TRIGGERED';
 const currentState = ref<SeatState>('IDLE');
 
+// 同步状态机与 Store 的专注沉浸状态，专注结束时自动退出全屏
+watch(currentState, (state) => {
+  const isFocusing = state === 'FOCUSING' || state === 'OVER_FOCUS';
+  store.isFocusMode = isFocusing;
+  if (!isFocusing && store.isFullscreen) {
+    store.exitFullscreen();
+  }
+}, { immediate: true });
+
 // 模态框开关
 const isWarningModalOpen = ref(false);
 const isCaseModalOpen = ref(false);
 const isSettingsModalOpen = ref(false);
+const isHistoryModalOpen = ref(false);
 
 // 后悔药即时提示气泡
 const regretNotice = ref('');
+
+// 专注目标与内容
+const currentFocusContent = ref('');
 
 // 计时器变量
 let timerInterval: number | null = null;
@@ -28,6 +44,7 @@ const targetDurationSeconds = ref(60 * 60);
 const remainingSeconds = ref(60 * 60);
 const elapsedSeconds = ref(0);
 const overFocusSeconds = ref(0);
+const actualCollectionSeconds = ref(0);
 
 // 预约链变量
 const reservationDurationMinutes = ref(15);
@@ -44,6 +61,15 @@ function formatTime(totalSec: number): string {
     return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
   }
   return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+}
+
+// 精确计算物理时长（基于真实延迟唤醒时刻与开始时刻差值，毫秒级保真）
+function calculateActualSeconds(): number {
+  if (sessionStartTime.value) {
+    const diff = Math.round((new Date().getTime() - sessionStartTime.value.getTime()) / 1000);
+    return Math.max(1, diff);
+  }
+  return Math.max(1, elapsedSeconds.value);
 }
 
 // 是否处于 30 秒后悔药保护期内
@@ -70,8 +96,12 @@ function startFocus(minutes?: number) {
   remainingSeconds.value = targetDurationSeconds.value;
   elapsedSeconds.value = 0;
   overFocusSeconds.value = 0;
+  actualCollectionSeconds.value = 0;
   sessionStartTime.value = new Date();
   currentState.value = 'FOCUSING';
+
+  // 关键：点击开启专注时直接进入沉浸式全屏（F11 效果）
+  store.enterFullscreen();
 
   timerInterval = window.setInterval(() => {
     elapsedSeconds.value += 1;
@@ -102,12 +132,13 @@ function enterOverFocus() {
   }, 300);
 }
 
-// 用户完成专注退出心流，首次点击唤醒结算
+// 用户完成专注退出心流，首次点击唤醒结算（在此刻冻结实际物理采集时长）
 function handleWakeUpAction(e?: Event) {
   if (e) e.stopPropagation();
   clearTimer();
   window.removeEventListener('click', handleWakeUpAction);
   window.removeEventListener('touchstart', handleWakeUpAction);
+  actualCollectionSeconds.value = calculateActualSeconds();
   isCaseModalOpen.value = true;
 }
 
@@ -125,7 +156,7 @@ function handleGiveUpClick() {
 // 触发后悔药免责退出（0ms 乐观更新，非阻塞异步上报）
 function triggerRegretExit() {
   clearTimer();
-  const actualSec = elapsedSeconds.value;
+  const actualSec = calculateActualSeconds();
   const startIso = sessionStartTime.value ? sessionStartTime.value.toISOString() : new Date().toISOString();
   const targetMins = Math.round(targetDurationSeconds.value / 60);
 
@@ -141,6 +172,7 @@ function triggerRegretExit() {
     targetDurationMinutes: targetMins,
     actualDurationSeconds: actualSec,
     status: 'REGRET',
+    focusContent: currentFocusContent.value.trim() || undefined,
     note: '在30秒免责窗口内使用后悔药退出，主链连胜完整保留'
   };
   store.recordSession(log).catch(err => console.error('Failed to log regret session', err));
@@ -153,10 +185,10 @@ function triggerRegretExit() {
 }
 
 // 二次确认：确认违规放弃并清零主链
-function handleConfirmReset() {
+function handleConfirmReset(payload: { focusContent: string; failureReason: string }) {
   isWarningModalOpen.value = false;
   clearTimer();
-  const actualSec = elapsedSeconds.value;
+  const actualSec = calculateActualSeconds();
   const startIso = sessionStartTime.value ? sessionStartTime.value.toISOString() : new Date().toISOString();
   const targetMins = Math.round(targetDurationSeconds.value / 60);
 
@@ -172,7 +204,9 @@ function handleConfirmReset() {
     targetDurationMinutes: targetMins,
     actualDurationSeconds: actualSec,
     status: 'FAIL',
-    note: '中途主动中断专注，主链归零'
+    focusContent: payload.focusContent,
+    failureReason: payload.failureReason,
+    note: `中途主动中断专注：${payload.failureReason}`
   };
   store.recordSession(log).catch(err => console.error('Failed to log fail session', err));
 
@@ -183,10 +217,10 @@ function handleConfirmReset() {
 }
 
 // 正常结算（无争议 或 存入判例）
-async function handleCompleteSession(withCase: boolean) {
+async function handleCompleteSession(withCase: boolean, completedContent: string) {
   isCaseModalOpen.value = false;
   clearTimer();
-  const actualSec = elapsedSeconds.value;
+  const actualSec = actualCollectionSeconds.value > 0 ? actualCollectionSeconds.value : calculateActualSeconds();
   const startIso = sessionStartTime.value ? sessionStartTime.value.toISOString() : new Date().toISOString();
   const targetMins = Math.round(targetDurationSeconds.value / 60);
 
@@ -200,6 +234,7 @@ async function handleCompleteSession(withCase: boolean) {
     targetDurationMinutes: targetMins,
     actualDurationSeconds: actualSec,
     status: 'SUCCESS',
+    focusContent: completedContent,
     note: withCase ? '专注成功完成（已增量录入下必为例判例）' : '专注成功完成（无争议）'
   };
 
@@ -256,15 +291,44 @@ async function handleSaveSettings(updated: any) {
   isSettingsModalOpen.value = false;
 }
 
+// 页面离开路由守卫：防止意外导航打断专注
+onBeforeRouteLeave((_to, _from, next) => {
+  if (currentState.value === 'FOCUSING' || currentState.value === 'OVER_FOCUS') {
+    const confirmLeave = window.confirm('神圣专注正在进行中，离开页面将中断本次专注。确认要离开吗？');
+    if (confirmLeave) {
+      clearTimer();
+      store.isFocusMode = false;
+      store.exitFullscreen();
+      next();
+    } else {
+      next(false);
+    }
+  } else {
+    next();
+  }
+});
+
+// 浏览器关闭或刷新防误触拦截
+function handleBeforeUnload(e: BeforeUnloadEvent) {
+  if (currentState.value === 'FOCUSING' || currentState.value === 'OVER_FOCUS') {
+    e.preventDefault();
+    e.returnValue = '';
+  }
+}
+
 onMounted(() => {
   store.fetchConfig();
   store.fetchLogs();
+  window.addEventListener('beforeunload', handleBeforeUnload);
 });
 
 onUnmounted(() => {
   clearTimer();
+  window.removeEventListener('beforeunload', handleBeforeUnload);
   window.removeEventListener('click', handleWakeUpAction);
   window.removeEventListener('touchstart', handleWakeUpAction);
+  store.isFocusMode = false;
+  store.exitFullscreen();
 });
 </script>
 
@@ -290,6 +354,13 @@ onUnmounted(() => {
             <span class="streak-node">当前主链: #{{ store.config.currentStreak }}</span>
             <span class="streak-max font-mono">最高: #{{ store.config.maxStreak }}</span>
           </div>
+          <button class="btn-history" @click="isHistoryModalOpen = true" title="查看专注历史档案">
+            <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="10"></circle>
+              <polyline points="12 6 12 12 16 14"></polyline>
+            </svg>
+            <span>专注历史</span>
+          </button>
           <button class="btn-icon" @click="isSettingsModalOpen = true" title="个性化设置">
             <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <circle cx="12" cy="12" r="3"></circle>
@@ -301,6 +372,15 @@ onUnmounted(() => {
 
       <!-- 待命大时钟卡片 -->
       <div class="timer-display-card">
+        <div class="focus-target-bar">
+          <input 
+            v-model="currentFocusContent" 
+            type="text" 
+            placeholder="输入本次心流目标（例如：重构专注历史面板）"
+            class="focus-target-input"
+            maxlength="60"
+          />
+        </div>
         <div class="timer-digits font-mono">
           {{ formatTime(store.config.defaultFocusDuration * 60) }}
         </div>
@@ -382,8 +462,14 @@ onUnmounted(() => {
     <!-- ==================== 视图 B: 沉浸式专注与顺水推舟态 (v-show 瞬时切换) ==================== -->
     <div v-show="currentState === 'FOCUSING' || currentState === 'OVER_FOCUS'" class="immersive-focus-view">
       <div class="focus-top-banner">
-        <span v-if="currentState === 'FOCUSING'" class="focus-token-hint">信物生效中：{{ store.config.sacredToken }}</span>
-        <span v-else class="focus-token-hint">预设时长已达成 · 顺水推舟深潜中</span>
+        <span v-if="currentState === 'FOCUSING'" class="focus-token-hint">
+          信物生效中：{{ store.config.sacredToken }}
+          <span v-if="currentFocusContent" class="focus-chip font-mono"> · {{ currentFocusContent }}</span>
+        </span>
+        <span v-else class="focus-token-hint">
+          预设时长已达成 · 顺水推舟深潜中
+          <span v-if="currentFocusContent" class="focus-chip font-mono">（{{ currentFocusContent }}）</span>
+        </span>
       </div>
 
       <div class="focus-clock-center">
@@ -407,7 +493,7 @@ onUnmounted(() => {
           </template>
           <template v-else>
             <span class="over-focus-hint font-mono">
-              静音无扰心流中 · 任意点击页面以唤醒结算
+              静音无扰心流中 · 顺水推舟已持续 {{ formatCompactDuration(overFocusSeconds) || '0s' }} · 任意点击页面以唤醒结算
             </span>
           </template>
         </div>
@@ -444,6 +530,7 @@ onUnmounted(() => {
     <StreakWarningModal 
       :is-open="isWarningModalOpen"
       :current-streak="store.config.currentStreak"
+      :initial-focus-content="currentFocusContent"
       @confirm="handleConfirmReset"
       @cancel="isWarningModalOpen = false"
     />
@@ -451,9 +538,11 @@ onUnmounted(() => {
     <!-- 弹窗组件：下必为例判例结算模态框 -->
     <PrecedentCaseModal
       :is-open="isCaseModalOpen"
-      :actual-duration-seconds="elapsedSeconds"
-      @complete-without-case="handleCompleteSession(false)"
-      @complete-with-case="handleCompleteSession(true)"
+      :actual-duration-seconds="actualCollectionSeconds"
+      :target-duration-minutes="Math.round(targetDurationSeconds / 60)"
+      :initial-focus-content="currentFocusContent"
+      @complete-without-case="(c) => handleCompleteSession(false, c)"
+      @complete-with-case="(_p, c) => handleCompleteSession(true, c)"
     />
 
     <!-- 弹窗组件：神圣座位个性化设置 -->
@@ -462,6 +551,15 @@ onUnmounted(() => {
       :config="store.config"
       @close="isSettingsModalOpen = false"
       @save="handleSaveSettings"
+    />
+
+    <!-- 弹窗组件：神圣专注历史档案 -->
+    <FocusHistoryModal
+      :is-open="isHistoryModalOpen"
+      :logs="store.logs"
+      :current-streak="store.config.currentStreak"
+      :max-streak="store.config.maxStreak"
+      @close="isHistoryModalOpen = false"
     />
   </div>
 </template>
@@ -561,6 +659,64 @@ onUnmounted(() => {
 .streak-max {
   font-size: 12px;
   color: var(--text-secondary);
+}
+
+.btn-history {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  padding: 6px 14px;
+  border-radius: var(--radius-full);
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.btn-history:hover {
+  color: var(--text-primary);
+  border-color: var(--border-focus);
+  background: var(--bg-card-hover);
+}
+
+.focus-target-bar {
+  width: 100%;
+  max-width: 420px;
+  margin-bottom: 24px;
+}
+
+.focus-target-input {
+  width: 100%;
+  text-align: center;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-full);
+  padding: 10px 20px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-primary);
+  box-sizing: border-box;
+  box-shadow: var(--shadow-sm);
+  transition: all var(--transition-fast);
+}
+
+.focus-target-input:focus {
+  border-color: var(--color-lit);
+  background: var(--bg-card);
+  box-shadow: 0 0 16px var(--color-lit-glow);
+}
+
+.focus-target-input::placeholder {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.focus-chip {
+  color: var(--color-lit);
+  font-weight: 600;
 }
 
 .btn-icon {
