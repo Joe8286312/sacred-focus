@@ -20,6 +20,12 @@ router.get('/', (_req: Request, res: Response) => {
   res.json(data);
 });
 
+// 重置每日跨天审计结算标记（便于随时进行联调与测试）
+router.post('/reset-settlement-audit', (_req: Request, res: Response) => {
+  db.prepare('DELETE FROM system_meta WHERE key = ?').run('lastDailySettlementDate');
+  res.json({ ok: true, message: 'Settlement audit reset successfully' });
+});
+
 // 全量保存国策树（画布排版/结构更新时调用）
 router.put('/', (req: Request, res: Response) => {
   const { nodes, edges, groups } = req.body as {

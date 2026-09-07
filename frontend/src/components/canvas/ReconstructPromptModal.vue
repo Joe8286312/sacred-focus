@@ -108,8 +108,8 @@ function handleDismiss() {
 .reconstruct-modal-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(5, 5, 8, 0.82);
-  backdrop-filter: blur(12px);
+  background: rgba(0, 0, 0, 0.7);
+  backdrop-filter: blur(8px);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -118,9 +118,9 @@ function handleDismiss() {
 }
 
 .reconstruct-modal-container {
-  background: var(--bg-card, #121319);
+  background: var(--bg-card);
   border: 1px solid rgba(239, 68, 68, 0.4);
-  box-shadow: 0 0 40px rgba(239, 68, 68, 0.15), 0 20px 50px rgba(0, 0, 0, 0.6);
+  box-shadow: 0 0 35px rgba(239, 68, 68, 0.15), 0 20px 50px rgba(0, 0, 0, 0.35);
   border-radius: var(--radius-lg, 12px);
   max-width: 580px;
   width: 100%;
@@ -138,7 +138,7 @@ function handleDismiss() {
 
 .modal-header {
   padding: 20px 24px;
-  border-bottom: 1px solid var(--border-color, rgba(255, 255, 255, 0.08));
+  border-bottom: 1px solid var(--border-color);
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -154,8 +154,8 @@ function handleDismiss() {
   width: 10px;
   height: 10px;
   border-radius: 50%;
-  background-color: #ef4444;
-  box-shadow: 0 0 12px #ef4444;
+  background-color: var(--color-danger, #ef4444);
+  box-shadow: 0 0 12px var(--color-danger, #ef4444);
   flex-shrink: 0;
 }
 
@@ -169,19 +169,19 @@ function handleDismiss() {
   margin: 0;
   font-size: 1.15rem;
   font-weight: 700;
-  color: var(--text-color, #f3f4f6);
+  color: var(--text-primary);
   letter-spacing: 0.5px;
 }
 
 .modal-subtitle {
   font-size: 0.8rem;
-  color: var(--text-muted, #9ca3af);
+  color: var(--text-secondary);
 }
 
 .btn-close {
   background: transparent;
   border: none;
-  color: var(--text-muted, #9ca3af);
+  color: var(--text-secondary);
   cursor: pointer;
   padding: 6px;
   border-radius: 6px;
@@ -192,8 +192,8 @@ function handleDismiss() {
 }
 
 .btn-close:hover {
-  color: #fff;
-  background: rgba(255, 255, 255, 0.08);
+  color: var(--text-primary);
+  background: var(--bg-tertiary);
 }
 
 .modal-body {
@@ -208,16 +208,16 @@ function handleDismiss() {
   margin: 0;
   font-size: 0.92rem;
   line-height: 1.6;
-  color: var(--text-color, #e5e7eb);
+  color: var(--text-primary);
 }
 
 .text-highlight {
-  color: #f59e0b;
+  color: var(--color-gold, #d97706);
   font-weight: 700;
 }
 
 .text-reset {
-  color: #ef4444;
+  color: var(--color-danger, #ef4444);
   font-weight: 700;
 }
 
@@ -235,8 +235,8 @@ function handleDismiss() {
   justify-content: space-between;
   align-items: center;
   padding: 10px 14px;
-  background: rgba(255, 255, 255, 0.03);
-  border: 1px solid rgba(255, 255, 255, 0.07);
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
   border-radius: 8px;
 }
 
@@ -249,17 +249,17 @@ function handleDismiss() {
 .node-code {
   font-size: 0.82rem;
   font-weight: 700;
-  color: var(--color-lit, #10b981);
-  background: rgba(16, 185, 129, 0.1);
+  color: var(--color-lit);
+  background: var(--color-lit-glow);
   padding: 2px 8px;
   border-radius: 4px;
-  border: 1px solid rgba(16, 185, 129, 0.25);
+  border: 1px solid var(--color-lit);
 }
 
 .node-name {
   font-size: 0.9rem;
   font-weight: 600;
-  color: #fff;
+  color: var(--text-primary);
 }
 
 .node-levels {
@@ -276,32 +276,39 @@ function handleDismiss() {
 }
 
 .lost-pill {
-  background: rgba(245, 158, 11, 0.12);
-  color: #f59e0b;
-  border: 1px solid rgba(245, 158, 11, 0.3);
+  background: rgba(217, 119, 6, 0.12);
+  color: var(--color-gold, #d97706);
+  border: 1px solid rgba(217, 119, 6, 0.3);
 }
 
 .level-arrow {
-  color: var(--text-muted, #6b7280);
+  color: var(--text-secondary);
+  font-weight: 600;
 }
 
 .current-pill {
   background: rgba(239, 68, 68, 0.12);
-  color: #ef4444;
+  color: var(--color-danger, #ef4444);
   border: 1px solid rgba(239, 68, 68, 0.3);
 }
 
 .max-pill {
-  background: rgba(255, 255, 255, 0.06);
-  color: var(--text-muted, #9ca3af);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+  border: 1px solid var(--border-color);
 }
 
 .engineering-hint-card {
-  background: rgba(16, 185, 129, 0.04);
-  border: 1px solid rgba(16, 185, 129, 0.2);
+  background: rgba(2, 132, 199, 0.06);
+  border: 1px solid rgba(2, 132, 199, 0.25);
   border-radius: 8px;
   padding: 14px 16px;
+}
+
+:root[data-theme="dark"] .engineering-hint-card,
+[data-theme="dark"] .engineering-hint-card {
+  background: rgba(0, 240, 255, 0.05);
+  border-color: rgba(0, 240, 255, 0.25);
 }
 
 .hint-header {
@@ -310,7 +317,7 @@ function handleDismiss() {
   gap: 7px;
   font-size: 0.85rem;
   font-weight: 700;
-  color: var(--color-lit, #10b981);
+  color: var(--color-lit);
   margin-bottom: 8px;
 }
 
@@ -318,24 +325,29 @@ function handleDismiss() {
   margin: 0;
   font-size: 0.84rem;
   line-height: 1.65;
-  color: var(--text-muted, #9ca3af);
+  color: var(--text-secondary);
+}
+
+.hint-content strong {
+  color: var(--text-primary);
+  font-weight: 700;
 }
 
 .modal-footer {
   padding: 16px 24px;
-  border-top: 1px solid var(--border-color, rgba(255, 255, 255, 0.08));
+  border-top: 1px solid var(--border-color);
   display: flex;
   justify-content: flex-end;
   gap: 12px;
-  background: rgba(0, 0, 0, 0.15);
+  background: var(--bg-secondary);
 }
 
 .btn-dismiss {
   padding: 8px 18px;
   background: transparent;
-  border: 1px solid var(--border-color, rgba(255, 255, 255, 0.15));
+  border: 1px solid var(--border-color);
   border-radius: 6px;
-  color: var(--text-muted, #9ca3af);
+  color: var(--text-secondary);
   font-size: 0.88rem;
   font-weight: 500;
   cursor: pointer;
@@ -343,9 +355,9 @@ function handleDismiss() {
 }
 
 .btn-dismiss:hover {
-  color: #fff;
-  border-color: rgba(255, 255, 255, 0.35);
-  background: rgba(255, 255, 255, 0.04);
+  color: var(--text-primary);
+  border-color: var(--border-focus);
+  background: var(--bg-tertiary);
 }
 
 .btn-reconstruct {
@@ -353,21 +365,36 @@ function handleDismiss() {
   align-items: center;
   gap: 7px;
   padding: 8px 20px;
-  background: var(--color-lit, #10b981);
-  border: 1px solid var(--color-lit, #10b981);
+  background: var(--color-lit);
+  border: 1px solid var(--color-lit);
   border-radius: 6px;
-  color: #061811;
+  color: #ffffff;
   font-size: 0.88rem;
-  font-weight: 700;
+  font-weight: 600;
   cursor: pointer;
   transition: all 0.15s ease;
-  box-shadow: 0 0 16px rgba(16, 185, 129, 0.3);
+  box-shadow: 0 2px 8px rgba(2, 132, 199, 0.25);
+}
+
+:root[data-theme="dark"] .btn-reconstruct,
+[data-theme="dark"] .btn-reconstruct {
+  color: #061811;
+  font-weight: 700;
+  box-shadow: 0 0 16px rgba(0, 240, 255, 0.3);
 }
 
 .btn-reconstruct:hover {
-  background: #059669;
-  border-color: #059669;
-  box-shadow: 0 0 24px rgba(16, 185, 129, 0.5);
+  filter: brightness(1.08);
   transform: translateY(-1px);
+}
+
+.modal-fade-enter-active,
+.modal-fade-leave-active {
+  transition: opacity 0.2s ease;
+}
+
+.modal-fade-enter-from,
+.modal-fade-leave-to {
+  opacity: 0;
 }
 </style>
