@@ -13,6 +13,7 @@ const props = defineProps<{
 const emit = defineEmits<{
   (e: 'close'): void;
   (e: 'save', nodeData: FocusNode): void;
+  (e: 'delete', node: FocusNode): void;
 }>();
 
 const form = ref<FocusNode>({
@@ -65,6 +66,35 @@ function handleSaveGroup(groupData: FocusGroup) {
 function handleDeleteGroup(groupId: string) {
   if (form.value.groupId === groupId) {
     form.value.groupId = null;
+  }
+}
+
+// 删除国策二次确认状态
+const isConfirmingDelete = ref(false);
+
+watch(() => props.isOpen, (open) => {
+  if (open) {
+    isConfirmingDelete.value = false;
+  }
+});
+
+watch(() => props.node, () => {
+  isConfirmingDelete.value = false;
+});
+
+function handleDeleteClick() {
+  isConfirmingDelete.value = true;
+}
+
+function handleCancelDelete() {
+  isConfirmingDelete.value = false;
+}
+
+function handleConfirmDelete() {
+  if (props.node) {
+    emit('delete', props.node);
+    isConfirmingDelete.value = false;
+    emit('close');
   }
 }
 
@@ -622,8 +652,41 @@ function handleSave() {
         </div>
 
         <div class="modal-footer">
-          <button class="btn-cancel" @click="$emit('close')">取消</button>
-          <button class="btn-submit" @click="handleSave">保存国策</button>
+          <div class="footer-left">
+            <template v-if="node && node.id">
+              <div v-if="!isConfirmingDelete">
+                <button 
+                  type="button" 
+                  class="btn-delete-node" 
+                  @click="handleDeleteClick"
+                >
+                  删除此国策
+                </button>
+              </div>
+              <div v-else class="confirm-del-box">
+                <span class="confirm-del-label">确定彻底删除该国策？</span>
+                <button 
+                  type="button" 
+                  class="btn-confirm-delete" 
+                  @click="handleConfirmDelete"
+                >
+                  确认删除
+                </button>
+                <button 
+                  type="button" 
+                  class="btn-cancel-mini" 
+                  @click="handleCancelDelete"
+                >
+                  取消
+                </button>
+              </div>
+            </template>
+          </div>
+
+          <div class="footer-right">
+            <button class="btn-cancel" @click="$emit('close')">取消</button>
+            <button class="btn-submit" @click="handleSave">保存国策</button>
+          </div>
         </div>
       </div>
     </div>
@@ -1060,9 +1123,82 @@ function handleSave() {
   padding: 14px 20px;
   border-top: 1px solid var(--border-color);
   display: flex;
-  justify-content: flex-end;
-  gap: 10px;
+  justify-content: space-between;
+  align-items: center;
   background: var(--bg-secondary);
+}
+
+.footer-left {
+  display: flex;
+  align-items: center;
+}
+
+.footer-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-left: auto;
+}
+
+.btn-delete-node {
+  background: transparent;
+  border: 1px solid rgba(244, 63, 94, 0.4);
+  color: var(--color-danger);
+  padding: 8px 16px;
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.btn-delete-node:hover {
+  background: rgba(244, 63, 94, 0.1);
+  border-color: var(--color-danger);
+}
+
+.confirm-del-box {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.confirm-del-label {
+  font-size: 12px;
+  color: var(--color-danger);
+  font-weight: 500;
+}
+
+.btn-confirm-delete {
+  background: var(--color-danger);
+  color: #fff;
+  border: none;
+  padding: 6px 14px;
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: opacity var(--transition-fast);
+}
+
+.btn-confirm-delete:hover {
+  opacity: 0.9;
+}
+
+.btn-cancel-mini {
+  background: transparent;
+  border: 1px solid var(--border-color);
+  color: var(--text-secondary);
+  padding: 6px 12px;
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.btn-cancel-mini:hover {
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
 }
 
 .btn-cancel {

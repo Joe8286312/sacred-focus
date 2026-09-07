@@ -93,7 +93,7 @@ function handleConfirmDelete() {
 
         <!-- 底部行动栏 -->
         <div class="spec-footer">
-          <div class="edit-tools">
+          <div v-if="isEditMode" class="edit-tools">
             <template v-if="!isConfirmingDelete">
               <button class="btn-edit" @click="$emit('edit', node)">
                 编辑此国策

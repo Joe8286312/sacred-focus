@@ -281,6 +281,8 @@ async function confirmDeleteNode(node: FocusNode) {
   localNodeList.value = localNodeList.value.filter(n => n.id !== node.id);
   confirmingDeleteNodeId.value = null;
   isSpecModalOpen.value = false;
+  isNodeEditModalOpen.value = false;
+  editingNode.value = null;
 }
 </script>
 
@@ -577,6 +579,7 @@ async function confirmDeleteNode(node: FocusNode) {
       :groups="store.groups"
       @close="isNodeEditModalOpen = false"
       @save="handleSaveNode"
+      @delete="confirmDeleteNode"
     />
   </div>
 </template>
