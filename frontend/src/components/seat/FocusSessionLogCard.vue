@@ -46,7 +46,7 @@ function formatDuration(sec: number): string {
   >
     <!-- 卡片顶栏：状态徽标与时间戳 -->
     <div class="log-card-header">
-      <div class="log-status-tag font-mono">
+      <div class="log-status-tag">
         <template v-if="log.status === 'SUCCESS'">
           <span class="tag-icon text-success">✓</span>
           <div class="tag-text-group">
@@ -181,12 +181,13 @@ function formatDuration(sec: number): string {
   display: inline-flex;
   align-items: flex-start;
   gap: 7px;
+  font-family: inherit;
 }
 
 .tag-icon {
   font-weight: 900;
   font-size: 13px;
-  line-height: 1.3;
+  line-height: 1.35;
   margin-top: 1px;
 }
 
@@ -197,17 +198,32 @@ function formatDuration(sec: number): string {
 }
 
 .tag-title {
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 700;
   color: var(--text-primary);
-  line-height: 1.3;
+  line-height: 1.35;
+  font-family: inherit;
 }
 
 .tag-subtitle {
-  font-size: 11px;
+  font-size: 11.5px;
   font-weight: 600;
   color: var(--text-secondary);
-  line-height: 1.3;
+  line-height: 1.35;
+  font-family: inherit;
+  letter-spacing: 0.2px;
+}
+
+.status-success .tag-subtitle {
+  color: var(--color-success);
+}
+
+.status-regret .tag-subtitle {
+  color: var(--color-gold);
+}
+
+.status-fail .tag-subtitle {
+  color: var(--color-danger);
 }
 
 .log-timestamp {
