@@ -100,6 +100,96 @@ router.get('/logs', (req: Request, res: Response) => {
   res.json(logs);
 });
 
+// 导出全部专注流水日志
+router.get('/logs/export', (_req: Request, res: Response) => {
+  const rows = db.prepare(`
+    SELECT * FROM focus_session_logs
+    ORDER BY startTime DESC
+  `).all() as any[];
+
+  const logs: FocusSessionLog[] = rows.map(r => ({
+    id: r.id,
+    type: r.type,
+    startTime: r.startTime,
+    endTime: r.endTime,
+    targetDurationMinutes: r.targetDurationMinutes,
+    actualDurationSeconds: r.actualDurationSeconds,
+    status: r.status,
+    focusContent: r.focusContent ?? undefined,
+    failureReason: r.failureReason ?? undefined,
+    note: r.note ?? undefined
+  }));
+
+  res.json({
+    version: 1,
+    exportedAt: new Date().toISOString(),
+    dataType: 'FOCUS_SESSION_LOGS',
+    total: logs.length,
+    logs
+  });
+});
+
+// 批量导入专注流水日志 (支持增量合并与覆盖更新)
+router.post('/logs/import', (req: Request, res: Response) => {
+  const body = req.body;
+  const rawLogs = Array.isArray(body) ? body : (Array.isArray(body?.logs) ? body.logs : null);
+
+  if (!rawLogs || !Array.isArray(rawLogs)) {
+    return res.status(400).json({ error: 'Invalid payload: expected an array of logs or an object with a logs array' });
+  }
+
+  const upsertStmt = db.prepare(`
+    INSERT INTO focus_session_logs (id, type, startTime, endTime, targetDurationMinutes, actualDurationSeconds, status, focusContent, failureReason, note)
+    VALUES (@id, @type, @startTime, @endTime, @targetDurationMinutes, @actualDurationSeconds, @status, @focusContent, @failureReason, @note)
+    ON CONFLICT(id) DO UPDATE SET
+      type = excluded.type,
+      startTime = excluded.startTime,
+      endTime = excluded.endTime,
+      targetDurationMinutes = excluded.targetDurationMinutes,
+      actualDurationSeconds = excluded.actualDurationSeconds,
+      status = excluded.status,
+      focusContent = excluded.focusContent,
+      failureReason = excluded.failureReason,
+      note = excluded.note
+  `);
+
+  let importedCount = 0;
+
+  const importTx = db.transaction((logs: any[]) => {
+    for (const log of logs) {
+      if (!log.id || !log.type || !log.startTime || !log.status) {
+        continue;
+      }
+      upsertStmt.run({
+        id: String(log.id),
+        type: String(log.type),
+        startTime: String(log.startTime),
+        endTime: String(log.endTime || log.startTime),
+        targetDurationMinutes: Number(log.targetDurationMinutes || 0),
+        actualDurationSeconds: Number(log.actualDurationSeconds || 0),
+        status: String(log.status),
+        focusContent: log.focusContent ? String(log.focusContent) : null,
+        failureReason: log.failureReason ? String(log.failureReason) : null,
+        note: log.note ? String(log.note) : null
+      });
+      importedCount += 1;
+    }
+  });
+
+  try {
+    importTx(rawLogs);
+    const totalRow = db.prepare('SELECT COUNT(*) as count FROM focus_session_logs').get() as any;
+    res.json({
+      success: true,
+      importedCount,
+      totalLogs: totalRow?.count || 0
+    });
+  } catch (err: any) {
+    console.error('Failed to import focus session logs', err);
+    res.status(500).json({ error: 'Failed to import logs: ' + err.message });
+  }
+});
+
 // 获取全周期专注热力图日级聚合数据 (支持 ?days=365 或全部)
 router.get('/heatmap', (req: Request, res: Response) => {
   const days = parseInt((req.query.days as string) || '365', 10);

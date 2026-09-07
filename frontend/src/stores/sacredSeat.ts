@@ -158,6 +158,44 @@ export const useSacredSeatStore = defineStore('sacredSeat', () => {
     }
   }
 
+  async function exportLogs(): Promise<void> {
+    const res = await fetch('/api/sacred-seat/logs/export');
+    if (!res.ok) {
+      throw new Error(`导出记录失败: ${res.statusText}`);
+    }
+    const data = await res.json();
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const now = new Date();
+    const pad = (n: number) => String(n).padStart(2, '0');
+    const timestamp = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}_${pad(now.getHours())}${pad(now.getMinutes())}`;
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `sacred-focus-logs-${timestamp}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }
+
+  async function importLogs(payload: unknown): Promise<{ success: boolean; importedCount: number; totalLogs: number }> {
+    const res = await fetch('/api/sacred-seat/logs/import', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    const result = await res.json();
+    if (!res.ok || !result.success) {
+      throw new Error(result.error || '导入专注记录失败');
+    }
+    await Promise.all([
+      fetchLogs(),
+      fetchHeatmapData(),
+      fetchConfig()
+    ]);
+    return result;
+  }
+
   return {
     config,
     logs,
@@ -173,6 +211,8 @@ export const useSacredSeatStore = defineStore('sacredSeat', () => {
     resetStreak,
     fetchLogs,
     fetchHeatmapData,
-    recordSession
+    recordSession,
+    exportLogs,
+    importLogs
   };
 });

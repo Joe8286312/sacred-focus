@@ -27,6 +27,83 @@ router.get('/', (req: Request, res: Response) => {
   res.json(cases);
 });
 
+// 导出全部判例法典
+router.get('/export', (_req: Request, res: Response) => {
+  const rows = db.prepare('SELECT * FROM precedent_cases ORDER BY date DESC, createdAt DESC').all() as any[];
+  const cases: PrecedentCase[] = rows.map(r => ({
+    id: r.id,
+    date: r.date,
+    behavior: r.behavior,
+    verdict: r.verdict,
+    boundaryCondition: r.boundaryCondition,
+    createdAt: r.createdAt
+  }));
+
+  res.json({
+    version: 1,
+    exportedAt: new Date().toISOString(),
+    dataType: 'PRECEDENT_CASES',
+    total: cases.length,
+    cases
+  });
+});
+
+// 批量导入判例法典 (支持增量合并与覆盖更新)
+router.post('/import', (req: Request, res: Response) => {
+  const body = req.body;
+  const rawCases = Array.isArray(body) ? body : (Array.isArray(body?.cases) ? body.cases : null);
+
+  if (!rawCases || !Array.isArray(rawCases)) {
+    return res.status(400).json({ error: 'Invalid payload: expected an array of cases or an object with a cases array' });
+  }
+
+  const upsertStmt = db.prepare(`
+    INSERT INTO precedent_cases (id, date, behavior, verdict, boundaryCondition, createdAt)
+    VALUES (@id, @date, @behavior, @verdict, @boundaryCondition, @createdAt)
+    ON CONFLICT(id) DO UPDATE SET
+      date = excluded.date,
+      behavior = excluded.behavior,
+      verdict = excluded.verdict,
+      boundaryCondition = excluded.boundaryCondition,
+      createdAt = excluded.createdAt
+  `);
+
+  let importedCount = 0;
+
+  const importTx = db.transaction((cases: any[]) => {
+    for (const c of cases) {
+      if (!c.id || !c.behavior || !c.verdict || !c.boundaryCondition) {
+        continue;
+      }
+      if (c.verdict !== 'ALLOW' && c.verdict !== 'FORBID') {
+        continue;
+      }
+      upsertStmt.run({
+        id: String(c.id),
+        date: String(c.date || new Date().toISOString().substring(0, 10)),
+        behavior: String(c.behavior),
+        verdict: String(c.verdict),
+        boundaryCondition: String(c.boundaryCondition),
+        createdAt: String(c.createdAt || new Date().toISOString())
+      });
+      importedCount += 1;
+    }
+  });
+
+  try {
+    importTx(rawCases);
+    const totalRow = db.prepare('SELECT COUNT(*) as count FROM precedent_cases').get() as any;
+    res.json({
+      success: true,
+      importedCount,
+      totalCases: totalRow?.count || 0
+    });
+  } catch (err: any) {
+    console.error('Failed to import precedent cases', err);
+    res.status(500).json({ error: 'Failed to import cases: ' + err.message });
+  }
+});
+
 // 新增判例
 router.post('/', (req: Request, res: Response) => {
   const { id, date, behavior, verdict, boundaryCondition, createdAt } = req.body;

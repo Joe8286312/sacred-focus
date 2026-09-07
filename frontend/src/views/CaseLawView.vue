@@ -66,6 +66,85 @@ function handleSavedCase() {
   fetchCases();
 }
 
+const isExporting = ref(false);
+const isImporting = ref(false);
+const fileInputRef = ref<HTMLInputElement | null>(null);
+
+async function handleExportCases() {
+  if (isExporting.value) return;
+  isExporting.value = true;
+  try {
+    const res = await fetch('/api/cases/export');
+    if (!res.ok) {
+      throw new Error(`导出判例失败: ${res.statusText}`);
+    }
+    const data = await res.json();
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const now = new Date();
+    const pad = (n: number) => String(n).padStart(2, '0');
+    const timestamp = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}_${pad(now.getHours())}${pad(now.getMinutes())}`;
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `precedent-cases-${timestamp}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    showFeedback('判罚宝典备份已成功导出');
+  } catch (err: any) {
+    console.error('Export cases failed', err);
+    showFeedback(err?.message || '导出判例失败，请稍后重试', true);
+  } finally {
+    isExporting.value = false;
+  }
+}
+
+function triggerFileInput() {
+  if (fileInputRef.value) {
+    fileInputRef.value.value = '';
+    fileInputRef.value.click();
+  }
+}
+
+async function handleFileImport(e: Event) {
+  const target = e.target as HTMLInputElement;
+  const file = target.files?.[0];
+  if (!file) return;
+
+  isImporting.value = true;
+  try {
+    const text = await file.text();
+    let json: unknown;
+    try {
+      json = JSON.parse(text);
+    } catch {
+      throw new Error('所选文件非合法的 JSON 格式');
+    }
+
+    const res = await fetch('/api/cases/import', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(json)
+    });
+    const result = await res.json();
+    if (!res.ok || !result.success) {
+      throw new Error(result.error || '导入判例失败');
+    }
+
+    await fetchCases();
+    showFeedback(`成功导入 ${result.importedCount} 条判例 (当前共计 ${result.totalCases} 条)`);
+  } catch (err: any) {
+    console.error('Import cases failed', err);
+    showFeedback(err?.message || '导入判例失败，请检查文件格式', true);
+  } finally {
+    isImporting.value = false;
+    if (fileInputRef.value) {
+      fileInputRef.value.value = '';
+    }
+  }
+}
+
 onMounted(() => {
   fetchCases();
 });
@@ -115,6 +194,43 @@ onMounted(() => {
             禁止
           </button>
         </div>
+
+        <!-- 备份与迁移：导出判例、导入判例 -->
+        <button 
+          class="btn-action-tool font-mono" 
+          title="导出全部判例备份 (JSON)" 
+          :disabled="isExporting"
+          @click="handleExportCases"
+        >
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+            <polyline points="7 10 12 15 17 10"></polyline>
+            <line x1="12" y1="15" x2="12" y2="3"></line>
+          </svg>
+          <span>{{ isExporting ? '导出中...' : '导出判例' }}</span>
+        </button>
+
+        <button 
+          class="btn-action-tool font-mono" 
+          title="从 JSON 备份导入判例" 
+          :disabled="isImporting"
+          @click="triggerFileInput"
+        >
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+            <polyline points="17 8 12 3 7 8"></polyline>
+            <line x1="12" y1="3" x2="12" y2="15"></line>
+          </svg>
+          <span>{{ isImporting ? '导入中...' : '导入判例' }}</span>
+        </button>
+
+        <input 
+          ref="fileInputRef" 
+          type="file" 
+          accept=".json" 
+          style="display: none;" 
+          @change="handleFileImport" 
+        />
 
         <!-- 显式添加判例入口 -->
         <button class="btn-add-case" @click="openAddModal">
@@ -267,6 +383,33 @@ onMounted(() => {
   color: var(--bg-primary);
   border-color: transparent;
   font-weight: 600;
+}
+
+.btn-action-tool {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 12px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-color);
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  white-space: nowrap;
+}
+
+.btn-action-tool:hover:not(:disabled) {
+  color: var(--text-primary);
+  border-color: var(--border-focus);
+  background: var(--bg-tertiary);
+}
+
+.btn-action-tool:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 .btn-add-case {
