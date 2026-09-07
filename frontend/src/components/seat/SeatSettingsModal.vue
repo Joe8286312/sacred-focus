@@ -50,7 +50,7 @@ function handleSave() {
           <div class="modal-body">
             <div class="form-group">
               <label>
-                神圣信物 (Sacred Token)
+                神圣信物
                 <span class="hint">物理隔离锚点，专注时随身佩戴或状态切换</span>
               </label>
               <input v-model="sacredToken" type="text" placeholder="例：主力机开启专注模式 / 戴上专属棒球帽" />
@@ -58,7 +58,7 @@ function handleSave() {
 
             <div class="form-group">
               <label>
-                预约启动信号 (Reservation Signal)
+                预约启动信号
                 <span class="hint">前额叶点火动作，倒计时结束时触发执行</span>
               </label>
               <input v-model="reservationSignal" type="text" placeholder="例：反手拍手轻声说换人 / 打响指" />
@@ -85,7 +85,7 @@ function handleSave() {
 
           <div class="modal-footer">
             <button class="btn-cancel" @click="emit('close')">
-              取消 (放弃修改)
+              取消
             </button>
             <button class="btn-save" @click="handleSave">
               保存配置

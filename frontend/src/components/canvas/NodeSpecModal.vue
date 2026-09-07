@@ -60,7 +60,7 @@ function handleConfirmDelete() {
         <div class="spec-content-body">
           <!-- 动作指令 -->
           <div class="spec-section">
-            <div class="section-label">动作指令 (Instruction)</div>
+            <div class="section-label">动作指令</div>
             <div class="section-text">
               {{ node.specCard?.instruction || '暂无详细动作指令' }}
             </div>
@@ -68,7 +68,7 @@ function handleConfirmDelete() {
 
           <!-- 失败判定 -->
           <div class="spec-section">
-            <div class="section-label fail-label">失败判定 (Fail Condition)</div>
+            <div class="section-label fail-label">失败判定</div>
             <div class="section-text fail-text">
               {{ node.specCard?.failCondition || '暂无明确失败红线' }}
             </div>
@@ -76,7 +76,7 @@ function handleConfirmDelete() {
 
           <!-- 机制收益与心理学解释 -->
           <div class="spec-section">
-            <div class="section-label">机制收益与心理学解释 (Benefit Mechanism)</div>
+            <div class="section-label">机制收益与心理学解释</div>
             <div class="section-text">
               {{ node.specCard?.benefitMechanism || '暂无机制收益说明' }}
             </div>
@@ -84,7 +84,7 @@ function handleConfirmDelete() {
 
           <!-- 备注 -->
           <div v-if="node.specCard?.notes" class="spec-section">
-            <div class="section-label">备注说明 (Notes)</div>
+            <div class="section-label">备注说明</div>
             <div class="section-text notes-text">
               {{ node.specCard.notes }}
             </div>

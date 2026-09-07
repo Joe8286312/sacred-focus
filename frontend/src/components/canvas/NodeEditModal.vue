@@ -460,7 +460,7 @@ function handleSave() {
                   type="button" 
                   class="btn-text-clear font-mono" 
                   @click="clearTime" 
-                  title="设为无特定触发时间 (null)"
+                  title="设为无特定触发时间"
                 >
                   清除时间
                 </button>
@@ -612,7 +612,7 @@ function handleSave() {
           </div>
 
           <div class="form-group">
-            <label class="form-label">动作指令 (Instruction)</label>
+            <label class="form-label">动作指令</label>
             <textarea 
               v-model="form.specCard.instruction" 
               class="form-textarea" 
@@ -622,7 +622,7 @@ function handleSave() {
           </div>
 
           <div class="form-group">
-            <label class="form-label form-label-danger">失败判定 (Fail Condition)</label>
+            <label class="form-label form-label-danger">失败判定</label>
             <textarea 
               v-model="form.specCard.failCondition" 
               class="form-textarea form-textarea-danger" 
@@ -632,7 +632,7 @@ function handleSave() {
           </div>
 
           <div class="form-group">
-            <label class="form-label">机制收益与心理学解释 (Benefit Mechanism)</label>
+            <label class="form-label">机制收益与心理学解释</label>
             <textarea 
               v-model="form.specCard.benefitMechanism" 
               class="form-textarea" 
