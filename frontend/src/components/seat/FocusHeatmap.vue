@@ -462,6 +462,7 @@ function handleCellClick(day: HeatmapDay) {
 /* 2. 网格容器 */
 .heatmap-scroll-container {
   overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
   padding-bottom: 4px;
   background: var(--bg-secondary);
   border: 1px solid var(--border-color);
@@ -734,5 +735,19 @@ function handleCellClick(day: HeatmapDay) {
 .tag-fail {
   color: #EF4444;
   background: rgba(239, 68, 68, 0.15);
+}
+
+@media (max-width: 768px) {
+  .heatmap-scroll-container {
+    padding: 12px 10px;
+  }
+  .heatmap-header {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+  }
+  .heatmap-stats-strip {
+    justify-content: space-between;
+  }
 }
 </style>

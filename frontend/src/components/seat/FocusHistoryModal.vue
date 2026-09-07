@@ -1069,4 +1069,119 @@ async function handleFileSelected(e: Event) {
 .modal-fade-leave-to {
   opacity: 0;
 }
+
+/* ================= 移动端专属响应式优化 (<= 768px) ================= */
+@media (max-width: 768px) {
+  .history-modal-card {
+    width: 95vw;
+    max-height: 92vh;
+    border-radius: var(--radius-md, 12px);
+  }
+
+  .modal-header {
+    padding: 12px 14px;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+  }
+
+  .header-left {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .modal-title {
+    font-size: 14px;
+  }
+
+  .tab-switcher {
+    width: 100%;
+    display: flex;
+  }
+
+  .tab-btn {
+    flex: 1;
+    min-height: 38px;
+    font-size: 12px;
+    justify-content: center;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  .tab-btn:active {
+    transform: scale(0.96);
+  }
+
+  .stats-overview-grid {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 8px;
+    padding: 10px 12px;
+  }
+
+  .stat-card {
+    padding: 8px 10px;
+  }
+
+  .stat-val {
+    font-size: 1.2rem;
+  }
+
+  .toolbar-strip {
+    padding: 10px 12px;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+  }
+
+  .filter-pills {
+    width: 100%;
+    overflow-x: auto;
+    gap: 4px;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .pill {
+    padding: 5px 10px;
+    font-size: 11px;
+    min-height: 32px;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  .pill:active {
+    transform: scale(0.95);
+  }
+
+  .toolbar-right {
+    width: 100%;
+    display: flex;
+    gap: 8px;
+  }
+
+  .btn-tool-export,
+  .btn-tool-import {
+    flex: 1;
+    min-height: 36px;
+    font-size: 12px;
+    justify-content: center;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  .btn-tool-export:active,
+  .btn-tool-import:active {
+    transform: scale(0.95);
+  }
+
+  .logs-scroll-area {
+    padding: 12px 12px;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .heatmap-tab-container {
+    padding: 14px 12px;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .drilldown-section {
+    padding: 12px 12px;
+  }
+}
 </style>

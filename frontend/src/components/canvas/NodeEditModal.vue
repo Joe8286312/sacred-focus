@@ -1243,4 +1243,34 @@ function handleSave() {
 .modal-fade-enter-from, .modal-fade-leave-to {
   opacity: 0;
 }
+
+@media (max-width: 768px) {
+  .modal-overlay {
+    padding: 8px;
+  }
+  .edit-modal-container {
+    max-height: 94vh;
+  }
+  .modal-header {
+    padding: 12px 14px;
+  }
+  .modal-body {
+    padding: 14px 12px;
+    gap: 12px;
+    -webkit-overflow-scrolling: touch;
+  }
+  .form-row {
+    flex-direction: column;
+    gap: 10px;
+  }
+  .modal-footer {
+    padding: 12px 14px;
+  }
+  .btn-cancel, .btn-submit {
+    min-height: 42px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+}
 </style>

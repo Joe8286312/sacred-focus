@@ -660,8 +660,14 @@ onUnmounted(() => {
           @click="toggleEditMode"
           :title="isEditMode ? '点击退出编辑模式并放弃修改' : '点击进入编辑排版与连线模式'"
         >
-          <span v-if="!isEditMode">展示模式 (单击点亮 · 双击规范)</span>
-          <span v-else>编辑模式 (点击退出并放弃修改)</span>
+          <span v-if="!isEditMode">
+            <span class="desktop-mode-text">展示模式 (单击点亮 · 双击规范)</span>
+            <span class="mobile-mode-text">展示模式 · 单击点亮</span>
+          </span>
+          <span v-else>
+            <span class="desktop-mode-text">编辑模式 (点击退出并放弃修改)</span>
+            <span class="mobile-mode-text">编辑模式 · 点击退出放弃</span>
+          </span>
         </button>
       </div>
 
@@ -1063,5 +1069,72 @@ onUnmounted(() => {
 :deep(.vue-flow__node-focusNode) {
   z-index: 10 !important;
   pointer-events: all !important;
+}
+
+.mobile-mode-text {
+  display: none;
+}
+
+/* ================= 移动端专属响应式优化 (<= 768px) ================= */
+@media (max-width: 768px) {
+  .desktop-mode-text {
+    display: none;
+  }
+  .mobile-mode-text {
+    display: inline;
+  }
+  .canvas-header-bar {
+    height: auto;
+    padding: 8px 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .bar-left {
+    width: 100%;
+    justify-content: space-between;
+  }
+  .system-title {
+    font-size: 13.5px;
+  }
+  .lit-badge {
+    font-size: 11px;
+    padding: 2px 8px;
+  }
+  .bar-center {
+    width: 100%;
+  }
+  .mode-toggle-btn {
+    width: 100%;
+    text-align: center;
+    padding: 6px 12px;
+    font-size: 12px;
+    min-height: 36px;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .mode-toggle-btn:active {
+    transform: scale(0.96);
+  }
+  .bar-right {
+    width: 100%;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    justify-content: flex-start;
+    padding-bottom: 2px;
+    gap: 6px;
+  }
+  .btn-action-tool {
+    padding: 6px 10px;
+    font-size: 11px;
+    flex-shrink: 0;
+    min-height: 32px;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .btn-action-tool:active {
+    transform: scale(0.95);
+  }
+  .vue-flow-viewport {
+    touch-action: pan-x pan-y pinch-zoom;
+  }
 }
 </style>

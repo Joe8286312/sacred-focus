@@ -351,4 +351,28 @@ async function handleSubmit() {
 .fade-leave-to {
   opacity: 0;
 }
+
+@media (max-width: 768px) {
+  .modal-backdrop {
+    padding: 10px;
+  }
+  .modal-card {
+    padding: 16px 14px;
+    gap: 14px;
+    max-height: 92vh;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+  .btn-verdict {
+    min-height: 40px;
+    font-size: 13px;
+  }
+  .btn-cancel, .btn-save {
+    min-height: 42px;
+    font-size: 14px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+}
 </style>

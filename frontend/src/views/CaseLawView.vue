@@ -697,4 +697,92 @@ onUnmounted(() => {
 .field-label {
   font-size: 12px;
 }
+
+/* ================= 移动端专属响应式优化 (<= 768px) ================= */
+@media (max-width: 768px) {
+  .cases-view-container {
+    padding: 12px 10px;
+    gap: 12px;
+  }
+
+  .cases-header {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+    padding-bottom: 12px;
+  }
+
+  .page-title {
+    font-size: 16px;
+  }
+
+  .cases-subtitle {
+    font-size: 11.5px;
+    line-height: 1.4;
+  }
+
+  .header-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .filter-pills {
+    display: flex;
+    gap: 6px;
+  }
+
+  .pill {
+    padding: 6px 14px;
+    min-height: 36px;
+    font-size: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  .pill:active {
+    transform: scale(0.95);
+  }
+
+  .btn-action-tool {
+    padding: 6px 10px;
+    min-height: 36px;
+    font-size: 12px;
+  }
+
+  .btn-action-tool:active {
+    transform: scale(0.95);
+  }
+
+  .btn-add-case {
+    padding: 6px 14px;
+    min-height: 36px;
+    font-size: 12px;
+    font-weight: 600;
+  }
+
+  .btn-add-case:active {
+    transform: scale(0.95);
+  }
+
+  .case-card {
+    padding: 14px 12px;
+    gap: 8px;
+  }
+
+  .case-top {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .btn-card-action {
+    min-height: 32px;
+    padding: 4px 10px;
+    font-size: 12px;
+  }
+}
 </style>

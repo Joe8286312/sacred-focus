@@ -156,6 +156,64 @@ onMounted(() => {
         @close="isMigrationModalOpen = false" 
       />
     </main>
+
+    <!-- 移动端专属原生毛玻璃导航 Tab Bar (仅在非专注模式下呈现) -->
+    <nav v-if="!seatStore.isFocusMode" class="mobile-bottom-nav">
+      <button 
+        class="tab-btn" 
+        :class="{ active: route.path === '/seat' }"
+        @click="router.push('/seat')"
+      >
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="tab-icon">
+          <circle cx="12" cy="12" r="10"></circle>
+          <polyline points="12 6 12 12 16 14"></polyline>
+        </svg>
+        <span class="tab-label">神圣座位</span>
+      </button>
+
+      <button 
+        class="tab-btn" 
+        :class="{ active: route.path === '/tree' }"
+        @click="router.push('/tree')"
+      >
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="tab-icon">
+          <circle cx="18" cy="18" r="3"></circle>
+          <circle cx="6" cy="6" r="3"></circle>
+          <circle cx="18" cy="6" r="3"></circle>
+          <path d="M18 9v6"></path>
+          <path d="M6 9a9 9 0 0 0 9 9"></path>
+        </svg>
+        <span class="tab-label">国策画布</span>
+      </button>
+
+      <button 
+        class="tab-btn" 
+        :class="{ active: route.path === '/list' }"
+        @click="router.push('/list')"
+      >
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="tab-icon">
+          <line x1="8" y1="6" x2="21" y2="6"></line>
+          <line x1="8" y1="12" x2="21" y2="12"></line>
+          <line x1="8" y1="18" x2="21" y2="18"></line>
+          <line x1="3" y1="6" x2="3.01" y2="6"></line>
+          <line x1="3" y1="12" x2="3.01" y2="12"></line>
+          <line x1="3" y1="18" x2="3.01" y2="18"></line>
+        </svg>
+        <span class="tab-label">国策列表</span>
+      </button>
+
+      <button 
+        class="tab-btn" 
+        :class="{ active: route.path === '/cases' }"
+        @click="router.push('/cases')"
+      >
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="tab-icon">
+          <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path>
+          <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path>
+        </svg>
+        <span class="tab-label">判例法典</span>
+      </button>
+    </nav>
   </div>
 </template>
 
@@ -310,5 +368,109 @@ onMounted(() => {
   flex: 1;
   overflow: hidden;
   position: relative;
+}
+
+/* 桌面端默认隐藏底部导航栏，零影响宽屏 */
+.mobile-bottom-nav {
+  display: none;
+}
+
+/* ================= 移动端专属响应式优化 (<= 768px) ================= */
+@media (max-width: 768px) {
+  .app-header {
+    height: 44px;
+    padding: 0 12px;
+  }
+
+  .brand-title {
+    font-size: 14px;
+  }
+
+  .brand-icon {
+    width: 16px;
+    height: 16px;
+  }
+
+  /* 移动端顶栏隐藏路由切换按钮，移至底部原生 Tab Bar */
+  .nav-links {
+    display: none !important;
+  }
+
+  .theme-toggle-btn, .fullscreen-toggle-btn {
+    padding: 6px 8px;
+    min-width: 36px;
+    min-height: 36px;
+  }
+
+  /* 主视口为底部 Tab 留出安全边距 */
+  .app-main {
+    padding-bottom: calc(52px + env(safe-area-inset-bottom, 0px));
+  }
+
+  .app-header.is-focus-mode + .app-main {
+    padding-bottom: 0;
+  }
+
+  /* 移动端底部原生 Tab Bar */
+  .mobile-bottom-nav {
+    display: flex;
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: calc(52px + env(safe-area-inset-bottom, 0px));
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+    background: var(--bg-secondary);
+    border-top: 1px solid var(--border-color);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    z-index: 1000;
+    justify-content: space-around;
+    align-items: center;
+    box-shadow: 0 -2px 10px rgba(0, 0, 0, 0.15);
+  }
+
+  .tab-btn {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 3px;
+    height: 100%;
+    min-height: 48px;
+    color: var(--text-muted);
+    transition: all var(--transition-fast);
+    padding: 4px 0;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  .tab-btn:active {
+    transform: scale(0.92);
+    opacity: 0.82;
+  }
+
+  .tab-icon {
+    transition: transform var(--transition-fast), filter var(--transition-fast);
+  }
+
+  .tab-label {
+    font-size: 10.5px;
+    font-weight: 500;
+    letter-spacing: 0.2px;
+  }
+
+  .tab-btn.active {
+    color: var(--color-lit);
+  }
+
+  .tab-btn.active .tab-icon {
+    transform: translateY(-1px);
+    filter: drop-shadow(0 0 6px var(--color-lit));
+  }
+
+  .tab-btn.active .tab-label {
+    font-weight: 700;
+  }
 }
 </style>

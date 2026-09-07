@@ -426,26 +426,28 @@ onUnmounted(() => {
             面对当前极大的启动心理阻抗，平移专注起点，以预定倒计时平滑接入心流。
           </p>
           <div class="reservation-controls">
-            <button 
-              class="btn-secondary" 
-              :class="{ active: reservationDurationMinutes === 5 }" 
-              @click="setReservationMinutes(5)"
-            >+5m</button>
-            <button 
-              class="btn-secondary" 
-              :class="{ active: reservationDurationMinutes === 10 }" 
-              @click="setReservationMinutes(10)"
-            >+10m</button>
-            <button 
-              class="btn-secondary" 
-              :class="{ active: reservationDurationMinutes === 15 }" 
-              @click="setReservationMinutes(15)"
-            >+15m</button>
-            <button 
-              class="btn-secondary" 
-              :class="{ active: reservationDurationMinutes === 30 }" 
-              @click="setReservationMinutes(30)"
-            >+30m</button>
+            <div class="duration-grid">
+              <button 
+                class="btn-secondary" 
+                :class="{ active: reservationDurationMinutes === 5 }" 
+                @click="setReservationMinutes(5)"
+              >+5m</button>
+              <button 
+                class="btn-secondary" 
+                :class="{ active: reservationDurationMinutes === 10 }" 
+                @click="setReservationMinutes(10)"
+              >+10m</button>
+              <button 
+                class="btn-secondary" 
+                :class="{ active: reservationDurationMinutes === 15 }" 
+                @click="setReservationMinutes(15)"
+              >+15m</button>
+              <button 
+                class="btn-secondary" 
+                :class="{ active: reservationDurationMinutes === 30 }" 
+                @click="setReservationMinutes(30)"
+              >+30m</button>
+            </div>
             <button class="btn-reserve" @click="startReservation">
               点火预约倒计时 ({{ reservationDurationMinutes }}m)
             </button>
@@ -862,6 +864,12 @@ onUnmounted(() => {
   display: flex;
   gap: 8px;
   flex-wrap: wrap;
+  align-items: center;
+}
+
+.duration-grid {
+  display: flex;
+  gap: 8px;
 }
 
 .btn-secondary {
@@ -1129,5 +1137,188 @@ onUnmounted(() => {
 .slide-down-enter-from, .slide-down-leave-to {
   transform: translateY(-20px);
   opacity: 0;
+}
+
+/* ================= 移动端专属响应式优化 (<= 768px) ================= */
+@media (max-width: 768px) {
+  .seat-view-container {
+    padding: 14px 12px;
+    justify-content: flex-start;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    max-width: 100%;
+  }
+
+  .main-dashboard-view {
+    gap: 16px;
+    width: 100%;
+  }
+
+  /* 头部拆解为上下两层，彻底杜绝横向溢出 */
+  .seat-header {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+  }
+
+  .token-banner {
+    flex-direction: row;
+    justify-content: space-between;
+    align-items: center;
+    background: var(--bg-secondary);
+    padding: 8px 12px;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--border-color);
+  }
+
+  .header-tools {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    width: 100%;
+    gap: 6px;
+  }
+
+  .streak-badge {
+    padding: 6px 8px;
+    font-size: 11px;
+    flex: 1;
+    justify-content: center;
+    gap: 4px;
+    white-space: nowrap;
+  }
+
+  .btn-history {
+    padding: 6px 10px;
+    font-size: 11px;
+    min-height: 38px;
+    gap: 4px;
+    white-space: nowrap;
+  }
+
+  .btn-icon {
+    width: 38px;
+    height: 38px;
+    min-width: 38px;
+  }
+
+  /* 倒计时表盘与目标输入框 */
+  .timer-display-card {
+    padding: 24px 14px;
+    width: 100%;
+  }
+
+  .focus-target-bar {
+    max-width: 100%;
+    margin-bottom: 16px;
+  }
+
+  .focus-target-input {
+    font-size: 14px;
+    padding: 10px 14px;
+  }
+
+  .timer-digits {
+    font-size: clamp(48px, 15vw, 76px);
+    letter-spacing: -1px;
+  }
+
+  .timer-status-hint {
+    font-size: 12px;
+    margin-top: 12px;
+    margin-bottom: 20px;
+    text-align: center;
+  }
+
+  .timer-actions {
+    width: 100%;
+  }
+
+  .btn-primary {
+    width: 100%;
+    min-height: 48px;
+    font-size: 15px;
+    padding: 12px 16px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+  }
+
+  /* 预约链控制卡片：用户特别指示的田字格 2x2 网格分布 */
+  .reservation-card {
+    padding: 14px 12px;
+    width: 100%;
+  }
+
+  .card-title {
+    font-size: 13px;
+  }
+
+  .card-desc {
+    font-size: 11px;
+    margin-bottom: 12px;
+  }
+
+  .reservation-controls {
+    flex-direction: column;
+    gap: 10px;
+    width: 100%;
+  }
+
+  /* 4 个预约时长按钮以田字格 2x2 规整分布 */
+  .duration-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 8px;
+    width: 100%;
+  }
+
+  .duration-grid .btn-secondary {
+    height: 44px;
+    font-size: 14px;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: var(--radius-sm);
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  .duration-grid .btn-secondary:active {
+    transform: scale(0.95);
+  }
+
+  /* 点火预约按钮全宽平铺在田字格下方 */
+  .btn-reserve {
+    width: 100%;
+    height: 44px;
+    margin-left: 0;
+    font-size: 13px;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: var(--radius-sm);
+    box-shadow: var(--shadow-sm);
+  }
+
+  .btn-reserve:active {
+    transform: scale(0.96);
+  }
+
+  /* 沉浸式专注模式 */
+  .immersive-focus-view {
+    padding: 24px 16px;
+  }
+
+  .focus-clock-digits {
+    font-size: clamp(56px, 18vw, 110px);
+  }
+
+  .reservation-triggered-view {
+    padding: 24px 14px;
+    gap: 14px;
+  }
 }
 </style>

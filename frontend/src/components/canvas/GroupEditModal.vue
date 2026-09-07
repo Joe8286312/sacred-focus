@@ -986,4 +986,55 @@ function handleApplyCurrent(groupId: string) {
   background: rgba(239, 68, 68, 0.12);
   border-color: rgba(239, 68, 68, 0.3);
 }
+
+/* ================= 移动端专属响应式优化 (<= 768px) ================= */
+@media (max-width: 768px) {
+  .modal-backdrop {
+    padding: 8px;
+  }
+
+  .group-modal-card {
+    max-height: 94vh;
+  }
+
+  .modal-header {
+    padding: 12px 14px;
+  }
+
+  .modal-body-layout {
+    flex-direction: column;
+    height: auto;
+    max-height: 75vh;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .groups-sidebar {
+    width: 100%;
+    border-right: none;
+    border-bottom: 1px solid var(--border-color);
+    max-height: 160px;
+    flex-shrink: 0;
+  }
+
+  .group-editor-panel {
+    padding: 14px 12px;
+  }
+
+  .form-row {
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .modal-footer {
+    padding: 10px 14px;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .btn-submit {
+    min-height: 40px;
+    font-size: 13px;
+  }
+}
 </style>

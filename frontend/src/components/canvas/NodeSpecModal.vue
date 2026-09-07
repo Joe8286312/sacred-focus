@@ -378,4 +378,35 @@ function handleConfirmDelete() {
   opacity: 0;
   transform: scale(0.97);
 }
+
+@media (max-width: 768px) {
+  .modal-backdrop {
+    padding: 8px;
+  }
+  .spec-modal-container {
+    max-height: 94vh;
+  }
+  .spec-header {
+    padding: 12px 14px;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .spec-body {
+    padding: 14px 12px;
+    gap: 12px;
+    -webkit-overflow-scrolling: touch;
+  }
+  .spec-footer {
+    padding: 12px 14px;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .btn-primary-close {
+    width: 100%;
+    min-height: 42px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+}
 </style>

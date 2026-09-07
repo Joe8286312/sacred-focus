@@ -849,10 +849,16 @@ async function confirmDeleteNode(node: FocusNode) {
   background: var(--bg-card);
   border: 1px solid var(--border-color);
   border-radius: var(--radius-md);
-  overflow: hidden;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
   display: flex;
   flex-direction: column;
   box-shadow: var(--shadow-sm);
+}
+
+.table-header,
+.table-row {
+  min-width: 820px;
 }
 
 .table-header {
@@ -1234,5 +1240,87 @@ async function confirmDeleteNode(node: FocusNode) {
 .btn-cancel-del-inline:hover {
   background: var(--bg-tertiary);
   color: var(--text-primary);
+}
+
+/* ================= 移动端专属响应式优化 (<= 768px) ================= */
+@media (max-width: 768px) {
+  .list-view-container {
+    padding: 12px 10px;
+    gap: 10px;
+  }
+
+  .toolbar-strip {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+  }
+
+  .toolbar-left {
+    flex-direction: column;
+    gap: 8px;
+    width: 100%;
+  }
+
+  .search-box {
+    width: 100%;
+    min-width: 100%;
+  }
+
+  .search-box input {
+    height: 38px;
+    font-size: 14px;
+  }
+
+  .group-filter-wrap {
+    width: 100%;
+  }
+
+  .group-filter-select {
+    width: 100%;
+    height: 38px;
+  }
+
+  .toolbar-actions {
+    display: flex;
+    gap: 6px;
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .btn-tool {
+    flex: 1;
+    height: 38px;
+    font-size: 11px;
+    padding: 0 4px;
+    text-align: center;
+    white-space: nowrap;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  .btn-tool:active, .btn-create-node:active {
+    transform: scale(0.95);
+  }
+
+  .btn-create-node {
+    height: 38px;
+    font-size: 12px;
+    padding: 0 12px;
+    white-space: nowrap;
+  }
+
+  .temporary-sort-banner {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+    font-size: 11px;
+  }
+
+  .banner-actions {
+    justify-content: flex-end;
+  }
+
+  .node-table-wrapper {
+    margin-bottom: 8px;
+  }
 }
 </style>

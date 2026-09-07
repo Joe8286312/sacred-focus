@@ -56,6 +56,12 @@ input:focus, textarea:focus, select:focus {
   border-color: var(--color-lit);
 }
 
+@media (max-width: 768px) {
+  input, textarea, select {
+    font-size: 16px; /* 阻止 iOS Safari 聚焦输入框时强制放大视口 */
+  }
+}
+
 /* 等宽字体类 */
 .font-mono {
   font-family: var(--font-mono);

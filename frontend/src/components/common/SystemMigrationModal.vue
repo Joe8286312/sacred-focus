@@ -1058,18 +1058,37 @@ async function onCasesFileSelected(e: Event) {
 
 @media (max-width: 768px) {
   .modal-backdrop {
-    padding: 12px;
+    padding: 8px;
   }
   .modal-header {
-    padding: 14px 18px;
+    padding: 12px 14px;
+  }
+  .header-left {
+    gap: 10px;
+  }
+  .header-icon-box {
+    width: 34px;
+    height: 34px;
+  }
+  .header-icon-box svg {
+    width: 18px;
+    height: 18px;
+  }
+  .modal-title {
+    font-size: 14px;
+  }
+  .modal-subtitle {
+    font-size: 10.5px;
   }
   .modal-body {
-    padding: 16px 18px;
-    gap: 20px;
+    padding: 14px 12px;
+    gap: 16px;
+    -webkit-overflow-scrolling: touch;
   }
   .full-actions-card {
     flex-direction: column;
     align-items: stretch;
+    padding: 12px;
   }
   .full-btn-group {
     width: 100%;
@@ -1078,12 +1097,32 @@ async function onCasesFileSelected(e: Event) {
   .btn-full-import {
     flex: 1;
     justify-content: center;
+    min-height: 42px;
+    font-size: 13px;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .btn-full-export:active,
+  .btn-full-import:active {
+    transform: scale(0.96);
   }
   .confirm-stats-grid {
     grid-template-columns: repeat(2, 1fr);
   }
   .domains-grid {
     grid-template-columns: 1fr;
+    gap: 10px;
+  }
+  .domain-card {
+    padding: 12px;
+  }
+  .domain-btn-row {
+    display: flex;
+    gap: 8px;
+  }
+  .domain-btn-row button {
+    flex: 1;
+    min-height: 38px;
+    justify-content: center;
   }
 }
 </style>

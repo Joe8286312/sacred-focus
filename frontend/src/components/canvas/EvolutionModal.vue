@@ -1407,4 +1407,50 @@ async function executeImportBackup() {
   opacity: 0;
   transform: translate(-50%, -10px);
 }
+
+/* ================= 移动端专属响应式优化 (<= 768px) ================= */
+@media (max-width: 768px) {
+  .modal-backdrop {
+    padding: 8px;
+  }
+  .evolution-modal-container {
+    max-height: 94vh;
+  }
+  .modal-header {
+    padding: 12px 14px;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+  }
+  .header-right {
+    justify-content: space-between;
+  }
+  .modal-body {
+    padding: 14px 12px;
+    gap: 16px;
+    -webkit-overflow-scrolling: touch;
+  }
+  .creation-footer-bar {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+  }
+  .creation-action-wrap {
+    justify-content: space-between;
+  }
+  .btn-submit-snapshot {
+    flex: 1;
+    min-height: 42px;
+    justify-content: center;
+  }
+  .snapshots-grid {
+    grid-template-columns: 1fr;
+  }
+  .slot-card {
+    padding: 12px;
+  }
+  .backup-actions-grid {
+    grid-template-columns: 1fr;
+  }
+}
 </style>
