@@ -328,9 +328,15 @@ function onSceneInput() {
   isSceneCustomized.value = true;
 }
 
+const formError = ref('');
+
 function handleSave() {
+  formError.value = '';
   if (!form.value.code.trim() || !form.value.name.trim()) {
-    alert('请填写国策纯文本编号与名称');
+    formError.value = '请填写国策纯文本编号与名称';
+    setTimeout(() => {
+      if (formError.value === '请填写国策纯文本编号与名称') formError.value = '';
+    }, 3000);
     return;
   }
 
@@ -364,9 +370,14 @@ function handleSave() {
     <div v-if="isOpen" class="modal-overlay" @click.self="$emit('close')">
       <div class="edit-modal-container">
         <div class="modal-header">
-          <h2 class="modal-title">
-            {{ node ? '编辑国策' : '新建国策' }}
-          </h2>
+          <div class="header-left-wrap">
+            <h2 class="modal-title">
+              {{ node ? '编辑国策' : '新建国策' }}
+            </h2>
+            <span v-if="formError" class="form-error-banner font-mono">
+              {{ formError }}
+            </span>
+          </div>
           <button class="btn-close" @click="$emit('close')">×</button>
         </div>
 
@@ -669,6 +680,22 @@ function handleSave() {
   font-weight: 700;
   margin: 0;
   color: var(--text-primary);
+}
+
+.header-left-wrap {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.form-error-banner {
+  font-size: 11px;
+  color: var(--color-danger);
+  background: rgba(239, 68, 68, 0.12);
+  border: 1px solid rgba(239, 68, 68, 0.35);
+  padding: 3px 10px;
+  border-radius: var(--radius-sm);
+  font-weight: 500;
 }
 
 .btn-close {

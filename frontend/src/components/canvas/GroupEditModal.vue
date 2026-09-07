@@ -133,7 +133,10 @@ const currentGroupMembers = computed(() => {
 
 async function handleSave(keepCreating = false) {
   if (!form.value.name.trim()) {
-    alert('请填写分组名称');
+    saveSuccessTip.value = '请填写分组名称';
+    setTimeout(() => {
+      if (saveSuccessTip.value === '请填写分组名称') saveSuccessTip.value = null;
+    }, 2500);
     return;
   }
 
@@ -286,7 +289,7 @@ function handleApplyCurrent(groupId: string) {
               <span class="panel-title">
                 {{ isCreating ? '新建分组外框' : '编辑分组属性' }}
               </span>
-              <span v-if="saveSuccessTip" class="save-success-banner font-mono">
+              <span v-if="saveSuccessTip" class="save-success-banner font-mono" :class="{ 'is-error': saveSuccessTip.includes('请填写') }">
                 {{ saveSuccessTip }}
               </span>
             </div>
@@ -967,5 +970,20 @@ function handleApplyCurrent(groupId: string) {
 
 .btn-submit:hover {
   background: #059669;
+}
+
+.save-success-banner {
+  font-size: 11px;
+  color: var(--color-success);
+  background: rgba(16, 185, 129, 0.12);
+  border: 1px solid rgba(16, 185, 129, 0.3);
+  padding: 2px 8px;
+  border-radius: var(--radius-sm);
+}
+
+.save-success-banner.is-error {
+  color: var(--color-danger);
+  background: rgba(239, 68, 68, 0.12);
+  border-color: rgba(239, 68, 68, 0.3);
 }
 </style>

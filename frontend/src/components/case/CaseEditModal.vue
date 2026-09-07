@@ -18,10 +18,13 @@ const verdict = ref<'ALLOW' | 'FORBID'>('ALLOW');
 const boundaryCondition = ref('');
 const isSubmitting = ref(false);
 
+const errorMessage = ref('');
+
 watch(
   () => props.isOpen,
   (open) => {
     if (open) {
+      errorMessage.value = '';
       if (props.caseData) {
         date.value = props.caseData.date;
         behavior.value = props.caseData.behavior;
@@ -39,12 +42,13 @@ watch(
 );
 
 async function handleSubmit() {
+  errorMessage.value = '';
   if (!behavior.value.trim()) {
-    alert('请填写行为描述');
+    errorMessage.value = '请填写具体的行为描述';
     return;
   }
   if (!boundaryCondition.value.trim()) {
-    alert('请填写裁决边界约束');
+    errorMessage.value = '请填写明确的裁决边界与执行约束';
     return;
   }
 
@@ -74,11 +78,11 @@ async function handleSubmit() {
       emit('save', { ...payload, ...saved });
       emit('close');
     } else {
-      alert('保存判例失败，请稍后重试');
+      errorMessage.value = '保存判例失败，请检查输入或稍后重试';
     }
   } catch (e) {
     console.error('Failed to save case', e);
-    alert('网络异常，请重试');
+    errorMessage.value = '网络异常，请重试';
   } finally {
     isSubmitting.value = false;
   }
@@ -98,6 +102,10 @@ async function handleSubmit() {
           </div>
 
           <div class="modal-body">
+            <div v-if="errorMessage" class="error-banner font-mono">
+              {{ errorMessage }}
+            </div>
+
             <div class="form-group">
               <label>判定日期</label>
               <input v-model="date" type="date" />
@@ -211,6 +219,16 @@ async function handleSubmit() {
   display: flex;
   flex-direction: column;
   gap: 16px;
+}
+
+.error-banner {
+  background: rgba(239, 68, 68, 0.12);
+  border: 1px solid rgba(239, 68, 68, 0.35);
+  color: var(--color-danger);
+  padding: 8px 14px;
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+  font-weight: 500;
 }
 
 .form-group {

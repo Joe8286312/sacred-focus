@@ -22,6 +22,18 @@ async function fetchCases() {
   }
 }
 
+const confirmingDeleteId = ref<string | null>(null);
+const feedbackNotice = ref<{ text: string; isError?: boolean } | null>(null);
+
+function showFeedback(text: string, isError = false) {
+  feedbackNotice.value = { text, isError };
+  setTimeout(() => {
+    if (feedbackNotice.value?.text === text) {
+      feedbackNotice.value = null;
+    }
+  }, 3500);
+}
+
 function openAddModal() {
   editingCase.value = null;
   isModalOpen.value = true;
@@ -32,22 +44,21 @@ function openEditModal(item: PrecedentCase) {
   isModalOpen.value = true;
 }
 
-async function handleDeleteCase(item: PrecedentCase) {
-  const confirmed = window.confirm(`严正确认：您确定要彻底删除判例【${item.behavior}】吗？此操作不可撤销。`);
-  if (!confirmed) return;
-
+async function confirmDelete(item: PrecedentCase) {
+  confirmingDeleteId.value = null;
   try {
     const res = await fetch(`/api/cases/${item.id}`, {
       method: 'DELETE'
     });
     if (res.ok) {
       cases.value = cases.value.filter(c => c.id !== item.id);
+      showFeedback(`已彻底删除判例【${item.behavior}】`);
     } else {
-      alert('删除失败，请稍后重试');
+      showFeedback('删除失败，请稍后重试', true);
     }
   } catch (err) {
     console.error('Failed to delete case', err);
-    alert('网络异常，请重试');
+    showFeedback('网络异常，请重试', true);
   }
 }
 
@@ -62,6 +73,17 @@ onMounted(() => {
 
 <template>
   <div class="cases-view-container">
+    <!-- 顶部反馈提示条 (0 侵入，替代原生 alert) -->
+    <Transition name="slide-down">
+      <div 
+        v-if="feedbackNotice" 
+        class="feedback-toast font-mono"
+        :class="{ 'is-error': feedbackNotice.isError }"
+      >
+        {{ feedbackNotice.text }}
+      </div>
+    </Transition>
+
     <div class="cases-header">
       <div class="header-info">
         <h1 class="page-title">下必为例判例法典</h1>
@@ -126,14 +148,25 @@ onMounted(() => {
             </span>
           </div>
 
-          <!-- 判例操作项：修改与删除 -->
-          <div class="card-operations">
-            <button class="btn-card-action btn-card-edit" @click="openEditModal(item)">
-              修改
-            </button>
-            <button class="btn-card-action btn-card-delete" @click="handleDeleteCase(item)">
-              删除
-            </button>
+          <!-- 判例操作项：修改与二次确认删除 -->
+          <div class="card-operations" @click.stop>
+            <template v-if="confirmingDeleteId === item.id">
+              <span class="confirm-del-label font-mono">确定删除？</span>
+              <button class="btn-card-action btn-confirm-del-inline" @click="confirmDelete(item)">
+                确认
+              </button>
+              <button class="btn-card-action btn-cancel-del-inline" @click="confirmingDeleteId = null">
+                取消
+              </button>
+            </template>
+            <template v-else>
+              <button class="btn-card-action btn-card-edit" @click="openEditModal(item)">
+                修改
+              </button>
+              <button class="btn-card-action btn-card-delete" @click="confirmingDeleteId = item.id">
+                删除
+              </button>
+            </template>
           </div>
         </div>
 
@@ -260,6 +293,8 @@ onMounted(() => {
   flex-direction: column;
   gap: 14px;
   overflow-y: auto;
+  flex: 1;
+  min-height: 0;
 }
 
 .empty-hint {
@@ -396,6 +431,7 @@ onMounted(() => {
 /* 操作项 */
 .card-operations {
   display: flex;
+  align-items: center;
   gap: 6px;
 }
 
@@ -430,8 +466,73 @@ onMounted(() => {
   border-color: rgba(220, 38, 38, 0.3);
 }
 
+[data-theme="dark"] .btn-card-delete {
+  color: #F87171;
+  border-color: rgba(248, 113, 113, 0.35);
+}
+
 .btn-card-delete:hover {
   background: rgba(220, 38, 38, 0.12);
+}
+
+/* 二次确认删除行内控件 */
+.confirm-del-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: #DC2626;
+  margin-right: 2px;
+}
+
+[data-theme="dark"] .confirm-del-label {
+  color: #F87171;
+}
+
+.btn-confirm-del-inline {
+  background: #EF4444;
+  color: #FFFFFF;
+  border: 1px solid #EF4444;
+  font-weight: 600;
+}
+
+.btn-confirm-del-inline:hover {
+  background: #DC2626;
+}
+
+.btn-cancel-del-inline {
+  color: var(--text-secondary);
+  border: 1px solid var(--border-color);
+}
+
+.btn-cancel-del-inline:hover {
+  color: var(--text-primary);
+  background: rgba(0, 0, 0, 0.08);
+}
+
+[data-theme="dark"] .btn-cancel-del-inline:hover {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+/* 顶部反馈浮条 */
+.feedback-toast {
+  position: absolute;
+  top: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--bg-secondary);
+  border: 1px solid rgba(16, 185, 129, 0.4);
+  color: var(--color-success);
+  padding: 8px 20px;
+  border-radius: var(--radius-full);
+  font-size: 13px;
+  font-weight: 600;
+  box-shadow: var(--shadow-md);
+  z-index: 100;
+  pointer-events: none;
+}
+
+.feedback-toast.is-error {
+  border-color: rgba(239, 68, 68, 0.4);
+  color: var(--color-danger);
 }
 
 /* 行为与边界内容 */

@@ -80,7 +80,7 @@ async function handleSaveCase() {
   }
 
   if (!behavior.value.trim() || !boundaryCondition.value.trim()) {
-    alert('请填写行为描述与执行边界裁决');
+    errorMessage.value = '请填写行为描述与执行边界裁决';
     return;
   }
 
@@ -105,11 +105,11 @@ async function handleSaveCase() {
       emit('complete-with-case', newCase, focusContent.value.trim());
       resetForm();
     } else {
-      alert('保存判例失败，请稍后重试');
+      errorMessage.value = '保存判例失败，请稍后重试';
     }
   } catch (err) {
     console.error('Failed to submit precedent case', err);
-    alert('网络异常，请重试');
+    errorMessage.value = '网络异常，请重试';
   } finally {
     isSubmitting.value = false;
   }
