@@ -195,10 +195,10 @@ onMounted(() => {
           </button>
         </div>
 
-        <!-- 备份与迁移：导出判例、导入判例 -->
+        <!-- 备份与迁移：导出、导入 -->
         <button 
           class="btn-action-tool font-mono" 
-          title="导出全部判例备份 (JSON)" 
+          title="导出判例法典备份 (JSON)" 
           :disabled="isExporting"
           @click="handleExportCases"
         >
@@ -207,7 +207,7 @@ onMounted(() => {
             <polyline points="7 10 12 15 17 10"></polyline>
             <line x1="12" y1="15" x2="12" y2="3"></line>
           </svg>
-          <span>{{ isExporting ? '导出中...' : '导出判例' }}</span>
+          <span>{{ isExporting ? '导出中...' : '导出' }}</span>
         </button>
 
         <button 
@@ -221,7 +221,7 @@ onMounted(() => {
             <polyline points="17 8 12 3 7 8"></polyline>
             <line x1="12" y1="3" x2="12" y2="15"></line>
           </svg>
-          <span>{{ isImporting ? '导入中...' : '导入判例' }}</span>
+          <span>{{ isImporting ? '导入中...' : '导入' }}</span>
         </button>
 
         <input 

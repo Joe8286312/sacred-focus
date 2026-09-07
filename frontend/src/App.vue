@@ -2,12 +2,14 @@
 import { ref, onMounted } from 'vue';
 import { RouterView, useRouter, useRoute } from 'vue-router';
 import ReconstructPromptModal from './components/canvas/ReconstructPromptModal.vue';
+import SystemMigrationModal from './components/common/SystemMigrationModal.vue';
 import { useFocusTreeStore } from './stores/focusTree';
 import { useSacredSeatStore } from './stores/sacredSeat';
 
 const router = useRouter();
 const route = useRoute();
 const currentTheme = ref<'dark' | 'light'>('dark');
+const isMigrationModalOpen = ref(false);
 const focusStore = useFocusTreeStore();
 const seatStore = useSacredSeatStore();
 
@@ -111,6 +113,20 @@ onMounted(() => {
           </svg>
         </button>
 
+        <!-- 跨设备数据迁移与整机备份入口 (专注时不展示，避免干扰心流) -->
+        <button 
+          v-if="!seatStore.isFocusMode"
+          class="theme-toggle-btn" 
+          @click="isMigrationModalOpen = true" 
+          title="跨设备数据迁移与整机备份"
+        >
+          <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path>
+            <polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline>
+            <line x1="12" y1="22.08" x2="12" y2="12"></line>
+          </svg>
+        </button>
+
         <!-- 始终保留深浅主题切换按钮 -->
         <button class="theme-toggle-btn" @click="toggleTheme" title="切换深浅主题">
           <svg v-if="currentTheme === 'dark'" viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -135,6 +151,10 @@ onMounted(() => {
     <main class="app-main">
       <RouterView />
       <ReconstructPromptModal />
+      <SystemMigrationModal 
+        :is-open="isMigrationModalOpen" 
+        @close="isMigrationModalOpen = false" 
+      />
     </main>
   </div>
 </template>

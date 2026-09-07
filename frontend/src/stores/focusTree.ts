@@ -220,10 +220,11 @@ export const useFocusTreeStore = defineStore('focusTree', () => {
     }
   }
 
+  // 1. 仅导出国策架构数据（节点、分组、连线、版本快照）
   async function exportSystemBackup() {
     try {
       const res = await fetch('/api/evolution/export');
-      if (!res.ok) throw new Error('Failed to export backup');
+      if (!res.ok) throw new Error('Failed to export focus tree backup');
       const data = await res.json();
       const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
       const url = URL.createObjectURL(blob);
@@ -232,18 +233,19 @@ export const useFocusTreeStore = defineStore('focusTree', () => {
       const pad = (n: number) => n.toString().padStart(2, '0');
       const timeStr = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}_${pad(now.getHours())}${pad(now.getMinutes())}`;
       a.href = url;
-      a.download = `sacred-focus-backup-${timeStr}.json`;
+      a.download = `focus-tree-backup-${timeStr}.json`;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
       return true;
     } catch (e) {
-      console.error('Failed to export system backup', e);
+      console.error('Failed to export focus tree backup', e);
       return false;
     }
   }
 
+  // 仅导入国策架构数据（不触碰专注记录和判例法典）
   async function importSystemBackup(backupData: any) {
     try {
       const res = await fetch('/api/evolution/import', {
@@ -259,8 +261,56 @@ export const useFocusTreeStore = defineStore('focusTree', () => {
       await fetchEvolution();
       return true;
     } catch (e) {
-      console.error('Failed to import system backup', e);
+      console.error('Failed to import focus tree backup', e);
       return false;
+    }
+  }
+
+  // 2. 全系统整机跨设备镜像导出
+  async function exportFullSystemBackup(): Promise<boolean> {
+    try {
+      const res = await fetch('/api/system/export');
+      if (!res.ok) throw new Error('Failed to export full system backup');
+      const data = await res.json();
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      const now = new Date();
+      const pad = (n: number) => n.toString().padStart(2, '0');
+      const timeStr = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}_${pad(now.getHours())}${pad(now.getMinutes())}`;
+      a.href = url;
+      a.download = `sacred-focus-full-backup-${timeStr}.json`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      return true;
+    } catch (e) {
+      console.error('Failed to export full system backup', e);
+      return false;
+    }
+  }
+
+  // 全系统整机跨设备镜像导入恢复
+  async function importFullSystemBackup(backupData: any): Promise<{ success: boolean; summary?: any; error?: string }> {
+    try {
+      const res = await fetch('/api/system/import', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(backupData)
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || 'Import failed');
+      }
+      await Promise.all([
+        fetchTree(),
+        fetchEvolution()
+      ]);
+      return { success: true, summary: data.summary };
+    } catch (e: any) {
+      console.error('Failed to import full system backup', e);
+      return { success: false, error: e.message };
     }
   }
 
@@ -419,6 +469,8 @@ export const useFocusTreeStore = defineStore('focusTree', () => {
     rollbackToSlot,
     exportSystemBackup,
     importSystemBackup,
+    exportFullSystemBackup,
+    importFullSystemBackup,
     addNode,
     updateNode,
     deleteNode,

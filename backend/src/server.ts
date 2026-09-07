@@ -9,6 +9,7 @@ import sacredSeatRouter from './routes/sacredSeat.js';
 import casesRouter from './routes/cases.js';
 import focusTreeRouter from './routes/focusTree.js';
 import evolutionRouter from './routes/evolution.js';
+import systemRouter from './routes/system.js';
 
 // 初始化数据库表与种子数据
 initDatabase();
@@ -48,6 +49,7 @@ app.use('/api/sacred-seat', sacredSeatRouter);
 app.use('/api/cases', casesRouter);
 app.use('/api/focus-tree', focusTreeRouter);
 app.use('/api/evolution', evolutionRouter);
+app.use('/api/system', systemRouter);
 
 // 生产环境静态文件托管 (frontend/dist)
 const frontendDist = path.resolve(process.cwd(), '../frontend/dist');

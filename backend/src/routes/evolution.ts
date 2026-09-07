@@ -232,38 +232,33 @@ router.post('/rollback', (req: Request, res: Response) => {
   });
 });
 
-// 全量导出系统配置（稳态备份）
+// 仅导出国策架构数据（节点、分组、连线、演化快照）
 router.get('/export', (_req: Request, res: Response) => {
   try {
     const liveTree = getFullFocusTreeData();
-    const sacredSeatConfig = db.prepare('SELECT * FROM sacred_seat_config WHERE id = 1').get();
-    const precedentCases = db.prepare('SELECT * FROM precedent_cases ORDER BY date DESC, createdAt DESC').all();
     const evolutionState = db.prepare('SELECT * FROM evolution_state WHERE id = 1').get();
     const evolutionSnapshots = db.prepare('SELECT * FROM evolution_snapshots ORDER BY slotIndex ASC').all();
-    const sessionLogs = db.prepare('SELECT * FROM focus_session_logs ORDER BY startTime DESC').all();
 
     const backupData = {
       schemaVersion: '1.0',
+      dataType: 'FOCUS_TREE_ARCHITECTURE',
       exportedAt: new Date().toISOString(),
       focusTree: liveTree,
       liveTree: liveTree,
-      sacredSeatConfig,
-      precedentCases,
       evolution: {
         state: evolutionState,
         snapshots: evolutionSnapshots
-      },
-      sessionLogs
+      }
     };
 
     res.json(backupData);
   } catch (e: any) {
-    console.error('Failed to export backup', e);
-    res.status(500).json({ error: 'Failed to export backup', details: e.message });
+    console.error('Failed to export focus tree backup', e);
+    res.status(500).json({ error: 'Failed to export focus tree backup', details: e.message });
   }
 });
 
-// 全量导入灾备配置
+// 仅导入国策架构数据（绝不影响专注流水与判例法典）
 router.post('/import', (req: Request, res: Response) => {
   const backup = req.body;
   const tree = backup?.focusTree || backup?.liveTree;
@@ -291,10 +286,10 @@ router.post('/import', (req: Request, res: Response) => {
           id: g.id,
           name: g.name,
           themeColor: g.themeColor,
-          positionX: g.position.x,
-          positionY: g.position.y,
-          width: g.size.width,
-          height: g.size.height
+          positionX: g.position?.x ?? 0,
+          positionY: g.position?.y ?? 0,
+          width: g.size?.width ?? 480,
+          height: g.size?.height ?? 360
         });
       }
 
@@ -335,8 +330,8 @@ router.post('/import', (req: Request, res: Response) => {
           isFrozen: n.isFrozen ? 1 : 0,
           lastLitDate: n.lastLitDate ?? null,
           previousLevel: n.previousLevel ?? 0,
-          positionX: n.position.x,
-          positionY: n.position.y,
+          positionX: n.position?.x ?? 0,
+          positionY: n.position?.y ?? 0,
           specInstruction: n.specCard?.instruction || '',
           specFailCondition: n.specCard?.failCondition || '',
           specBenefitMechanism: n.specCard?.benefitMechanism || '',
@@ -353,28 +348,7 @@ router.post('/import', (req: Request, res: Response) => {
         insertEdge.run(e);
       }
 
-      // 2. 恢复神圣座位配置
-      if (backup.sacredSeatConfig) {
-        const cfg = backup.sacredSeatConfig;
-        db.prepare(`
-          INSERT OR REPLACE INTO sacred_seat_config (id, sacredToken, reservationSignal, defaultFocusDuration, regretWindowSeconds, currentStreak, maxStreak, updatedAt)
-          VALUES (1, @sacredToken, @reservationSignal, @defaultFocusDuration, @regretWindowSeconds, @currentStreak, @maxStreak, @updatedAt)
-        `).run(cfg);
-      }
-
-      // 3. 恢复判例法典
-      if (Array.isArray(backup.precedentCases)) {
-        db.prepare('DELETE FROM precedent_cases').run();
-        const insertCase = db.prepare(`
-          INSERT INTO precedent_cases (id, date, behavior, verdict, boundaryCondition, createdAt)
-          VALUES (@id, @date, @behavior, @verdict, @boundaryCondition, @createdAt)
-        `);
-        for (const c of backup.precedentCases) {
-          insertCase.run(c);
-        }
-      }
-
-      // 4. 恢复演化状态与快照
+      // 2. 恢复演化状态与快照
       if (backup.evolution) {
         if (backup.evolution.state) {
           db.prepare('UPDATE evolution_state SET activePointerIndex = ? WHERE id = 1').run(backup.evolution.state.activePointerIndex ?? 0);
@@ -386,33 +360,25 @@ router.post('/import', (req: Request, res: Response) => {
             VALUES (@slotIndex, @id, @version, @timestamp, @changelogNotes, @isMajor, @dataJson)
           `);
           for (const s of backup.evolution.snapshots) {
-            insertSnap.run(s);
+            insertSnap.run({
+              slotIndex: s.slotIndex,
+              id: s.id,
+              version: s.version,
+              timestamp: s.timestamp,
+              changelogNotes: s.changelogNotes,
+              isMajor: s.isMajor ? 1 : 0,
+              dataJson: typeof s.dataJson === 'string' ? s.dataJson : JSON.stringify(s)
+            });
           }
-        }
-      }
-
-      // 5. 恢复流水日志（若存在）
-      if (Array.isArray(backup.sessionLogs)) {
-        db.prepare('DELETE FROM focus_session_logs').run();
-        const insertLog = db.prepare(`
-          INSERT INTO focus_session_logs (id, type, startTime, endTime, targetDurationMinutes, actualDurationSeconds, status, focusContent, failureReason, note)
-          VALUES (@id, @type, @startTime, @endTime, @targetDurationMinutes, @actualDurationSeconds, @status, @focusContent, @failureReason, @note)
-        `);
-        for (const l of backup.sessionLogs) {
-          insertLog.run({
-            ...l,
-            focusContent: l.focusContent ?? null,
-            failureReason: l.failureReason ?? null
-          });
         }
       }
     });
 
     importTx();
-    res.json({ message: 'Backup successfully imported and restored' });
+    res.json({ message: 'Focus tree architecture successfully imported and restored' });
   } catch (e: any) {
-    console.error('Failed to import backup', e);
-    res.status(500).json({ error: 'Failed to import backup', details: e.message });
+    console.error('Failed to import focus tree backup', e);
+    res.status(500).json({ error: 'Failed to import focus tree backup', details: e.message });
   }
 });
 

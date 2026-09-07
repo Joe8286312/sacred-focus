@@ -164,13 +164,13 @@ async function executeRollback(slotIndex: number) {
   }
 }
 
-// 导出系统冷备
+// 导出国策架构备份
 async function handleExportBackup() {
   const success = await store.exportSystemBackup();
   if (success) {
-    showToast('系统全量 JSON 备份已生成并触发下载', 'success');
+    showToast('国策架构 JSON 备份已生成并触发下载', 'success');
   } else {
-    showToast('导出备份失败', 'error');
+    showToast('导出国策备份失败', 'error');
   }
 }
 
@@ -214,7 +214,7 @@ async function executeImportBackup() {
   try {
     const success = await store.importSystemBackup(pendingImportData.value);
     if (success) {
-      showToast('系统全量备份导入成功，视图与演化树已重构', 'success');
+      showToast('国策架构备份导入成功，画布与演化树已重构', 'success');
       isConfirmingImport.value = false;
       pendingImportData.value = null;
     } else {
@@ -464,7 +464,7 @@ async function executeImportBackup() {
             </div>
           </div>
 
-          <!-- 模块三：全系统底层数据冷备与跨机迁移 -->
+          <!-- 模块三：国策架构独立备份与迁移 -->
           <div class="backup-section">
             <div class="section-title-bar">
               <div class="section-title-wrap">
@@ -473,23 +473,23 @@ async function executeImportBackup() {
                   <line x1="8" y1="21" x2="16" y2="21"></line>
                   <line x1="12" y1="17" x2="12" y2="21"></line>
                 </svg>
-                <span class="section-title">全系统底层冷备与跨环境迁移</span>
+                <span class="section-title">国策架构独立备份与迁移</span>
               </div>
-              <span class="section-hint">包含国策树、拓扑网络、神圣座位及判例法典的无损 JSON 映像</span>
+              <span class="section-hint">仅包含国策树拓扑、节点规范与演化快照，不影响专注流水与判例法典</span>
             </div>
 
             <!-- 导入二次确认警示框 -->
             <div v-if="isConfirmingImport" class="import-confirm-banner">
               <div class="banner-title-row">
                 <span class="danger-dot"></span>
-                <strong>警告：导入将彻底覆盖当前系统的全部数据库记录！</strong>
+                <strong>警告：导入将重置当前系统的国策拓扑与演化快照！</strong>
               </div>
               <p class="banner-desc">
-                已成功解析备份数据包。包含 {{ (pendingImportData?.liveTree?.nodes || pendingImportData?.focusTree?.nodes)?.length || 0 }} 项国策节点、{{ (pendingImportData?.liveTree?.groups || pendingImportData?.focusTree?.groups)?.length || 0 }} 个分组及 {{ pendingImportData?.evolution?.snapshots?.length || 0 }} 个演化快照。此操作不可撤销，请确认是否继续执行覆盖写入？
+                已成功解析国策备份包。包含 {{ (pendingImportData?.liveTree?.nodes || pendingImportData?.focusTree?.nodes)?.length || 0 }} 项国策节点、{{ (pendingImportData?.liveTree?.groups || pendingImportData?.focusTree?.groups)?.length || 0 }} 个分组及 {{ pendingImportData?.evolution?.snapshots?.length || 0 }} 个演化快照。此操作将重构国策拓扑结构，但绝不影响专注流水记录与判例法典，是否确认执行重构写入？
               </p>
               <div class="banner-actions">
                 <button class="btn-confirm-import-danger" :disabled="isSubmitting" @click="executeImportBackup">
-                  确认全量覆写恢复
+                  确认重构国策树
                 </button>
                 <button class="btn-cancel-import" :disabled="isSubmitting" @click="isConfirmingImport = false; pendingImportData = null">
                   取消导入
@@ -499,8 +499,8 @@ async function executeImportBackup() {
 
             <div v-else class="backup-card">
               <div class="backup-card-info">
-                <span class="backup-title">独立全库 JSON 映像备份</span>
-                <span class="backup-desc">可用于本地灾备归档，或跨设备完整无损迁移作战系统状态</span>
+                <span class="backup-title">国策拓扑独立 JSON 备份</span>
+                <span class="backup-desc">仅备份国策节点、分组空间与版本演化快照，便于国策方案独立分享与流转</span>
               </div>
 
               <div class="backup-btn-group">
@@ -510,7 +510,7 @@ async function executeImportBackup() {
                     <polyline points="7 10 12 15 17 10"></polyline>
                     <line x1="12" y1="15" x2="12" y2="3"></line>
                   </svg>
-                  <span>导出系统备份 (JSON)</span>
+                  <span>导出国策备份</span>
                 </button>
 
                 <button class="btn-import-backup" :disabled="isSubmitting" @click="triggerImportFile">
@@ -519,7 +519,7 @@ async function executeImportBackup() {
                     <polyline points="17 8 12 3 7 8"></polyline>
                     <line x1="12" y1="3" x2="12" y2="15"></line>
                   </svg>
-                  <span>从 JSON 恢复系统</span>
+                  <span>导入国策架构</span>
                 </button>
 
                 <!-- 隐藏的本地文件选择器 -->
