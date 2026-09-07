@@ -327,11 +327,11 @@ function handleApplyCurrent(groupId: string) {
 
               <div class="form-row">
                 <div class="form-group flex-1">
-                  <label class="form-label">默认宽度</label>
+                  <label class="form-label">默认宽度 (px)</label>
                   <input v-model.number="form.size.width" type="number" min="200" max="1200" step="20" class="form-input font-mono" />
                 </div>
                 <div class="form-group flex-1">
-                  <label class="form-label">默认高度</label>
+                  <label class="form-label">默认高度 (px)</label>
                   <input v-model.number="form.size.height" type="number" min="150" max="1000" step="20" class="form-input font-mono" />
                 </div>
               </div>

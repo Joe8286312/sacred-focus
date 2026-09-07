@@ -678,7 +678,7 @@ onUnmounted(() => {
             保存排版
           </button>
           <button class="btn-action-tool btn-cancel-layout" @click="cancelLayoutChanges" title="按 Esc 键放弃排版修改">
-            放弃排版
+            放弃排版 (Esc)
           </button>
         </template>
         <!-- 展示模式快捷项 -->
@@ -701,7 +701,7 @@ onUnmounted(() => {
       <div v-if="activeConnectingHandle" class="connecting-hint-banner">
         <span class="hint-pulse-dot"></span>
         <span>已选中起始桩 <strong>[{{ activeConnectingHandle.nodeId }} · {{ activeConnectingHandle.anchor }}]</strong>，请点击目标国策连接桩以相连</span>
-        <button class="btn-cancel-hint" @click="activeConnectingHandle = null">取消</button>
+        <button class="btn-cancel-hint" @click="activeConnectingHandle = null">取消 (Esc)</button>
       </div>
     </Transition>
 

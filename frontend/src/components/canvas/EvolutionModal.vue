@@ -435,7 +435,7 @@ async function executeImportBackup() {
                     <input type="checkbox" v-model="isMajor" />
                     <span class="checkbox-indicator"></span>
                     <span class="checkbox-label">
-                      <strong>重大里程碑版本</strong>
+                      <strong>重大里程碑版本 (Major)</strong>
                       <span class="checkbox-subtext">主版本号升级 (如 v1.x -> v2.0)</span>
                     </span>
                   </label>

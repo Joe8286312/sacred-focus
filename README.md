@@ -7,17 +7,17 @@
 
 ## 🛠️ 技术栈
 
-- **前端**:
+- **前端 (Frontend)**:
   - 框架：Vue 3 (Composition API, `<script setup>`) + TypeScript + Vite
   - 状态管理：Pinia
   - 路由：Vue Router
   - 画布引擎：`@vue-flow/core`（支持正交折线避障布线、双指缩放、自定义纯净节点卡片）
   - 样式体系：Vanilla CSS + CSS Variables（极夜 OLED 纯黑 / 日光高对比白 双主题）
   - 移动端：PWA (`vite-plugin-pwa`)
-- **后端**:
+- **后端 (Backend)**:
   - 运行时：Node.js (LTS) + Express + TypeScript
   - 数据库：SQLite (`better-sqlite3`)，WAL 模式，单文件持久化 (`./data/app.db`)
-- **部署**:
+- **部署 (Deployment)**:
   - Docker + Docker Compose + Nginx 反向代理与 SSL 自动化
 
 ---
