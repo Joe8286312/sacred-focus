@@ -49,15 +49,24 @@ function formatDuration(sec: number): string {
       <div class="log-status-tag font-mono">
         <template v-if="log.status === 'SUCCESS'">
           <span class="tag-icon text-success">✓</span>
-          <span class="tag-text">圆满达成 · 主链推进</span>
+          <div class="tag-text-group">
+            <span class="tag-title">圆满达成</span>
+            <span class="tag-subtitle">主链推进</span>
+          </div>
         </template>
         <template v-else-if="log.status === 'REGRET'">
           <span class="tag-icon text-gold">⟲</span>
-          <span class="tag-text">后悔药免责退出 · 主链保全</span>
+          <div class="tag-text-group">
+            <span class="tag-title">后悔药免责退出</span>
+            <span class="tag-subtitle">主链保全</span>
+          </div>
         </template>
         <template v-else>
           <span class="tag-icon text-danger">✕</span>
-          <span class="tag-text">违规中断放弃 · 主链清零</span>
+          <div class="tag-text-group">
+            <span class="tag-title">违规中断放弃</span>
+            <span class="tag-subtitle">主链清零</span>
+          </div>
         </template>
       </div>
 
@@ -164,21 +173,41 @@ function formatDuration(sec: number): string {
 .log-card-header {
   display: flex;
   justify-content: space-between;
-  align-items: center;
+  align-items: flex-start;
+  gap: 10px;
 }
 
 .log-status-tag {
   display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 12px;
-  font-weight: 700;
-  color: var(--text-secondary);
+  align-items: flex-start;
+  gap: 7px;
 }
 
 .tag-icon {
   font-weight: 900;
   font-size: 13px;
+  line-height: 1.3;
+  margin-top: 1px;
+}
+
+.tag-text-group {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.tag-title {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-primary);
+  line-height: 1.3;
+}
+
+.tag-subtitle {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  line-height: 1.3;
 }
 
 .log-timestamp {
@@ -187,6 +216,9 @@ function formatDuration(sec: number): string {
   gap: 5px;
   font-size: 12px;
   color: var(--text-secondary);
+  white-space: nowrap;
+  flex-shrink: 0;
+  margin-top: 1px;
 }
 
 .time-icon {

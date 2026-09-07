@@ -204,47 +204,49 @@ onUnmounted(() => {
           </button>
         </div>
 
-        <!-- 备份与迁移：导出、导入 -->
-        <button 
-          class="btn-action-tool font-mono" 
-          title="导出判例法典备份 (JSON)" 
-          :disabled="isExporting"
-          @click="handleExportCases"
-        >
-          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-            <polyline points="7 10 12 15 17 10"></polyline>
-            <line x1="12" y1="15" x2="12" y2="3"></line>
-          </svg>
-          <span>{{ isExporting ? '导出中...' : '导出' }}</span>
-        </button>
-
-        <button 
-          class="btn-action-tool font-mono" 
-          title="从 JSON 备份导入判例" 
-          :disabled="isImporting"
-          @click="triggerFileInput"
-        >
-          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-            <polyline points="17 8 12 3 7 8"></polyline>
-            <line x1="12" y1="3" x2="12" y2="15"></line>
-          </svg>
-          <span>{{ isImporting ? '导入中...' : '导入' }}</span>
-        </button>
-
-        <input 
-          ref="fileInputRef" 
-          type="file" 
-          accept=".json" 
-          style="display: none;" 
-          @change="handleFileImport" 
-        />
-
-        <!-- 显式添加判例入口 -->
+        <!-- 显式添加判例入口 (移动端第1行右侧) -->
         <button class="btn-add-case" @click="openAddModal">
           + 添加判例
         </button>
+
+        <!-- 备份与迁移：导出、导入 (移动端第2行) -->
+        <div class="case-backup-tools">
+          <button 
+            class="btn-action-tool font-mono" 
+            title="导出判例法典备份 (JSON)" 
+            :disabled="isExporting"
+            @click="handleExportCases"
+          >
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+              <polyline points="7 10 12 15 17 10"></polyline>
+              <line x1="12" y1="15" x2="12" y2="3"></line>
+            </svg>
+            <span>{{ isExporting ? '导出中...' : '导出' }}</span>
+          </button>
+
+          <button 
+            class="btn-action-tool font-mono" 
+            title="从 JSON 备份导入判例" 
+            :disabled="isImporting"
+            @click="triggerFileInput"
+          >
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+              <polyline points="17 8 12 3 7 8"></polyline>
+              <line x1="12" y1="3" x2="12" y2="15"></line>
+            </svg>
+            <span>{{ isImporting ? '导入中...' : '导入' }}</span>
+          </button>
+
+          <input 
+            ref="fileInputRef" 
+            type="file" 
+            accept=".json" 
+            style="display: none;" 
+            @change="handleFileImport" 
+          />
+        </div>
       </div>
     </div>
 
@@ -724,38 +726,15 @@ onUnmounted(() => {
   .header-actions {
     display: flex;
     flex-wrap: wrap;
-    gap: 8px;
+    gap: 10px;
     align-items: center;
     justify-content: space-between;
+    width: 100%;
   }
 
   .filter-pills {
     display: flex;
     gap: 6px;
-  }
-
-  .pill {
-    padding: 6px 14px;
-    min-height: 36px;
-    font-size: 12px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    -webkit-tap-highlight-color: transparent;
-  }
-
-  .pill:active {
-    transform: scale(0.95);
-  }
-
-  .btn-action-tool {
-    padding: 6px 10px;
-    min-height: 36px;
-    font-size: 12px;
-  }
-
-  .btn-action-tool:active {
-    transform: scale(0.95);
   }
 
   .btn-add-case {
@@ -766,6 +745,24 @@ onUnmounted(() => {
   }
 
   .btn-add-case:active {
+    transform: scale(0.95);
+  }
+
+  /* 移动端第2行：导出与导入按钮并排均分 */
+  .case-backup-tools {
+    width: 100%;
+    display: flex;
+    gap: 8px;
+  }
+
+  .case-backup-tools .btn-action-tool {
+    flex: 1;
+    justify-content: center;
+    min-height: 36px;
+    font-size: 12px;
+  }
+
+  .btn-action-tool:active {
     transform: scale(0.95);
   }
 

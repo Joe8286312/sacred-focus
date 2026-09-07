@@ -226,7 +226,7 @@ async function handleFileSelected(e: Event) {
               </div>
             </div>
 
-            <!-- 右侧操作区：导出备份、导入备份、关闭 -->
+            <!-- 右侧操作区：导出备份、导入备份 -->
             <div class="header-right-actions">
               <button 
                 class="btn-action-tool font-mono" 
@@ -263,14 +263,15 @@ async function handleFileSelected(e: Event) {
                 style="display: none;" 
                 @change="handleFileSelected" 
               />
-
-              <button class="btn-close" @click="emit('close')" title="关闭">
-                <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
-                  <line x1="18" y1="6" x2="6" y2="18"></line>
-                  <line x1="6" y1="6" x2="18" y2="18"></line>
-                </svg>
-              </button>
             </div>
+
+            <!-- 退出 X 按钮：直接置于右上角 -->
+            <button class="btn-close" @click="emit('close')" title="关闭">
+              <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+                <line x1="18" y1="6" x2="6" y2="18"></line>
+                <line x1="6" y1="6" x2="18" y2="18"></line>
+              </svg>
+            </button>
           </div>
 
           <!-- 反馈提示条 (零侵入浮动提示) -->
@@ -509,8 +510,9 @@ async function handleFileSelected(e: Event) {
 
 /* 1. 头部 */
 .modal-header {
+  position: relative;
   flex-shrink: 0;
-  padding: 18px 28px;
+  padding: 18px 68px 18px 28px;
   border-bottom: 1px solid var(--border-color);
   display: flex;
   justify-content: space-between;
@@ -632,21 +634,31 @@ async function handleFileSelected(e: Event) {
 }
 
 .btn-close {
+  position: absolute;
+  top: 18px;
+  right: 20px;
   background: transparent;
   border: none;
   color: var(--text-secondary);
   cursor: pointer;
   padding: 8px;
+  width: 36px;
+  height: 36px;
   border-radius: var(--radius-sm, 6px);
   display: flex;
   align-items: center;
   justify-content: center;
   transition: all var(--transition-fast);
+  z-index: 10;
 }
 
 .btn-close:hover {
   color: var(--text-primary);
   background: var(--bg-tertiary);
+}
+
+.btn-close:active {
+  transform: scale(0.95);
 }
 
 /* 反馈浮动提示条 */
@@ -1079,6 +1091,7 @@ async function handleFileSelected(e: Event) {
   }
 
   .modal-header {
+    position: relative;
     padding: 12px 14px;
     flex-direction: column;
     align-items: stretch;
@@ -1087,7 +1100,27 @@ async function handleFileSelected(e: Event) {
 
   .header-left {
     width: 100%;
-    justify-content: space-between;
+    padding-right: 40px;
+    justify-content: flex-start;
+  }
+
+  .btn-close {
+    top: 10px;
+    right: 10px;
+    width: 36px;
+    height: 36px;
+  }
+
+  .header-right-actions {
+    width: 100%;
+    display: flex;
+    gap: 8px;
+  }
+
+  .header-right-actions .btn-action-tool {
+    flex: 1;
+    justify-content: center;
+    min-height: 36px;
   }
 
   .modal-title {

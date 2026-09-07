@@ -374,7 +374,8 @@ async function confirmDeleteNode(node: FocusNode) {
 
     <!-- 国策表格主体 -->
     <div class="node-table-wrapper">
-      <div class="table-header">
+      <div class="table-inner">
+        <div class="table-header">
         <span class="col-handle non-sortable" title="按住手柄即可拖动重排（仅无排序列时生效）">#</span>
         
         <div class="col-code sortable-header" @click="toggleColumnSort('code')" title="点击切换代码排序">
@@ -561,6 +562,7 @@ async function confirmDeleteNode(node: FocusNode) {
 
       </div>
     </div>
+  </div>
 
     <!-- 详细规范卡模态窗 -->
     <NodeSpecModal
@@ -851,14 +853,13 @@ async function confirmDeleteNode(node: FocusNode) {
   border-radius: var(--radius-md);
   overflow-x: auto;
   -webkit-overflow-scrolling: touch;
-  display: flex;
-  flex-direction: column;
   box-shadow: var(--shadow-sm);
 }
 
-.table-header,
-.table-row {
-  min-width: 820px;
+.table-inner {
+  min-width: 840px;
+  display: flex;
+  flex-direction: column;
 }
 
 .table-header {
@@ -933,6 +934,7 @@ async function confirmDeleteNode(node: FocusNode) {
 
 .table-body {
   overflow-y: auto;
+  overflow-x: visible;
 }
 
 .empty-list-hint {
