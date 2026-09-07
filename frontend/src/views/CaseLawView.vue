@@ -179,7 +179,7 @@ onUnmounted(() => {
       </div>
 
       <div class="header-actions">
-        <!-- 筛选药丸：彻底移除多余英文 (ALLOW)/(FORBID) -->
+        <!-- 筛选药丸：全部 / 允许 / 禁止 (移动端置于第1行靠右) -->
         <div class="filter-pills">
           <button 
             class="pill" 
@@ -204,13 +204,8 @@ onUnmounted(() => {
           </button>
         </div>
 
-        <!-- 显式添加判例入口 (移动端第1行右侧) -->
-        <button class="btn-add-case" @click="openAddModal">
-          + 添加判例
-        </button>
-
-        <!-- 备份与迁移：导出、导入 (移动端第2行) -->
-        <div class="case-backup-tools">
+        <!-- 操作工具组 (移动端第2行：导出、导入、+ 添加判例并列) -->
+        <div class="case-action-tools">
           <button 
             class="btn-action-tool font-mono" 
             title="导出判例法典备份 (JSON)" 
@@ -246,6 +241,10 @@ onUnmounted(() => {
             style="display: none;" 
             @change="handleFileImport" 
           />
+
+          <button class="btn-add-case" @click="openAddModal">
+            + 添加判例
+          </button>
         </div>
       </div>
     </div>
@@ -365,6 +364,12 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   gap: 12px;
+}
+
+.case-action-tools {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .filter-pills {
@@ -725,41 +730,44 @@ onUnmounted(() => {
 
   .header-actions {
     display: flex;
-    flex-wrap: wrap;
+    flex-direction: column;
     gap: 10px;
-    align-items: center;
-    justify-content: space-between;
     width: 100%;
   }
 
   .filter-pills {
     display: flex;
     gap: 6px;
+    align-self: flex-end; /* 移动端第1行：靠右对齐 */
   }
 
-  .btn-add-case {
-    padding: 6px 14px;
+  /* 移动端第2行：导出、导入、+ 添加判例并排分布 */
+  .case-action-tools {
+    width: 100%;
+    display: flex;
+    gap: 8px;
+  }
+
+  .case-action-tools .btn-action-tool {
+    flex: 1;
+    justify-content: center;
     min-height: 36px;
+    font-size: 12px;
+  }
+
+  .case-action-tools .btn-add-case {
+    flex: 1.15;
+    justify-content: center;
+    display: inline-flex;
+    align-items: center;
+    min-height: 36px;
+    padding: 6px 10px;
     font-size: 12px;
     font-weight: 600;
   }
 
   .btn-add-case:active {
     transform: scale(0.95);
-  }
-
-  /* 移动端第2行：导出与导入按钮并排均分 */
-  .case-backup-tools {
-    width: 100%;
-    display: flex;
-    gap: 8px;
-  }
-
-  .case-backup-tools .btn-action-tool {
-    flex: 1;
-    justify-content: center;
-    min-height: 36px;
-    font-size: 12px;
   }
 
   .btn-action-tool:active {

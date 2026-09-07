@@ -692,12 +692,14 @@ onUnmounted(() => {
           <button class="btn-action-tool btn-evolution-tool" @click="isEvolutionModalOpen = true" title="演化日志与5槽位防震荡快照回滚">
             演化快照 ({{ currentActiveVersion }})
           </button>
-          <button class="btn-action-tool" @click="fitView({ padding: 0.15, minZoom: 0.05, maxZoom: 1 })" title="自适应居中对齐">
-            居中全景
-          </button>
-          <button class="btn-action-tool" @click="store.fetchTree" title="重新从数据库拉取最新国策树">
-            刷新
-          </button>
+          <div class="canvas-tools-group">
+            <button class="btn-action-tool" @click="fitView({ padding: 0.15, minZoom: 0.05, maxZoom: 1 })" title="自适应居中对齐">
+              居中全景
+            </button>
+            <button class="btn-action-tool" @click="store.fetchTree" title="重新从数据库拉取最新国策树">
+              刷新
+            </button>
+          </div>
         </template>
       </div>
     </div>
@@ -918,6 +920,12 @@ onUnmounted(() => {
   justify-self: end;
 }
 
+.canvas-tools-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .btn-action-tool {
   background: var(--bg-secondary);
   border: 1px solid var(--border-color);
@@ -1117,10 +1125,16 @@ onUnmounted(() => {
   }
   .bar-right {
     width: 100%;
-    overflow-x: auto;
-    -webkit-overflow-scrolling: touch;
-    justify-content: flex-start;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
     padding-bottom: 2px;
+    gap: 6px;
+    overflow-x: visible;
+  }
+  .canvas-tools-group {
+    display: flex;
+    align-items: center;
     gap: 6px;
   }
   .btn-action-tool {
