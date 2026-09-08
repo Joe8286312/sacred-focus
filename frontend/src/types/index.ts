@@ -33,11 +33,13 @@ export interface DailyFocusHeatmapItem {
 }
 
 // 3. 下必为例判例记录
+export type CaseVerdict = 'ALLOW' | 'FORBID';
+
 export interface PrecedentCase {
   id: string;
   date: string;                   // YYYY-MM-DD
   behavior: string;               // 行为描述
-  verdict: 'ALLOW' | 'FORBID';    // 允许 或 禁止
+  verdict: CaseVerdict;           // 允许 或 禁止
   boundaryCondition: string;      // 裁决说明与执行边界
   createdAt: string;
 }

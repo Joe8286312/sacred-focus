@@ -1,6 +1,8 @@
 import { defineStore } from 'pinia';
 import { ref } from 'vue';
 import type { FocusNode, FocusEdge, FocusGroup, EvolutionState } from '../types';
+import { apiFetch } from '../utils/api';
+import { getCurrentRevision, setCurrentRevision } from '../utils/syncManager';
 
 export const useFocusTreeStore = defineStore('focusTree', () => {
   const nodes = ref<FocusNode[]>([]);
@@ -64,17 +66,14 @@ export const useFocusTreeStore = defineStore('focusTree', () => {
   async function fetchTree() {
     loading.value = true;
     try {
-      const res = await fetch('/api/focus-tree');
-      if (res.ok) {
-        const data = await res.json();
-        nodes.value = data.nodes;
-        edges.value = data.edges;
-        groups.value = data.groups;
-        if (data.resetSummary && data.resetSummary.resetNodes && data.resetSummary.resetNodes.length > 0) {
-          const dismissed = sessionStorage.getItem('dismissedResetAlertDate');
-          if (dismissed !== data.resetSummary.settlementDate) {
-            pendingResetSummary.value = data.resetSummary;
-          }
+      const data = await apiFetch('/api/focus-tree');
+      nodes.value = data.nodes;
+      edges.value = data.edges;
+      groups.value = data.groups;
+      if (data.resetSummary && data.resetSummary.resetNodes && data.resetSummary.resetNodes.length > 0) {
+        const dismissed = sessionStorage.getItem('dismissedResetAlertDate');
+        if (dismissed !== data.resetSummary.settlementDate) {
+          pendingResetSummary.value = data.resetSummary;
         }
       }
     } catch (e) {
@@ -86,42 +85,54 @@ export const useFocusTreeStore = defineStore('focusTree', () => {
 
   async function syncTree() {
     try {
-      const res = await fetch('/api/focus-tree', {
+      const currentRev = getCurrentRevision();
+      const res = await apiFetch('/api/focus-tree', {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           nodes: nodes.value,
           edges: edges.value,
-          groups: groups.value
+          groups: groups.value,
+          expectedRevision: currentRev > 0 ? currentRev : undefined
         })
       });
-      return res.ok;
-    } catch (e) {
+      if (res && res.revision) {
+        setCurrentRevision(res.revision);
+      }
+      return true;
+    } catch (e: any) {
+      if (e.message === 'VERSION_CONFLICT') {
+        console.warn('【OCC并发冲突】检测到云端有更新，自动触发数据拉取重合');
+        await fetchTree();
+      }
       console.error('Failed to sync tree', e);
       return false;
     }
   }
 
-  // 全量覆盖持久化树数据（事务性提交画布草稿）
+  // 全量覆盖持久化树数据（事务性提交画布草稿，带 expectedRevision 乐观锁）
   async function saveWholeTree(tree: { nodes: FocusNode[]; groups: FocusGroup[]; edges: FocusEdge[] }) {
     try {
-      const res = await fetch('/api/focus-tree', {
+      const currentRev = getCurrentRevision();
+      const res = await apiFetch('/api/focus-tree', {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           nodes: tree.nodes,
           edges: tree.edges,
-          groups: tree.groups
+          groups: tree.groups,
+          expectedRevision: currentRev > 0 ? currentRev : undefined
         })
       });
-      if (res.ok) {
-        nodes.value = JSON.parse(JSON.stringify(tree.nodes));
-        groups.value = JSON.parse(JSON.stringify(tree.groups));
-        edges.value = JSON.parse(JSON.stringify(tree.edges));
-        return true;
+      if (res && res.revision) {
+        setCurrentRevision(res.revision);
       }
-      return false;
-    } catch (e) {
+      nodes.value = JSON.parse(JSON.stringify(tree.nodes));
+      groups.value = JSON.parse(JSON.stringify(tree.groups));
+      edges.value = JSON.parse(JSON.stringify(tree.edges));
+      return true;
+    } catch (e: any) {
+      if (e.message === 'VERSION_CONFLICT') {
+        alert('【并发冲突提示】检测到云端已被其他终端修改。为保护数据安全，请先刷新同步最新版本！');
+      }
       console.error('Failed to save whole tree', e);
       return false;
     }
@@ -136,19 +147,11 @@ export const useFocusTreeStore = defineStore('focusTree', () => {
     const prevLastLitDate = node.lastLitDate;
 
     try {
-      const res = await fetch(`/api/focus-tree/nodes/${nodeId}/toggle-lit`, { method: 'PATCH' });
-      if (res.ok) {
-        const updated = await res.json();
-        node.isLit = updated.isLit;
-        node.level = updated.level;
-        node.maxLevel = updated.maxLevel;
-        node.lastLitDate = updated.lastLitDate;
-      } else {
-        node.isLit = prevLit;
-        node.level = prevLevel;
-        node.maxLevel = prevMaxLevel;
-        node.lastLitDate = prevLastLitDate;
-      }
+      const updated = await apiFetch(`/api/focus-tree/nodes/${nodeId}/toggle-lit`, { method: 'PATCH' });
+      node.isLit = updated.isLit;
+      node.level = updated.level;
+      node.maxLevel = updated.maxLevel;
+      node.lastLitDate = updated.lastLitDate;
     } catch (e) {
       console.error('Failed to toggle lit state', e);
       node.isLit = prevLit;
@@ -160,9 +163,8 @@ export const useFocusTreeStore = defineStore('focusTree', () => {
 
   async function reorderNodes(nodeIds: string[]) {
     try {
-      await fetch('/api/focus-tree/nodes/reorder', {
+      await apiFetch('/api/focus-tree/nodes/reorder', {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ nodeIds })
       });
     } catch (e) {
@@ -172,10 +174,7 @@ export const useFocusTreeStore = defineStore('focusTree', () => {
 
   async function fetchEvolution() {
     try {
-      const res = await fetch('/api/evolution');
-      if (res.ok) {
-        evolution.value = await res.json();
-      }
+      evolution.value = await apiFetch('/api/evolution');
     } catch (e) {
       console.error('Failed to fetch evolution state', e);
     }
@@ -183,15 +182,12 @@ export const useFocusTreeStore = defineStore('focusTree', () => {
 
   async function createSnapshot(changelogNotes: string, isMajor: boolean) {
     try {
-      const res = await fetch('/api/evolution/snapshot', {
+      await apiFetch('/api/evolution/snapshot', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ changelogNotes, isMajor })
       });
-      if (res.ok) {
-        await fetchEvolution();
-      }
-      return res.ok;
+      await fetchEvolution();
+      return true;
     } catch (e) {
       console.error('Failed to create snapshot', e);
       return false;
@@ -200,20 +196,15 @@ export const useFocusTreeStore = defineStore('focusTree', () => {
 
   async function rollbackToSlot(targetSlotIndex: number) {
     try {
-      const res = await fetch('/api/evolution/rollback', {
+      const data = await apiFetch('/api/evolution/rollback', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ targetSlotIndex })
       });
-      if (res.ok) {
-        const data = await res.json();
-        nodes.value = data.liveTree.nodes;
-        edges.value = data.liveTree.edges;
-        groups.value = data.liveTree.groups;
-        await fetchEvolution();
-        return true;
-      }
-      return false;
+      nodes.value = data.liveTree.nodes;
+      edges.value = data.liveTree.edges;
+      groups.value = data.liveTree.groups;
+      await fetchEvolution();
+      return true;
     } catch (e) {
       console.error('Failed to rollback', e);
       return false;
@@ -223,9 +214,7 @@ export const useFocusTreeStore = defineStore('focusTree', () => {
   // 1. 仅导出国策架构数据（节点、分组、连线、版本快照）
   async function exportSystemBackup() {
     try {
-      const res = await fetch('/api/evolution/export');
-      if (!res.ok) throw new Error('Failed to export focus tree backup');
-      const data = await res.json();
+      const data = await apiFetch('/api/evolution/export');
       const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
@@ -248,15 +237,10 @@ export const useFocusTreeStore = defineStore('focusTree', () => {
   // 仅导入国策架构数据（不触碰专注记录和判例法典）
   async function importSystemBackup(backupData: any) {
     try {
-      const res = await fetch('/api/evolution/import', {
+      await apiFetch('/api/evolution/import', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(backupData)
       });
-      if (!res.ok) {
-        const err = await res.json();
-        throw new Error(err.error || 'Import failed');
-      }
       await fetchTree();
       await fetchEvolution();
       return true;
@@ -269,9 +253,7 @@ export const useFocusTreeStore = defineStore('focusTree', () => {
   // 2. 全系统整机跨设备镜像导出
   async function exportFullSystemBackup(): Promise<boolean> {
     try {
-      const res = await fetch('/api/system/export');
-      if (!res.ok) throw new Error('Failed to export full system backup');
-      const data = await res.json();
+      const data = await apiFetch('/api/system/export');
       const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
@@ -294,15 +276,10 @@ export const useFocusTreeStore = defineStore('focusTree', () => {
   // 全系统整机跨设备镜像导入恢复
   async function importFullSystemBackup(backupData: any): Promise<{ success: boolean; summary?: any; error?: string }> {
     try {
-      const res = await fetch('/api/system/import', {
+      const data = await apiFetch('/api/system/import', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(backupData)
       });
-      const data = await res.json();
-      if (!res.ok || !data.success) {
-        throw new Error(data.error || 'Import failed');
-      }
       await Promise.all([
         fetchTree(),
         fetchEvolution()
@@ -321,9 +298,8 @@ export const useFocusTreeStore = defineStore('focusTree', () => {
     nodes.value.push(node);
     lastCreatedNodeId.value = node.id;
     try {
-      await fetch('/api/focus-tree/nodes', {
+      await apiFetch('/api/focus-tree/nodes', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(node)
       });
     } catch (e) {
@@ -342,9 +318,8 @@ export const useFocusTreeStore = defineStore('focusTree', () => {
       nodes.value[idx] = { ...nodes.value[idx], ...updates };
     }
     try {
-      await fetch(`/api/focus-tree/nodes/${id}`, {
+      await apiFetch(`/api/focus-tree/nodes/${id}`, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(updates)
       });
     } catch (e) {
@@ -370,7 +345,7 @@ export const useFocusTreeStore = defineStore('focusTree', () => {
     nodes.value = nodes.value.filter(n => n.id !== id);
     edges.value = edges.value.filter(e => e.sourceId !== id && e.targetId !== id);
     try {
-      await fetch(`/api/focus-tree/nodes/${id}`, { method: 'DELETE' });
+      await apiFetch(`/api/focus-tree/nodes/${id}`, { method: 'DELETE' });
     } catch (e) {
       console.error('Failed to delete node', e);
     }
@@ -379,9 +354,8 @@ export const useFocusTreeStore = defineStore('focusTree', () => {
   async function addEdge(edge: FocusEdge) {
     edges.value.push(edge);
     try {
-      await fetch('/api/focus-tree/edges', {
+      await apiFetch('/api/focus-tree/edges', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(edge)
       });
     } catch (e) {
@@ -392,7 +366,7 @@ export const useFocusTreeStore = defineStore('focusTree', () => {
   async function deleteEdge(id: string) {
     edges.value = edges.value.filter(e => e.id !== id);
     try {
-      await fetch(`/api/focus-tree/edges/${id}`, { method: 'DELETE' });
+      await apiFetch(`/api/focus-tree/edges/${id}`, { method: 'DELETE' });
     } catch (e) {
       console.error('Failed to delete edge', e);
     }
@@ -405,9 +379,8 @@ export const useFocusTreeStore = defineStore('focusTree', () => {
     groups.value.push(group);
     lastCreatedGroupId.value = group.id;
     try {
-      await fetch('/api/focus-tree/groups', {
+      await apiFetch('/api/focus-tree/groups', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(group)
       });
     } catch (e) {
@@ -421,9 +394,8 @@ export const useFocusTreeStore = defineStore('focusTree', () => {
       groups.value[idx] = { ...groups.value[idx], ...updates };
     }
     try {
-      await fetch(`/api/focus-tree/groups/${id}`, {
+      await apiFetch(`/api/focus-tree/groups/${id}`, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(updates)
       });
     } catch (e) {
@@ -440,7 +412,7 @@ export const useFocusTreeStore = defineStore('focusTree', () => {
     // 移除与该组直接相连的连线
     edges.value = edges.value.filter(e => e.sourceId !== id && e.targetId !== id);
     try {
-      await fetch(`/api/focus-tree/groups/${id}`, { method: 'DELETE' });
+      await apiFetch(`/api/focus-tree/groups/${id}`, { method: 'DELETE' });
     } catch (e) {
       console.error('Failed to delete group', e);
     }
@@ -459,6 +431,7 @@ export const useFocusTreeStore = defineStore('focusTree', () => {
     calculateSmartPlacement,
     calculateSmartGroupPlacement,
     fetchTree,
+    fetchTreeData: fetchTree,
     syncTree,
     saveWholeTree,
     toggleNodeLit,

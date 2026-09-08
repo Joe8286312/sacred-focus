@@ -1,42 +1,41 @@
 <script setup lang="ts">
 import { ref, watch } from 'vue';
-import type { PrecedentCase } from '../../types';
+import type { PrecedentCase, CaseVerdict } from '../../types';
+import { apiFetch } from '../../utils/api';
 
 const props = defineProps<{
   isOpen: boolean;
-  caseData: PrecedentCase | null;
+  caseData?: PrecedentCase | null;
 }>();
 
 const emit = defineEmits<{
   (e: 'close'): void;
-  (e: 'save', caseItem: PrecedentCase): void;
+  (e: 'save', savedCase: PrecedentCase): void;
 }>();
 
 const date = ref('');
 const behavior = ref('');
-const verdict = ref<'ALLOW' | 'FORBID'>('ALLOW');
+const verdict = ref<CaseVerdict>('ALLOW');
 const boundaryCondition = ref('');
 const isSubmitting = ref(false);
 
 const errorMessage = ref('');
 
 watch(
-  () => props.isOpen,
-  (open) => {
-    if (open) {
-      errorMessage.value = '';
-      if (props.caseData) {
-        date.value = props.caseData.date;
-        behavior.value = props.caseData.behavior;
-        verdict.value = props.caseData.verdict;
-        boundaryCondition.value = props.caseData.boundaryCondition;
-      } else {
-        date.value = new Date().toISOString().split('T')[0];
-        behavior.value = '';
-        verdict.value = 'ALLOW';
-        boundaryCondition.value = '';
-      }
+  () => props.caseData,
+  (newVal) => {
+    if (newVal) {
+      date.value = newVal.date;
+      behavior.value = newVal.behavior;
+      verdict.value = newVal.verdict;
+      boundaryCondition.value = newVal.boundaryCondition;
+    } else {
+      date.value = new Date().toISOString().split('T')[0];
+      behavior.value = '';
+      verdict.value = 'ALLOW';
+      boundaryCondition.value = '';
     }
+    errorMessage.value = '';
   },
   { immediate: true }
 );
@@ -67,22 +66,16 @@ async function handleSubmit() {
       createdAt: props.caseData ? props.caseData.createdAt : new Date().toISOString()
     };
 
-    const res = await fetch(url, {
+    const saved = await apiFetch(url, {
       method,
-      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload)
     });
 
-    if (res.ok) {
-      const saved = await res.json();
-      emit('save', { ...payload, ...saved });
-      emit('close');
-    } else {
-      errorMessage.value = '保存判例失败，请检查输入或稍后重试';
-    }
-  } catch (e) {
+    emit('save', { ...payload, ...saved });
+    emit('close');
+  } catch (e: any) {
     console.error('Failed to save case', e);
-    errorMessage.value = '网络异常，请重试';
+    errorMessage.value = e?.message || '保存判例失败，请检查输入或稍后重试';
   } finally {
     isSubmitting.value = false;
   }

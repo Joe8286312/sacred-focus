@@ -1,10 +1,13 @@
 import { Router, Request, Response } from 'express';
-import { db, getFullFocusTreeData } from '../db.js';
+import path from 'path';
+import { config } from '../config.js';
+import { db, getFullFocusTreeData, incrementSystemRevision } from '../db.js';
+import { exportLimiter, importLimiter } from '../middleware/rateLimiter.js';
 
 const router = Router();
 
-// 全量导出系统整机镜像（跨设备全量迁移与灾难恢复）
-router.get('/export', (_req: Request, res: Response) => {
+// 全量导出系统整机镜像（跨设备全量迁移与灾难恢复，15次/10分钟限流保护）
+router.get('/export', exportLimiter, (_req: Request, res: Response) => {
   try {
     const liveTree = getFullFocusTreeData();
     const sacredSeatConfig = db.prepare('SELECT * FROM sacred_seat_config WHERE id = 1').get();
@@ -43,13 +46,23 @@ router.get('/export', (_req: Request, res: Response) => {
   }
 });
 
-// 全量导入整机镜像（跨设备整机恢复）
-router.post('/import', (req: Request, res: Response) => {
+// 全量导入整机镜像（跨设备整机恢复，带预热备与 10次/小时频控保护）
+router.post('/import', importLimiter, async (req: Request, res: Response) => {
   const backup = req.body;
   const tree = backup?.focusTree || backup?.liveTree;
 
   if (!backup || !tree) {
     return res.status(400).json({ error: '备份格式不合法：缺少国策树结构' });
+  }
+
+  // 导入前自动热备当前 SQLite 数据库快照
+  try {
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+    const backupFile = path.join(config.dataDir, `app_pre_import_${timestamp}.db`);
+    await db.backup(backupFile);
+    console.log(`[Sacred Focus System] 预导入安全热备已生成: ${backupFile}`);
+  } catch (backupErr) {
+    console.warn('[Sacred Focus System] 预导入热备创建失败 (继续执行导入):', backupErr);
   }
 
   try {
@@ -196,6 +209,9 @@ router.post('/import', (req: Request, res: Response) => {
           });
         }
       }
+
+      // 6. 原子推进全局系统版本号
+      incrementSystemRevision();
 
       return {
         nodesRestored: nodes.length,

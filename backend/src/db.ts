@@ -133,6 +133,10 @@ export function initDatabase() {
     );
   `);
 
+  // 初始化原子系统版本号与最后同步时间戳
+  db.prepare("INSERT OR IGNORE INTO system_meta (key, value) VALUES ('system_revision', '1')").run();
+  db.prepare("INSERT OR IGNORE INTO system_meta (key, value) VALUES ('last_sync_timestamp', ?)").run(new Date().toISOString());
+
   // 数据库平滑迁移：为 focus_nodes 增加 lastLitDate、previousLevel 与 triggerScene 字段
   const nodeCols = (db.prepare('PRAGMA table_info(focus_nodes)').all() as Array<{ name: string }>).map(c => c.name);
   if (!nodeCols.includes('lastLitDate')) {
@@ -576,4 +580,20 @@ export function settleFocusTreeDailyState(): { resetNodes: ResetNodeItem[]; sett
   settleTx();
 
   return { resetNodes, settlementDate: today };
+}
+
+// 获取全局系统原子版本号
+export function getSystemRevision(): number {
+  const row = db.prepare("SELECT value FROM system_meta WHERE key = 'system_revision'").get() as { value: string } | undefined;
+  return row ? parseInt(row.value, 10) : 1;
+}
+
+// 原子递增系统版本号并更新最新修改时间戳
+export function incrementSystemRevision(): number {
+  const current = getSystemRevision();
+  const next = current + 1;
+  const now = new Date().toISOString();
+  db.prepare("INSERT OR REPLACE INTO system_meta (key, value) VALUES ('system_revision', ?)").run(String(next));
+  db.prepare("INSERT OR REPLACE INTO system_meta (key, value) VALUES ('last_sync_timestamp', ?)").run(now);
+  return next;
 }

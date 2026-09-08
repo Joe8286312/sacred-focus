@@ -5,6 +5,9 @@ import ReconstructPromptModal from './components/canvas/ReconstructPromptModal.v
 import SystemMigrationModal from './components/common/SystemMigrationModal.vue';
 import { useFocusTreeStore } from './stores/focusTree';
 import { useSacredSeatStore } from './stores/sacredSeat';
+import { useAuthStore } from './stores/auth';
+import { initSyncManager } from './utils/syncManager';
+import { apiFetch } from './utils/api';
 
 const router = useRouter();
 const route = useRoute();
@@ -12,6 +15,7 @@ const currentTheme = ref<'dark' | 'light'>('dark');
 const isMigrationModalOpen = ref(false);
 const focusStore = useFocusTreeStore();
 const seatStore = useSacredSeatStore();
+const authStore = useAuthStore();
 
 function toggleTheme() {
   currentTheme.value = currentTheme.value === 'dark' ? 'light' : 'dark';
@@ -20,6 +24,9 @@ function toggleTheme() {
 }
 
 onMounted(() => {
+  // 启动多端唤醒静默自动同步管理器
+  initSyncManager();
+
   const saved = localStorage.getItem('sacred-focus-theme') as 'dark' | 'light' | null;
   if (saved) {
     currentTheme.value = saved;
@@ -40,7 +47,7 @@ onMounted(() => {
 
   (window as any).__resetAndTriggerAudit = async () => {
     sessionStorage.removeItem('dismissedResetAlertDate');
-    await fetch('/api/focus-tree/reset-settlement-audit', { method: 'POST' });
+    await apiFetch('/api/focus-tree/reset-settlement-audit', { method: 'POST' });
     await focusStore.fetchTree();
   };
 });
@@ -48,8 +55,8 @@ onMounted(() => {
 
 <template>
   <div class="app-container">
-    <!-- 顶部全局极简导航（专注时隐藏导航链接，仅保留深浅切换与全屏） -->
-    <header class="app-header" :class="{ 'is-focus-mode': seatStore.isFocusMode }">
+    <!-- 顶部全局极简导航（专注时隐藏导航链接，仅保留深浅切换与全屏；登录页隐藏整个顶栏） -->
+    <header v-if="route.path !== '/login'" class="app-header" :class="{ 'is-focus-mode': seatStore.isFocusMode }">
       <div 
         class="brand" 
         :class="{ 'brand-disabled': seatStore.isFocusMode }"
@@ -127,6 +134,20 @@ onMounted(() => {
           </svg>
         </button>
 
+        <!-- 安全登出按钮 (非专注模式且已认证时展示) -->
+        <button 
+          v-if="!seatStore.isFocusMode && authStore.isAuthenticated"
+          class="theme-toggle-btn" 
+          @click="authStore.logout" 
+          title="安全登出"
+        >
+          <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
+            <polyline points="16 17 21 12 16 7"></polyline>
+            <line x1="21" y1="12" x2="9" y2="12"></line>
+          </svg>
+        </button>
+
         <!-- 始终保留深浅主题切换按钮 -->
         <button class="theme-toggle-btn" @click="toggleTheme" title="切换深浅主题">
           <svg v-if="currentTheme === 'dark'" viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -157,8 +178,8 @@ onMounted(() => {
       />
     </main>
 
-    <!-- 移动端专属原生毛玻璃导航 Tab Bar (仅在非专注模式下呈现) -->
-    <nav v-if="!seatStore.isFocusMode" class="mobile-bottom-nav">
+    <!-- 移动端专属原生毛玻璃导航 Tab Bar (仅在非专注模式且非登录页面呈现) -->
+    <nav v-if="!seatStore.isFocusMode && route.path !== '/login'" class="mobile-bottom-nav">
       <button 
         class="tab-btn" 
         :class="{ active: route.path === '/seat' }"

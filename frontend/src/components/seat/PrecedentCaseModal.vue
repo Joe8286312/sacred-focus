@@ -2,6 +2,7 @@
 import { ref, computed, watch } from 'vue';
 import { formatCompactDuration } from '../../utils/time';
 import type { PrecedentCase } from '../../types';
+import { apiFetch } from '../../utils/api';
 
 const props = defineProps<{
   isOpen: boolean;
@@ -95,21 +96,16 @@ async function handleSaveCase() {
   };
 
   try {
-    const res = await fetch('/api/cases', {
+    await apiFetch('/api/cases', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(newCase)
     });
 
-    if (res.ok) {
-      emit('complete-with-case', newCase, focusContent.value.trim());
-      resetForm();
-    } else {
-      errorMessage.value = '保存判例失败，请稍后重试';
-    }
-  } catch (err) {
-    console.error('Failed to submit precedent case', err);
-    errorMessage.value = '网络异常，请重试';
+    emit('complete-with-case', newCase, focusContent.value.trim());
+    resetForm();
+  } catch (err: any) {
+    console.error('Failed to save case', err);
+    errorMessage.value = err?.message || '保存判例失败，请稍后重试';
   } finally {
     isSubmitting.value = false;
   }

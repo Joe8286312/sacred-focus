@@ -1,5 +1,5 @@
 import { Router, Request, Response } from 'express';
-import { db } from '../db.js';
+import { db, incrementSystemRevision } from '../db.js';
 import type { PrecedentCase } from '../types.js';
 
 const router = Router();
@@ -92,6 +92,7 @@ router.post('/import', (req: Request, res: Response) => {
 
   try {
     importTx(rawCases);
+    incrementSystemRevision();
     const totalRow = db.prepare('SELECT COUNT(*) as count FROM precedent_cases').get() as any;
     res.json({
       success: true,
@@ -128,6 +129,8 @@ router.post('/', (req: Request, res: Response) => {
     createdAt: createdAt || new Date().toISOString()
   });
 
+  incrementSystemRevision();
+
   res.status(201).json({ id, date, behavior, verdict, boundaryCondition, createdAt });
 });
 
@@ -160,6 +163,8 @@ router.put('/:id', (req: Request, res: Response) => {
     return res.status(404).json({ error: 'Case not found' });
   }
 
+  incrementSystemRevision();
+
   res.json({ id, date, behavior, verdict, boundaryCondition });
 });
 
@@ -171,6 +176,8 @@ router.delete('/:id', (req: Request, res: Response) => {
   if (result.changes === 0) {
     return res.status(404).json({ error: 'Case not found' });
   }
+
+  incrementSystemRevision();
 
   res.json({ message: 'Deleted successfully', id });
 });

@@ -1,5 +1,5 @@
 import { Router, Request, Response } from 'express';
-import { db, getFullFocusTreeData } from '../db.js';
+import { db, getFullFocusTreeData, incrementSystemRevision } from '../db.js';
 import type { EvolutionSnapshot, EvolutionState, FocusTreeData } from '../types.js';
 
 const router = Router();
@@ -103,8 +103,9 @@ router.post('/snapshot', (req: Request, res: Response) => {
       dataJson: JSON.stringify(newSnapshot)
     });
 
-    // 5. 更新活跃指针
+    // 5. 更新活跃指针并原子推进系统版本号
     db.prepare('UPDATE evolution_state SET activePointerIndex = ? WHERE id = 1').run(targetSlotIndex);
+    incrementSystemRevision();
 
     return { 
       version: nextVersion,
@@ -217,6 +218,8 @@ router.post('/rollback', (req: Request, res: Response) => {
     for (const e of snapshotData.edges) {
       insertEdge.run(e);
     }
+
+    incrementSystemRevision();
 
     return snapshotRow.version;
   });

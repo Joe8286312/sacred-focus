@@ -4,7 +4,9 @@ import {
   getFullFocusTreeData, 
   getBusinessDay, 
   getPreviousBusinessDay, 
-  settleFocusTreeDailyState 
+  settleFocusTreeDailyState,
+  getSystemRevision,
+  incrementSystemRevision
 } from '../db.js';
 import type { FocusNode, FocusEdge, FocusGroup } from '../types.js';
 
@@ -23,16 +25,29 @@ router.get('/', (_req: Request, res: Response) => {
 // 重置每日跨天审计结算标记（便于随时进行联调与测试）
 router.post('/reset-settlement-audit', (_req: Request, res: Response) => {
   db.prepare('DELETE FROM system_meta WHERE key = ?').run('lastDailySettlementDate');
+  incrementSystemRevision();
   res.json({ ok: true, message: 'Settlement audit reset successfully' });
 });
 
-// 全量保存国策树（画布排版/结构更新时调用）
+// 全量保存国策树（画布排版/结构更新时调用，支持 expectedRevision 乐观版本锁）
 router.put('/', (req: Request, res: Response) => {
-  const { nodes, edges, groups } = req.body as {
+  const { nodes, edges, groups, expectedRevision } = req.body as {
     nodes?: FocusNode[];
     edges?: FocusEdge[];
     groups?: FocusGroup[];
+    expectedRevision?: number;
   };
+
+  if (typeof expectedRevision === 'number') {
+    const currentRev = getSystemRevision();
+    if (expectedRevision !== currentRev) {
+      return res.status(409).json({
+        error: 'VERSION_CONFLICT',
+        message: '检测到其他设备已提交新版本，请先同步最新状态后再保存',
+        currentRevision: currentRev
+      });
+    }
+  }
 
   const syncTx = db.transaction(() => {
     // 1. 同步分组
@@ -117,10 +132,11 @@ router.put('/', (req: Request, res: Response) => {
         insertEdge.run(e);
       }
     }
+    incrementSystemRevision();
   });
 
   syncTx();
-  res.json({ message: 'Focus tree synchronized successfully', data: getFullFocusTreeData() });
+  res.json({ message: 'Focus tree synchronized successfully', revision: getSystemRevision(), data: getFullFocusTreeData() });
 });
 
 // 点亮/反悔取消点亮节点（基于连续天数与凌晨 4 点业务日状态机）

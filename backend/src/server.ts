@@ -1,10 +1,18 @@
-import express, { Request, Response, NextFunction } from 'express';
+import express, { Request, Response } from 'express';
 import cors from 'cors';
+import helmet from 'helmet';
+import cookieParser from 'cookie-parser';
 import path from 'path';
 import fs from 'fs';
 import { config } from './config.js';
 import { initDatabase } from './db.js';
 
+import { securityFilter } from './middleware/security.js';
+import { apiGeneralLimiter } from './middleware/rateLimiter.js';
+import { authMiddleware } from './middleware/auth.js';
+
+import authRouter from './routes/auth.js';
+import syncRouter from './routes/sync.js';
 import sacredSeatRouter from './routes/sacredSeat.js';
 import casesRouter from './routes/cases.js';
 import focusTreeRouter from './routes/focusTree.js';
@@ -16,27 +24,35 @@ initDatabase();
 
 const app = express();
 
-app.use(cors());
-app.use(express.json());
+// 信任第一层反向代理 (Nginx)，以准确提取 X-Forwarded-For 真实客户端 IP
+app.set('trust proxy', 1);
 
-// Token 鉴权中间件 (如果服务端配置了 APP_ACCESS_TOKEN)
-app.use('/api', (req: Request, res: Response, next: NextFunction) => {
-  if (req.path === '/health') {
-    return next();
-  }
+// HTTP 安全头加固 (防御点击劫持、MIME嗅探、XSS注入并移除指纹)
+app.use(helmet({
+  contentSecurityPolicy: false, // 前后端同源静态托管或按需自定义
+  crossOriginEmbedderPolicy: false,
+  frameguard: { action: 'deny' },
+  hidePoweredBy: true
+}));
 
-  if (config.appAccessToken) {
-    const authHeader = req.headers['authorization'] || '';
-    const token = authHeader.replace(/^Bearer\s+/i, '') || (req.headers['x-access-token'] as string);
-    if (token !== config.appAccessToken) {
-      return res.status(401).json({ error: 'Unauthorized: Invalid access token' });
-    }
-  }
+app.use(cors({
+  origin: true,
+  credentials: true
+}));
 
-  next();
-});
+app.use(cookieParser());
+app.use(express.json({ limit: '15mb' }));
 
-// 核心业务路由
+// 1. 全局爬虫特征过滤与蜜罐诱捕
+app.use(securityFilter);
+
+// 2. 通用 API 请求限流器 (已认证 1000次/分，未认证 60次/分，本机豁免)
+app.use('/api', apiGeneralLimiter);
+
+// 3. 全局统一身份鉴权中间件 (支持白名单放行与双轨 JWT/Cookie 校验)
+app.use('/api', authMiddleware);
+
+// 核心业务与系统路由挂载
 app.get('/api/health', (_req: Request, res: Response) => {
   res.json({
     status: 'ok',
@@ -45,6 +61,8 @@ app.get('/api/health', (_req: Request, res: Response) => {
   });
 });
 
+app.use('/api/auth', authRouter);
+app.use('/api/sync', syncRouter);
 app.use('/api/sacred-seat', sacredSeatRouter);
 app.use('/api/cases', casesRouter);
 app.use('/api/focus-tree', focusTreeRouter);
@@ -61,7 +79,10 @@ if (fs.existsSync(frontendDist)) {
 }
 
 const PORT = config.port;
-app.listen(PORT, () => {
-  console.log(`[Sacred Focus API] Server running at http://localhost:${PORT}`);
+const HOST = config.isProduction ? '127.0.0.1' : '0.0.0.0';
+
+app.listen(PORT, HOST, () => {
+  console.log(`[Sacred Focus API] Server running at http://${HOST}:${PORT}`);
+  console.log(`[Sacred Focus API] Mode: ${config.isProduction ? 'Production (Loopback Only)' : 'Development'}`);
   console.log(`[Sacred Focus API] Database path: ${config.dbPath}`);
 });

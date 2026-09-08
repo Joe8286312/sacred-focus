@@ -1,5 +1,5 @@
 import { Router, Request, Response } from 'express';
-import { db } from '../db.js';
+import { db, incrementSystemRevision } from '../db.js';
 import type { SacredSeatConfig, FocusSessionLog, DailyFocusHeatmapItem } from '../types.js';
 
 const router = Router();
@@ -51,6 +51,8 @@ router.put('/config', (req: Request, res: Response) => {
     maxStreak: maxStreak ?? current.maxStreak
   });
 
+  incrementSystemRevision();
+
   const updated = db.prepare('SELECT * FROM sacred_seat_config WHERE id = 1').get() as any;
   res.json({
     sacredToken: updated.sacredToken,
@@ -70,6 +72,8 @@ router.post('/reset-streak', (_req: Request, res: Response) => {
         updatedAt = datetime('now')
     WHERE id = 1
   `).run();
+
+  incrementSystemRevision();
 
   const updated = db.prepare('SELECT currentStreak, maxStreak FROM sacred_seat_config WHERE id = 1').get() as any;
   res.json({ currentStreak: updated.currentStreak, maxStreak: updated.maxStreak });
@@ -178,6 +182,7 @@ router.post('/logs/import', (req: Request, res: Response) => {
 
   try {
     importTx(rawLogs);
+    incrementSystemRevision();
     const totalRow = db.prepare('SELECT COUNT(*) as count FROM focus_session_logs').get() as any;
     res.json({
       success: true,
@@ -279,6 +284,8 @@ router.post('/logs', (req: Request, res: Response) => {
       WHERE id = 1
     `).run({ newCurrentStreak, newMaxStreak });
   }
+
+  incrementSystemRevision();
 
   res.status(201).json({
     logId: id,
