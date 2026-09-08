@@ -188,11 +188,11 @@ router.patch('/nodes/:id/toggle-lit', (req: Request, res: Response) => {
     // 等级回退到今日点亮前的备份等级
     nextLevel = Math.max(current.previousLevel ?? 0, 0);
 
-    // 最高等级：若最高等级恰好由今日点亮所抬升，则同步减回；否则保留历史最高
+    // 最高等级：若最高等级恰好由今日点亮所抬升，则同步减回；否则保留历史最高（且保底至少为 1 级）
     if (current.maxLevel === current.level) {
-      nextMaxLevel = nextLevel;
+      nextMaxLevel = Math.max(nextLevel, 1);
     } else {
-      nextMaxLevel = current.maxLevel;
+      nextMaxLevel = Math.max(current.maxLevel, 1);
     }
 
     // 用户明确要求：“反悔时业务天数也要回退一天”

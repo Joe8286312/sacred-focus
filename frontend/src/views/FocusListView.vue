@@ -396,7 +396,7 @@ async function confirmDeleteNode(node: FocusNode) {
           </span>
         </div>
 
-        <div class="col-group sortable-header" @click="toggleColumnSort('group')" title="点击切换分组排序">
+        <div class="col-group sortable-header center-header" @click="toggleColumnSort('group')" title="点击切换分组排序">
           <span>分组</span>
           <span v-if="getSortInfo('group')" class="sort-indicator is-active">
             <svg v-if="getSortInfo('group')?.dir === 'asc'" viewBox="0 0 24 24" width="10" height="10" fill="currentColor"><polygon points="12 4 4 18 20 18"></polygon></svg>
@@ -405,7 +405,7 @@ async function confirmDeleteNode(node: FocusNode) {
           </span>
         </div>
 
-        <div class="col-time sortable-header" @click="toggleColumnSort('time')" title="点击切换时间排序（无特定时间的场景稳定置底）">
+        <div class="col-time sortable-header center-header" @click="toggleColumnSort('time')" title="点击切换时间排序（无特定时间的场景稳定置底）">
           <span>触发时间 / 场景</span>
           <span v-if="getSortInfo('time')" class="sort-indicator is-active">
             <svg v-if="getSortInfo('time')?.dir === 'asc'" viewBox="0 0 24 24" width="10" height="10" fill="currentColor"><polygon points="12 4 4 18 20 18"></polygon></svg>
@@ -1048,6 +1048,8 @@ async function confirmDeleteNode(node: FocusNode) {
 .col-group {
   display: flex;
   align-items: center;
+  justify-content: center;
+  text-align: center;
 }
 
 .group-tag {
@@ -1072,6 +1074,8 @@ async function confirmDeleteNode(node: FocusNode) {
   font-family: var(--font-mono);
   display: flex;
   align-items: center;
+  justify-content: center;
+  text-align: center;
   gap: 6px;
   overflow: hidden;
   text-overflow: ellipsis;

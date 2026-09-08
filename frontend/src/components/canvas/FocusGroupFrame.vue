@@ -17,6 +17,7 @@ const emit = defineEmits<{
   (e: 'edit-group', group: FocusGroup): void;
   (e: 'handle-click', payload: { nodeId: string; anchor: 'TOP' | 'BOTTOM' | 'LEFT' | 'RIGHT' }): void;
   (e: 'resize-group', payload: { id: string; size: { width: number; height: number } }): void;
+  (e: 'resize-start'): void;
 }>();
 
 const { viewport } = useVueFlow();
@@ -62,6 +63,7 @@ function startResize(direction: 'br' | 'r' | 'b', e: MouseEvent | TouchEvent) {
   if (!props.data.isEditMode) return;
   e.stopPropagation();
   e.preventDefault();
+  emit('resize-start');
 
   const startX = 'touches' in e ? e.touches[0].clientX : e.clientX;
   const startY = 'touches' in e ? e.touches[0].clientY : e.clientY;
@@ -241,23 +243,36 @@ function startResize(direction: 'br' | 'r' | 'b', e: MouseEvent | TouchEvent) {
   opacity: 0.7;
 }
 
-/* 分组锚点 */
+/* 分组锚点：提升尺寸、层级优先级 (z-index: 70，绝对压制边框拉伸手柄) 并通过伪元素扩展点击热区 */
 .group-handle {
-  width: 10px !important;
-  height: 10px !important;
+  width: 14px !important;
+  height: 14px !important;
   background: var(--bg-card) !important;
   border: 2px solid var(--text-muted) !important;
   border-radius: 50% !important;
   opacity: 0;
   pointer-events: none;
-  transition: opacity 0.15s ease, transform 0.15s ease, scale 0.15s ease, border-color 0.15s ease;
-  z-index: 15;
+  transition: opacity 0.15s ease, transform 0.15s ease, scale 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
+  z-index: 70 !important;
+  cursor: crosshair;
+}
+
+/* 隐形扩展点击热区：向外扩展 12px，使 14px 的视觉圆点获得近 40px 的判定范围，绝不误触边框拉伸 */
+.group-handle::before {
+  content: '';
+  position: absolute;
+  top: -12px;
+  left: -12px;
+  right: -12px;
+  bottom: -12px;
+  border-radius: 50%;
+  pointer-events: all;
   cursor: crosshair;
 }
 
 /* 仅在编辑模式下暴露锚点！展示模式下保持隐蔽 */
 .focus-group-frame.is-edit-mode .group-handle {
-  opacity: 0.6;
+  opacity: 0.8;
   pointer-events: all;
 }
 
@@ -266,22 +281,23 @@ function startResize(direction: 'br' | 'r' | 'b', e: MouseEvent | TouchEvent) {
 }
 
 .group-handle:hover {
-  scale: 1.45;
+  scale: 1.35;
   border-color: var(--color-gold) !important;
-  box-shadow: 0 0 8px var(--color-gold);
+  background: var(--bg-card) !important;
+  box-shadow: 0 0 10px var(--color-gold), 0 0 0 3px rgba(245, 158, 11, 0.2);
 }
 
 .group-handle.is-connecting-active {
   border-color: var(--color-gold) !important;
   background: var(--color-gold) !important;
-  scale: 1.6;
-  box-shadow: 0 0 12px var(--color-gold);
+  scale: 1.5;
+  box-shadow: 0 0 14px var(--color-gold);
   animation: pulse-group-handle 1s infinite alternate;
 }
 
 @keyframes pulse-group-handle {
-  from { scale: 1.4; }
-  to { scale: 1.75; }
+  from { scale: 1.35; }
+  to { scale: 1.65; }
 }
 
 /* 实时拖拽尺寸提示 */

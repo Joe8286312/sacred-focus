@@ -64,6 +64,67 @@ const draftNodes = ref<FocusNode[]>([]);
 const draftGroups = ref<FocusGroup[]>([]);
 const draftEdges = ref<FocusEdge[]>([]);
 
+// 画布历史快照（Ctrl+Z 撤回 / Ctrl+Y 重做栈）
+interface CanvasSnapshot {
+  nodes: FocusNode[];
+  groups: FocusGroup[];
+  edges: FocusEdge[];
+}
+
+const historyStack = ref<CanvasSnapshot[]>([]);
+const redoStack = ref<CanvasSnapshot[]>([]);
+const maxHistoryLength = 50;
+let dragStartSnapshot: CanvasSnapshot | null = null;
+const forceResetPositions = ref(false);
+
+function takeSnapshot(): CanvasSnapshot {
+  return {
+    nodes: JSON.parse(JSON.stringify(draftNodes.value)),
+    groups: JSON.parse(JSON.stringify(draftGroups.value)),
+    edges: JSON.parse(JSON.stringify(draftEdges.value))
+  };
+}
+
+function pushHistory() {
+  if (!isEditMode.value) return;
+  historyStack.value.push(takeSnapshot());
+  if (historyStack.value.length > maxHistoryLength) {
+    historyStack.value.shift();
+  }
+  redoStack.value = [];
+}
+
+function undo() {
+  if (!isEditMode.value || historyStack.value.length === 0) return;
+  const previousState = historyStack.value.pop()!;
+  redoStack.value.push(takeSnapshot());
+  applySnapshot(previousState);
+}
+
+function redo() {
+  if (!isEditMode.value || redoStack.value.length === 0) return;
+  const nextState = redoStack.value.pop()!;
+  historyStack.value.push(takeSnapshot());
+  applySnapshot(nextState);
+}
+
+function applySnapshot(snapshot: CanvasSnapshot) {
+  forceResetPositions.value = true;
+  draftNodes.value = JSON.parse(JSON.stringify(snapshot.nodes));
+  draftGroups.value = JSON.parse(JSON.stringify(snapshot.groups));
+  draftEdges.value = JSON.parse(JSON.stringify(snapshot.edges));
+  selectedNodeId.value = null;
+  selectedEdgeId.value = null;
+  activeConnectingHandle.value = null;
+  syncToFlow();
+  forceResetPositions.value = false;
+}
+
+function onNodeDragStart() {
+  if (!isEditMode.value) return;
+  dragStartSnapshot = takeSnapshot();
+}
+
 // 当前画布活跃数据源（展示模式读持久库，编辑模式读写内存草稿）
 const activeNodes = computed(() => isEditMode.value ? draftNodes.value : store.nodes);
 const activeGroups = computed(() => isEditMode.value ? draftGroups.value : store.groups);
@@ -92,9 +153,11 @@ const flowEdges = ref<any[]>([]);
 
 function syncToFlow() {
   const currentPosMap = new Map<string, { x: number; y: number }>();
-  for (const fn of flowNodes.value) {
-    if (fn && fn.position) {
-      currentPosMap.set(fn.id, { x: fn.position.x, y: fn.position.y });
+  if (!forceResetPositions.value) {
+    for (const fn of flowNodes.value) {
+      if (fn && fn.position) {
+        currentPosMap.set(fn.id, { x: fn.position.x, y: fn.position.y });
+      }
     }
   }
 
@@ -105,7 +168,7 @@ function syncToFlow() {
 
   // 1. 分组外框节点 (处于下层 zIndex: 1)
   for (const g of sourceGroups) {
-    const pos = (isEditMode.value && currentPosMap.has(g.id))
+    const pos = (!forceResetPositions.value && isEditMode.value && currentPosMap.has(g.id))
       ? currentPosMap.get(g.id)!
       : { ...g.position };
     nodesList.push({
@@ -126,7 +189,7 @@ function syncToFlow() {
 
   // 2. 国策节点 (处于上层 zIndex: 10)
   for (const n of sourceNodes) {
-    const pos = (isEditMode.value && currentPosMap.has(n.id))
+    const pos = (!forceResetPositions.value && isEditMode.value && currentPosMap.has(n.id))
       ? currentPosMap.get(n.id)!
       : { ...n.position };
     nodesList.push({
@@ -192,25 +255,46 @@ function onNodeClick({ node }: NodeMouseEvent) {
   }
 }
 
-// 拖拽停止后同步草稿内存坐标
+// 拖拽停止后同步草稿内存坐标并存入历史栈
 function onNodeDragStop({ node, nodes }: NodeDragEvent) {
   if (!isEditMode.value) return;
   const targetNodes = nodes && nodes.length > 0 ? nodes : (node ? [node] : []);
+  let hasMoved = false;
+
   for (const n of targetNodes) {
     if (n.type === 'focusNode') {
       const found = draftNodes.value.find(item => item.id === n.id);
       if (found) {
-        found.position.x = Math.round(n.position.x);
-        found.position.y = Math.round(n.position.y);
+        const newX = Math.round(n.position.x);
+        const newY = Math.round(n.position.y);
+        if (found.position.x !== newX || found.position.y !== newY) {
+          hasMoved = true;
+          found.position.x = newX;
+          found.position.y = newY;
+        }
       }
     } else if (n.type === 'focusGroup') {
       const found = draftGroups.value.find(item => item.id === n.id);
       if (found) {
-        found.position.x = Math.round(n.position.x);
-        found.position.y = Math.round(n.position.y);
+        const newX = Math.round(n.position.x);
+        const newY = Math.round(n.position.y);
+        if (found.position.x !== newX || found.position.y !== newY) {
+          hasMoved = true;
+          found.position.x = newX;
+          found.position.y = newY;
+        }
       }
     }
   }
+
+  if (hasMoved && dragStartSnapshot) {
+    historyStack.value.push(dragStartSnapshot);
+    if (historyStack.value.length > maxHistoryLength) {
+      historyStack.value.shift();
+    }
+    redoStack.value = [];
+  }
+  dragStartSnapshot = null;
 }
 
 // 双击节点
@@ -283,6 +367,7 @@ function onHandleClick(payload: { nodeId: string; anchor: 'TOP' | 'BOTTOM' | 'LE
       style: 'SOLID'
     };
 
+    pushHistory();
     draftEdges.value.push(newEdge);
     activeConnectingHandle.value = null;
   }
@@ -317,6 +402,7 @@ function onConnect(connection: Connection) {
     style: 'SOLID'
   };
 
+  pushHistory();
   draftEdges.value.push(newEdge);
 }
 
@@ -335,6 +421,7 @@ function onEdgeDoubleClick({ edge }: EdgeMouseEvent) {
 
 function onDeleteEdge(edgeId: string) {
   if (!isEditMode.value) return;
+  pushHistory();
   draftEdges.value = draftEdges.value.filter(e => e.id !== edgeId);
   if (selectedEdgeId.value === edgeId) {
     selectedEdgeId.value = null;
@@ -355,17 +442,25 @@ function onPaneClick() {
 // -----------------------------------------------------------------------------
 
 function enterEditMode() {
+  historyStack.value = [];
+  redoStack.value = [];
+  dragStartSnapshot = null;
   draftNodes.value = JSON.parse(JSON.stringify(store.nodes));
   draftGroups.value = JSON.parse(JSON.stringify(store.groups));
   draftEdges.value = JSON.parse(JSON.stringify(store.edges));
   isEditMode.value = true;
   activeConnectingHandle.value = null;
+  forceResetPositions.value = true;
   syncToFlow();
+  forceResetPositions.value = false;
 }
 
 function cancelLayoutChanges() {
   if (!isEditMode.value) return;
   // 彻底丢弃草稿，零脏数据残留，还原持久状态
+  historyStack.value = [];
+  redoStack.value = [];
+  dragStartSnapshot = null;
   draftNodes.value = [];
   draftGroups.value = [];
   draftEdges.value = [];
@@ -373,7 +468,9 @@ function cancelLayoutChanges() {
   activeConnectingHandle.value = null;
   selectedNodeId.value = null;
   selectedEdgeId.value = null;
+  forceResetPositions.value = true;
   syncToFlow();
+  forceResetPositions.value = false;
 }
 
 function toggleEditMode() {
@@ -446,6 +543,9 @@ async function executeSaveLayout() {
     edges: draftEdges.value
   });
   // 成功保存后清空草稿并退出编辑模式
+  historyStack.value = [];
+  redoStack.value = [];
+  dragStartSnapshot = null;
   draftNodes.value = [];
   draftGroups.value = [];
   draftEdges.value = [];
@@ -471,30 +571,72 @@ function handleKeyDown(e: KeyboardEvent) {
     } else if (isEditMode.value) {
       cancelLayoutChanges();
     }
-  } else if ((e.key === 'Delete' || e.key === 'Backspace') && isEditMode.value) {
-    const tag = (e.target as HTMLElement)?.tagName;
-    if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+    return;
+  }
 
-    if (selectedEdgeId.value) {
-      draftEdges.value = draftEdges.value.filter(edge => edge.id !== selectedEdgeId.value);
-      selectedEdgeId.value = null;
-    } else if (selectedNodeId.value) {
-      const node = draftNodes.value.find(n => n.id === selectedNodeId.value);
-      if (node) {
-        // 无弹窗打扰，仅从草稿中移除
-        draftNodes.value = draftNodes.value.filter(n => n.id !== node.id);
-        draftEdges.value = draftEdges.value.filter(edge => edge.sourceId !== node.id && edge.targetId !== node.id);
-        selectedNodeId.value = null;
-      } else {
-        const group = draftGroups.value.find(g => g.id === selectedNodeId.value);
-        if (group) {
-          // 无弹窗打扰，仅从草稿中移除分组
-          draftGroups.value = draftGroups.value.filter(g => g.id !== group.id);
-          draftNodes.value.forEach(n => {
-            if (n.groupId === group.id) n.groupId = null;
-          });
-          draftEdges.value = draftEdges.value.filter(edge => edge.sourceId !== group.id && edge.targetId !== group.id);
+  // 弹窗打开中，不拦截画布内快捷键
+  if (
+    isAuditModalOpen.value || 
+    isEvolutionModalOpen.value || 
+    isSpecModalOpen.value || 
+    isNodeEditModalOpen.value || 
+    isGroupEditModalOpen.value
+  ) {
+    return;
+  }
+
+  const activeEl = (e.target as HTMLElement) || (document.activeElement as HTMLElement | null);
+  const tag = activeEl?.tagName;
+  const isInput = tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || activeEl?.isContentEditable;
+
+  // 编辑模式专属快捷键
+  if (isEditMode.value) {
+    const isCtrlOrCmd = e.ctrlKey || e.metaKey;
+    const isZ = e.key === 'z' || e.key === 'Z';
+    const isY = e.key === 'y' || e.key === 'Y';
+
+    // 1. Ctrl+Z / Cmd+Z 撤回
+    if (isCtrlOrCmd && isZ && !e.shiftKey) {
+      if (!isInput) {
+        e.preventDefault();
+        undo();
+        return;
+      }
+    }
+
+    // 2. Ctrl+Y / Cmd+Shift+Z / Ctrl+Shift+Z 重做
+    if (isCtrlOrCmd && ((isZ && e.shiftKey) || isY)) {
+      if (!isInput) {
+        e.preventDefault();
+        redo();
+        return;
+      }
+    }
+
+    // 3. Delete / Backspace 快速删除选中国策或连线
+    if ((e.key === 'Delete' || e.key === 'Backspace') && !isInput) {
+      if (selectedEdgeId.value) {
+        pushHistory();
+        draftEdges.value = draftEdges.value.filter(edge => edge.id !== selectedEdgeId.value);
+        selectedEdgeId.value = null;
+      } else if (selectedNodeId.value) {
+        const node = draftNodes.value.find(n => n.id === selectedNodeId.value);
+        if (node) {
+          pushHistory();
+          draftNodes.value = draftNodes.value.filter(n => n.id !== node.id);
+          draftEdges.value = draftEdges.value.filter(edge => edge.sourceId !== node.id && edge.targetId !== node.id);
           selectedNodeId.value = null;
+        } else {
+          const group = draftGroups.value.find(g => g.id === selectedNodeId.value);
+          if (group) {
+            pushHistory();
+            draftGroups.value = draftGroups.value.filter(g => g.id !== group.id);
+            draftNodes.value.forEach(n => {
+              if (n.groupId === group.id) n.groupId = null;
+            });
+            draftEdges.value = draftEdges.value.filter(edge => edge.sourceId !== group.id && edge.targetId !== group.id);
+            selectedNodeId.value = null;
+          }
         }
       }
     }
@@ -513,6 +655,7 @@ function openNewGroupModal() {
 
 function handleSaveNode(nodeData: FocusNode) {
   if (!isEditMode.value) return;
+  pushHistory();
   const idx = draftNodes.value.findIndex(n => n.id === nodeData.id);
   if (idx !== -1) {
     draftNodes.value[idx] = { ...draftNodes.value[idx], ...nodeData };
@@ -532,6 +675,7 @@ function handleSaveNode(nodeData: FocusNode) {
 
 function handleDeleteNode(node: FocusNode) {
   if (!isEditMode.value) return;
+  pushHistory();
   draftNodes.value = draftNodes.value.filter(n => n.id !== node.id);
   draftEdges.value = draftEdges.value.filter(e => e.sourceId !== node.id && e.targetId !== node.id);
   if (selectedNodeId.value === node.id) {
@@ -543,6 +687,7 @@ function handleDeleteNode(node: FocusNode) {
 
 function handleSaveGroup(groupData: FocusGroup) {
   if (!isEditMode.value) return;
+  pushHistory();
   const idx = draftGroups.value.findIndex(g => g.id === groupData.id);
   if (idx !== -1) {
     draftGroups.value[idx] = { ...draftGroups.value[idx], ...groupData };
@@ -560,6 +705,7 @@ function handleSaveGroup(groupData: FocusGroup) {
 
 function handleDeleteGroup(groupId: string) {
   if (!isEditMode.value) return;
+  pushHistory();
   draftGroups.value = draftGroups.value.filter(g => g.id !== groupId);
   draftNodes.value.forEach(n => {
     if (n.groupId === groupId) n.groupId = null;
@@ -674,6 +820,24 @@ onUnmounted(() => {
       <div class="bar-right">
         <!-- 编辑模式专有行动项 -->
         <template v-if="isEditMode">
+          <button 
+            class="btn-action-tool btn-undo-tool" 
+            :disabled="historyStack.length === 0" 
+            :class="{ 'is-disabled': historyStack.length === 0 }" 
+            @click="undo" 
+            title="撤回操作 (Ctrl+Z)"
+          >
+            撤回 (Ctrl+Z)
+          </button>
+          <button 
+            class="btn-action-tool btn-redo-tool" 
+            :disabled="redoStack.length === 0" 
+            :class="{ 'is-disabled': redoStack.length === 0 }" 
+            @click="redo" 
+            title="重做操作 (Ctrl+Y)"
+          >
+            重做 (Ctrl+Y)
+          </button>
           <button class="btn-action-tool" @click="openNewNodeModal">
             + 新建国策
           </button>
@@ -731,6 +895,7 @@ onUnmounted(() => {
         class="focus-tree-flow"
         @node-click="onNodeClick"
         @node-double-click="onNodeDoubleClick"
+        @node-drag-start="onNodeDragStart"
         @node-drag-stop="onNodeDragStop"
         @node-mouse-enter="isHoveringNode = true"
         @node-mouse-leave="isHoveringNode = false"
@@ -761,6 +926,7 @@ onUnmounted(() => {
             :selected="props.selected"
             @edit-group="editingGroup = $event; isGroupEditModalOpen = true"
             @handle-click="onHandleClick"
+            @resize-start="pushHistory"
             @resize-group="onResizeGroup"
           />
         </template>
@@ -942,6 +1108,13 @@ onUnmounted(() => {
 .btn-action-tool:hover {
   background: var(--bg-tertiary);
   border-color: var(--border-focus);
+}
+
+.btn-action-tool:disabled,
+.btn-action-tool.is-disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+  pointer-events: none;
 }
 
 .btn-evolution-tool {

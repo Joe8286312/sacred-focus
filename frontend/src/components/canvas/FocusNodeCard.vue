@@ -341,24 +341,36 @@ function handleAnchorClick(anchor: 'TOP' | 'BOTTOM' | 'LEFT' | 'RIGHT', e: Mouse
   text-overflow: ellipsis;
 }
 
-/* 四向磁吸锚点 */
+/* 四向磁吸锚点：提升尺寸与层级优先级 (z-index: 70)，并通过伪元素扩展判定范围 */
 .node-handle {
-  width: 9px !important;
-  height: 9px !important;
+  width: 12px !important;
+  height: 12px !important;
   background: var(--bg-card) !important;
   border: 2px solid var(--text-muted) !important;
   border-radius: 50% !important;
   opacity: 0;
   pointer-events: none;
-  /* 使用 scale 而非覆盖 transform，保证始终严格以中心点为原点对称放大 */
   transition: opacity 0.15s ease, border-color 0.15s ease, scale 0.15s ease, box-shadow 0.15s ease;
-  z-index: 20;
+  z-index: 70 !important;
+  cursor: crosshair;
+}
+
+/* 隐形扩展点击热区：向外扩展 10px，形成 32px 判定圆 */
+.node-handle::before {
+  content: '';
+  position: absolute;
+  top: -10px;
+  left: -10px;
+  right: -10px;
+  bottom: -10px;
+  border-radius: 50%;
+  pointer-events: all;
   cursor: crosshair;
 }
 
 /* 仅在编辑模式下暴露锚点！展示模式下保持彻底隐蔽与不可交互 */
 .focus-node-card.is-edit-mode .node-handle {
-  opacity: 0.6;
+  opacity: 0.8;
   pointer-events: all;
 }
 
@@ -368,22 +380,23 @@ function handleAnchorClick(anchor: 'TOP' | 'BOTTOM' | 'LEFT' | 'RIGHT', e: Mouse
 
 .node-handle:hover {
   border-color: var(--color-lit) !important;
-  scale: 1.45;
-  box-shadow: 0 0 8px var(--color-lit);
+  background: var(--bg-card) !important;
+  scale: 1.35;
+  box-shadow: 0 0 10px var(--color-lit), 0 0 0 3px rgba(16, 185, 129, 0.2);
 }
 
 /* 正在连线激活中的锚点 */
 .node-handle.is-connecting-active {
   border-color: var(--color-gold) !important;
   background: var(--color-gold) !important;
-  scale: 1.6;
-  box-shadow: 0 0 12px var(--color-gold);
+  scale: 1.5;
+  box-shadow: 0 0 14px var(--color-gold);
   animation: pulse-active 1s infinite alternate;
 }
 
 @keyframes pulse-active {
-  from { scale: 1.4; }
-  to { scale: 1.75; }
+  from { scale: 1.35; }
+  to { scale: 1.65; }
 }
 
 /* 新建国策切回画布时的微光呼吸动画 */
