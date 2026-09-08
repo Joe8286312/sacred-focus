@@ -92,6 +92,13 @@ export interface FocusGroup {
   size: { width: number; height: number };
 }
 
+// 6.1 纯文本说明标签框定义（如“专注间歇”等极简流转注释）
+export interface FocusLabel {
+  id: string;
+  text: string;                   // 标签文本内容（纯文本，如 "专注间歇"）
+  position: { x: number; y: number };
+}
+
 // 7. 每日结算断签项定义
 export interface ResetNodeItem {
   id: string;
@@ -106,13 +113,14 @@ export interface FocusTreeData {
   nodes: FocusNode[];
   edges: FocusEdge[];
   groups: FocusGroup[];
+  labels: FocusLabel[];
   resetSummary?: {
     resetNodes: ResetNodeItem[];
     settlementDate: string;
   };
 }
 
-// 8. 国策树演化版本快照与日志
+// 9. 国策树演化版本快照与日志
 export interface EvolutionSnapshot {
   id?: string;
   slotIndex?: number;             // 0 ~ 4 槽位索引
@@ -123,6 +131,7 @@ export interface EvolutionSnapshot {
   nodes: FocusNode[];
   edges: FocusEdge[];
   groups: FocusGroup[];
+  labels?: FocusLabel[];
 }
 
 export interface EvolutionState {

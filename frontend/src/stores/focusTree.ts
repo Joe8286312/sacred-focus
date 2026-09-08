@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia';
 import { ref } from 'vue';
-import type { FocusNode, FocusEdge, FocusGroup, EvolutionState } from '../types';
+import type { FocusNode, FocusEdge, FocusGroup, FocusLabel, EvolutionState } from '../types';
 import { apiFetch } from '../utils/api';
 import { getCurrentRevision, setCurrentRevision } from '../utils/syncManager';
 
@@ -8,6 +8,7 @@ export const useFocusTreeStore = defineStore('focusTree', () => {
   const nodes = ref<FocusNode[]>([]);
   const edges = ref<FocusEdge[]>([]);
   const groups = ref<FocusGroup[]>([]);
+  const labels = ref<FocusLabel[]>([]);
   const evolution = ref<EvolutionState>({
     activePointerIndex: 0,
     snapshots: []
@@ -15,10 +16,25 @@ export const useFocusTreeStore = defineStore('focusTree', () => {
   const loading = ref(false);
   const lastCreatedNodeId = ref<string | null>(null);
   const lastCreatedGroupId = ref<string | null>(null);
+  const lastCreatedLabelId = ref<string | null>(null);
   const pendingResetSummary = ref<{ resetNodes: any[]; settlementDate: string } | null>(null);
 
   let sessionGroupSpawnCount = 0;
   let sessionNodeSpawnCount = 0;
+  let sessionLabelSpawnCount = 0;
+
+  // 新建标签落盘点：起始槽位坐标 (0, 300)，步长 60px
+  function calculateSmartLabelPlacement(): { x: number; y: number } {
+    const baseX = 0;
+    const baseY = 300;
+    const stepY = 60;
+    const slot = sessionLabelSpawnCount % 6;
+    sessionLabelSpawnCount++;
+    return {
+      x: baseX,
+      y: Math.round(baseY + slot * stepY)
+    };
+  }
 
   // 新建分组落盘点：起始槽位坐标 (-1000, 0)，步长 290px
   function calculateSmartGroupPlacement(): { x: number; y: number } {
@@ -67,9 +83,10 @@ export const useFocusTreeStore = defineStore('focusTree', () => {
     loading.value = true;
     try {
       const data = await apiFetch('/api/focus-tree');
-      nodes.value = data.nodes;
-      edges.value = data.edges;
-      groups.value = data.groups;
+      nodes.value = data.nodes || [];
+      edges.value = data.edges || [];
+      groups.value = data.groups || [];
+      labels.value = data.labels || [];
       if (data.resetSummary && data.resetSummary.resetNodes && data.resetSummary.resetNodes.length > 0) {
         const dismissed = sessionStorage.getItem('dismissedResetAlertDate');
         if (dismissed !== data.resetSummary.settlementDate) {
@@ -92,6 +109,7 @@ export const useFocusTreeStore = defineStore('focusTree', () => {
           nodes: nodes.value,
           edges: edges.value,
           groups: groups.value,
+          labels: labels.value,
           expectedRevision: currentRev > 0 ? currentRev : undefined
         })
       });
@@ -110,7 +128,7 @@ export const useFocusTreeStore = defineStore('focusTree', () => {
   }
 
   // 全量覆盖持久化树数据（事务性提交画布草稿，带 expectedRevision 乐观锁）
-  async function saveWholeTree(tree: { nodes: FocusNode[]; groups: FocusGroup[]; edges: FocusEdge[] }) {
+  async function saveWholeTree(tree: { nodes: FocusNode[]; groups: FocusGroup[]; edges: FocusEdge[]; labels?: FocusLabel[] }) {
     try {
       const currentRev = getCurrentRevision();
       const res = await apiFetch('/api/focus-tree', {
@@ -119,6 +137,7 @@ export const useFocusTreeStore = defineStore('focusTree', () => {
           nodes: tree.nodes,
           edges: tree.edges,
           groups: tree.groups,
+          labels: tree.labels || [],
           expectedRevision: currentRev > 0 ? currentRev : undefined
         })
       });
@@ -128,6 +147,7 @@ export const useFocusTreeStore = defineStore('focusTree', () => {
       nodes.value = JSON.parse(JSON.stringify(tree.nodes));
       groups.value = JSON.parse(JSON.stringify(tree.groups));
       edges.value = JSON.parse(JSON.stringify(tree.edges));
+      labels.value = JSON.parse(JSON.stringify(tree.labels || []));
       return true;
     } catch (e: any) {
       if (e.message === 'VERSION_CONFLICT') {
@@ -203,6 +223,7 @@ export const useFocusTreeStore = defineStore('focusTree', () => {
       nodes.value = data.liveTree.nodes;
       edges.value = data.liveTree.edges;
       groups.value = data.liveTree.groups;
+      labels.value = data.liveTree.labels || [];
       await fetchEvolution();
       return true;
     } catch (e) {
@@ -422,14 +443,17 @@ export const useFocusTreeStore = defineStore('focusTree', () => {
     nodes,
     edges,
     groups,
+    labels,
     evolution,
     loading,
     lastCreatedNodeId,
     lastCreatedGroupId,
+    lastCreatedLabelId,
     pendingResetSummary,
     dismissResetAlert,
     calculateSmartPlacement,
     calculateSmartGroupPlacement,
+    calculateSmartLabelPlacement,
     fetchTree,
     fetchTreeData: fetchTree,
     syncTree,

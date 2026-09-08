@@ -86,7 +86,8 @@ router.post('/snapshot', (req: Request, res: Response) => {
       isMajor: Boolean(isMajor),
       nodes: liveTree.nodes,
       edges: liveTree.edges,
-      groups: liveTree.groups
+      groups: liveTree.groups,
+      labels: liveTree.labels || []
     };
 
     // 4. 写入槽位
@@ -219,6 +220,23 @@ router.post('/rollback', (req: Request, res: Response) => {
       insertEdge.run(e);
     }
 
+    // 恢复说明标签
+    db.prepare('DELETE FROM focus_labels').run();
+    if (snapshotData.labels) {
+      const insertLabel = db.prepare(`
+        INSERT INTO focus_labels (id, text, positionX, positionY)
+        VALUES (@id, @text, @positionX, @positionY)
+      `);
+      for (const l of snapshotData.labels) {
+        insertLabel.run({
+          id: l.id,
+          text: l.text,
+          positionX: l.position?.x ?? 0,
+          positionY: l.position?.y ?? 0
+        });
+      }
+    }
+
     incrementSystemRevision();
 
     return snapshotRow.version;
@@ -271,14 +289,16 @@ router.post('/import', (req: Request, res: Response) => {
 
   try {
     const importTx = db.transaction(() => {
-      // 1. 恢复国策树 (groups, nodes, edges)
+      // 1. 恢复国策树 (groups, nodes, edges, labels)
       const groups = tree.groups || [];
       const nodes = tree.nodes || [];
       const edges = tree.edges || [];
+      const labels = tree.labels || [];
 
       db.prepare('DELETE FROM focus_edges').run();
       db.prepare('DELETE FROM focus_nodes').run();
       db.prepare('DELETE FROM focus_groups').run();
+      db.prepare('DELETE FROM focus_labels').run();
 
       const insertGroup = db.prepare(`
         INSERT INTO focus_groups (id, name, themeColor, positionX, positionY, width, height)
@@ -349,6 +369,19 @@ router.post('/import', (req: Request, res: Response) => {
       `);
       for (const e of edges) {
         insertEdge.run(e);
+      }
+
+      const insertLabel = db.prepare(`
+        INSERT INTO focus_labels (id, text, positionX, positionY)
+        VALUES (@id, @text, @positionX, @positionY)
+      `);
+      for (const l of labels) {
+        insertLabel.run({
+          id: l.id,
+          text: l.text,
+          positionX: l.position?.x ?? 0,
+          positionY: l.position?.y ?? 0
+        });
       }
 
       // 2. 恢复演化状态与快照

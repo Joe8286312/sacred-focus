@@ -8,7 +8,7 @@ import {
   getSystemRevision,
   incrementSystemRevision
 } from '../db.js';
-import type { FocusNode, FocusEdge, FocusGroup } from '../types.js';
+import type { FocusNode, FocusEdge, FocusGroup, FocusLabel } from '../types.js';
 
 const router = Router();
 
@@ -31,10 +31,11 @@ router.post('/reset-settlement-audit', (_req: Request, res: Response) => {
 
 // 全量保存国策树（画布排版/结构更新时调用，支持 expectedRevision 乐观版本锁）
 router.put('/', (req: Request, res: Response) => {
-  const { nodes, edges, groups, expectedRevision } = req.body as {
+  const { nodes, edges, groups, labels, expectedRevision } = req.body as {
     nodes?: FocusNode[];
     edges?: FocusEdge[];
     groups?: FocusGroup[];
+    labels?: FocusLabel[];
     expectedRevision?: number;
   };
 
@@ -132,6 +133,24 @@ router.put('/', (req: Request, res: Response) => {
         insertEdge.run(e);
       }
     }
+
+    // 4. 同步纯文本说明标签
+    if (labels) {
+      db.prepare('DELETE FROM focus_labels').run();
+      const insertLabel = db.prepare(`
+        INSERT INTO focus_labels (id, text, positionX, positionY)
+        VALUES (@id, @text, @positionX, @positionY)
+      `);
+      for (const l of labels) {
+        insertLabel.run({
+          id: l.id,
+          text: l.text,
+          positionX: l.position?.x ?? 0,
+          positionY: l.position?.y ?? 0
+        });
+      }
+    }
+
     incrementSystemRevision();
   });
 

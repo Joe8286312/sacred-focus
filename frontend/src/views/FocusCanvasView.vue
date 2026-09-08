@@ -18,13 +18,15 @@ import { useRoute } from 'vue-router';
 import { useFocusTreeStore } from '../stores/focusTree';
 import FocusNodeCard from '../components/canvas/FocusNodeCard.vue';
 import FocusGroupFrame from '../components/canvas/FocusGroupFrame.vue';
+import FocusLabelCard from '../components/canvas/FocusLabelCard.vue';
 import OrthogonalEdge from '../components/canvas/OrthogonalEdge.vue';
 import NodeSpecModal from '../components/canvas/NodeSpecModal.vue';
 import NodeEditModal from '../components/canvas/NodeEditModal.vue';
 import GroupEditModal from '../components/canvas/GroupEditModal.vue';
+import LabelEditModal from '../components/canvas/LabelEditModal.vue';
 import DeletionAuditModal from '../components/canvas/DeletionAuditModal.vue';
 import EvolutionModal from '../components/canvas/EvolutionModal.vue';
-import type { FocusNode, FocusGroup, FocusEdge } from '../types';
+import type { FocusNode, FocusGroup, FocusEdge, FocusLabel } from '../types';
 
 const route = useRoute();
 const store = useFocusTreeStore();
@@ -51,6 +53,9 @@ const editingNode = ref<FocusNode | null>(null);
 const isGroupEditModalOpen = ref(false);
 const editingGroup = ref<FocusGroup | null>(null);
 
+const isLabelEditModalOpen = ref(false);
+const editingLabel = ref<FocusLabel | null>(null);
+
 const isEvolutionModalOpen = ref(false);
 
 const currentActiveVersion = computed(() => {
@@ -63,12 +68,14 @@ const currentActiveVersion = computed(() => {
 const draftNodes = ref<FocusNode[]>([]);
 const draftGroups = ref<FocusGroup[]>([]);
 const draftEdges = ref<FocusEdge[]>([]);
+const draftLabels = ref<FocusLabel[]>([]);
 
 // 画布历史快照（Ctrl+Z 撤回 / Ctrl+Y 重做栈）
 interface CanvasSnapshot {
   nodes: FocusNode[];
   groups: FocusGroup[];
   edges: FocusEdge[];
+  labels: FocusLabel[];
 }
 
 const historyStack = ref<CanvasSnapshot[]>([]);
@@ -81,7 +88,8 @@ function takeSnapshot(): CanvasSnapshot {
   return {
     nodes: JSON.parse(JSON.stringify(draftNodes.value)),
     groups: JSON.parse(JSON.stringify(draftGroups.value)),
-    edges: JSON.parse(JSON.stringify(draftEdges.value))
+    edges: JSON.parse(JSON.stringify(draftEdges.value)),
+    labels: JSON.parse(JSON.stringify(draftLabels.value))
   };
 }
 
@@ -113,6 +121,7 @@ function applySnapshot(snapshot: CanvasSnapshot) {
   draftNodes.value = JSON.parse(JSON.stringify(snapshot.nodes));
   draftGroups.value = JSON.parse(JSON.stringify(snapshot.groups));
   draftEdges.value = JSON.parse(JSON.stringify(snapshot.edges));
+  draftLabels.value = JSON.parse(JSON.stringify(snapshot.labels || []));
   selectedNodeId.value = null;
   selectedEdgeId.value = null;
   activeConnectingHandle.value = null;
@@ -129,6 +138,7 @@ function onNodeDragStart() {
 const activeNodes = computed(() => isEditMode.value ? draftNodes.value : store.nodes);
 const activeGroups = computed(() => isEditMode.value ? draftGroups.value : store.groups);
 const activeEdges = computed(() => isEditMode.value ? draftEdges.value : store.edges);
+const activeLabels = computed(() => isEditMode.value ? draftLabels.value : store.labels);
 
 // 审计弹窗状态
 const isAuditModalOpen = ref(false);
@@ -208,6 +218,27 @@ function syncToFlow() {
     });
   }
 
+  // 4. 纯文本说明标签 (层级处于较高位置 zIndex: 12)
+  const sourceLabels = activeLabels.value;
+  for (const l of sourceLabels) {
+    const pos = (!forceResetPositions.value && isEditMode.value && currentPosMap.has(l.id))
+      ? currentPosMap.get(l.id)!
+      : { ...l.position };
+    nodesList.push({
+      id: l.id,
+      type: 'focusLabel',
+      position: pos,
+      data: { 
+        ...l, 
+        isEditMode: isEditMode.value,
+        isHighlighted: highlightedNodeId.value === l.id
+      },
+      draggable: isEditMode.value,
+      selectable: true,
+      style: { zIndex: highlightedNodeId.value === l.id ? 25 : 12 }
+    });
+  }
+
   flowNodes.value = nodesList;
 
   // 3. 拓扑连线 (层级处于中间偏上)
@@ -228,9 +259,11 @@ watch(
     () => store.nodes, 
     () => store.groups, 
     () => store.edges, 
+    () => store.labels,
     draftNodes, 
     draftGroups, 
     draftEdges, 
+    draftLabels,
     isEditMode, 
     activeConnectingHandle
   ], 
@@ -284,6 +317,17 @@ function onNodeDragStop({ node, nodes }: NodeDragEvent) {
           found.position.y = newY;
         }
       }
+    } else if (n.type === 'focusLabel') {
+      const found = draftLabels.value.find(item => item.id === n.id);
+      if (found) {
+        const newX = Math.round(n.position.x);
+        const newY = Math.round(n.position.y);
+        if (found.position.x !== newX || found.position.y !== newY) {
+          hasMoved = true;
+          found.position.x = newX;
+          found.position.y = newY;
+        }
+      }
     }
   }
 
@@ -316,6 +360,12 @@ function onNodeDoubleClick({ node }: NodeMouseEvent) {
     if (found) {
       editingGroup.value = found;
       isGroupEditModalOpen.value = true;
+    }
+  } else if (node.type === 'focusLabel' && isEditMode.value) {
+    const found = draftLabels.value.find(l => l.id === node.id);
+    if (found) {
+      editingLabel.value = found;
+      isLabelEditModalOpen.value = true;
     }
   }
 }
@@ -448,6 +498,7 @@ function enterEditMode() {
   draftNodes.value = JSON.parse(JSON.stringify(store.nodes));
   draftGroups.value = JSON.parse(JSON.stringify(store.groups));
   draftEdges.value = JSON.parse(JSON.stringify(store.edges));
+  draftLabels.value = JSON.parse(JSON.stringify(store.labels || []));
   isEditMode.value = true;
   activeConnectingHandle.value = null;
   forceResetPositions.value = true;
@@ -464,6 +515,7 @@ function cancelLayoutChanges() {
   draftNodes.value = [];
   draftGroups.value = [];
   draftEdges.value = [];
+  draftLabels.value = [];
   isEditMode.value = false;
   activeConnectingHandle.value = null;
   selectedNodeId.value = null;
@@ -509,6 +561,12 @@ function initiateSaveLayout() {
           group.size = { ...fn.data.size };
         }
       }
+    } else if (fn.type === 'focusLabel') {
+      const label = draftLabels.value.find(l => l.id === fn.id);
+      if (label) {
+        label.position.x = Math.round(fn.position.x);
+        label.position.y = Math.round(fn.position.y);
+      }
     }
   }
 
@@ -540,7 +598,8 @@ async function executeSaveLayout() {
   await store.saveWholeTree({
     nodes: draftNodes.value,
     groups: draftGroups.value,
-    edges: draftEdges.value
+    edges: draftEdges.value,
+    labels: draftLabels.value
   });
   // 成功保存后清空草稿并退出编辑模式
   historyStack.value = [];
@@ -549,6 +608,7 @@ async function executeSaveLayout() {
   draftNodes.value = [];
   draftGroups.value = [];
   draftEdges.value = [];
+  draftLabels.value = [];
   isEditMode.value = false;
   activeConnectingHandle.value = null;
   syncToFlow();
@@ -568,6 +628,8 @@ function handleKeyDown(e: KeyboardEvent) {
       isNodeEditModalOpen.value = false;
     } else if (isGroupEditModalOpen.value) {
       isGroupEditModalOpen.value = false;
+    } else if (isLabelEditModalOpen.value) {
+      isLabelEditModalOpen.value = false;
     } else if (isEditMode.value) {
       cancelLayoutChanges();
     }
@@ -580,7 +642,8 @@ function handleKeyDown(e: KeyboardEvent) {
     isEvolutionModalOpen.value || 
     isSpecModalOpen.value || 
     isNodeEditModalOpen.value || 
-    isGroupEditModalOpen.value
+    isGroupEditModalOpen.value ||
+    isLabelEditModalOpen.value
   ) {
     return;
   }
@@ -613,7 +676,7 @@ function handleKeyDown(e: KeyboardEvent) {
       }
     }
 
-    // 3. Delete / Backspace 快速删除选中国策或连线
+    // 3. Delete / Backspace 快速删除选中国策、分组、标签或连线
     if ((e.key === 'Delete' || e.key === 'Backspace') && !isInput) {
       if (selectedEdgeId.value) {
         pushHistory();
@@ -636,6 +699,13 @@ function handleKeyDown(e: KeyboardEvent) {
             });
             draftEdges.value = draftEdges.value.filter(edge => edge.sourceId !== group.id && edge.targetId !== group.id);
             selectedNodeId.value = null;
+          } else {
+            const label = draftLabels.value.find(l => l.id === selectedNodeId.value);
+            if (label) {
+              pushHistory();
+              draftLabels.value = draftLabels.value.filter(l => l.id !== label.id);
+              selectedNodeId.value = null;
+            }
           }
         }
       }
@@ -716,6 +786,52 @@ function handleDeleteGroup(groupId: string) {
   }
 }
 
+function openNewLabelModal() {
+  editingLabel.value = null;
+  isLabelEditModalOpen.value = true;
+}
+
+function openEditLabelModal(target: FocusLabel | string) {
+  if (!isEditMode.value) return;
+  const labelId = typeof target === 'string' ? target : target.id;
+  const found = draftLabels.value.find(l => l.id === labelId);
+  if (found) {
+    editingLabel.value = found;
+    isLabelEditModalOpen.value = true;
+  }
+}
+
+function handleSaveLabel(labelData: FocusLabel) {
+  if (!isEditMode.value) return;
+  pushHistory();
+  const idx = draftLabels.value.findIndex(l => l.id === labelData.id);
+  if (idx !== -1) {
+    draftLabels.value[idx] = { ...draftLabels.value[idx], ...labelData };
+  } else {
+    if (!labelData.id) {
+      labelData.id = `label-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
+    }
+    if (!labelData.position || (labelData.position.x === 0 && labelData.position.y === 0)) {
+      labelData.position = store.calculateSmartLabelPlacement();
+    }
+    draftLabels.value.push(labelData);
+    store.lastCreatedLabelId = labelData.id;
+  }
+  isLabelEditModalOpen.value = false;
+  editingLabel.value = null;
+}
+
+function handleDeleteLabel(labelId: string) {
+  if (!isEditMode.value) return;
+  pushHistory();
+  draftLabels.value = draftLabels.value.filter(l => l.id !== labelId);
+  if (selectedNodeId.value === labelId) {
+    selectedNodeId.value = null;
+  }
+  isLabelEditModalOpen.value = false;
+  editingLabel.value = null;
+}
+
 onMounted(async () => {
   await store.fetchTree();
   store.fetchEvolution();
@@ -769,13 +885,31 @@ function checkCanvasLinkage() {
       }
     }, 250);
   }
+
+  // 联动 3：新建标签自动平滑平移至该标签并激发微光呼吸动画
+  if (store.lastCreatedLabelId) {
+    const targetLabelId = store.lastCreatedLabelId;
+    store.lastCreatedLabelId = null;
+    setTimeout(() => {
+      const found = flowNodes.value.find(n => n.id === targetLabelId);
+      if (found) {
+        setCenter(found.position.x + 40, found.position.y + 16, { duration: 800 });
+        highlightedNodeId.value = targetLabelId;
+        syncToFlow();
+        setTimeout(() => {
+          highlightedNodeId.value = null;
+          syncToFlow();
+        }, 2600);
+      }
+    }, 250);
+  }
 }
 
 // 实时监听来自当前页面弹窗或外部触发的创建标记
 watch(
-  [() => store.lastCreatedNodeId, () => store.lastCreatedGroupId],
-  ([newNodeId, newGroupId]) => {
-    if (newNodeId || newGroupId) {
+  [() => store.lastCreatedNodeId, () => store.lastCreatedGroupId, () => store.lastCreatedLabelId],
+  ([newNodeId, newGroupId, newLabelId]) => {
+    if (newNodeId || newGroupId || newLabelId) {
       checkCanvasLinkage();
     }
   }
@@ -820,29 +954,14 @@ onUnmounted(() => {
       <div class="bar-right">
         <!-- 编辑模式专有行动项 -->
         <template v-if="isEditMode">
-          <button 
-            class="btn-action-tool btn-undo-tool" 
-            :disabled="historyStack.length === 0" 
-            :class="{ 'is-disabled': historyStack.length === 0 }" 
-            @click="undo" 
-            title="撤回操作 (Ctrl+Z)"
-          >
-            撤回 (Ctrl+Z)
-          </button>
-          <button 
-            class="btn-action-tool btn-redo-tool" 
-            :disabled="redoStack.length === 0" 
-            :class="{ 'is-disabled': redoStack.length === 0 }" 
-            @click="redo" 
-            title="重做操作 (Ctrl+Y)"
-          >
-            重做 (Ctrl+Y)
-          </button>
           <button class="btn-action-tool" @click="openNewNodeModal">
             + 新建国策
           </button>
           <button class="btn-action-tool" @click="openNewGroupModal">
             + 新建分组
+          </button>
+          <button class="btn-action-tool" @click="openNewLabelModal">
+            + 新建标签
           </button>
           <button class="btn-action-tool btn-save-layout" @click="initiateSaveLayout">
             保存排版
@@ -931,6 +1050,16 @@ onUnmounted(() => {
           />
         </template>
 
+        <!-- 自定义极简说明标签 -->
+        <template #node-focusLabel="props">
+          <FocusLabelCard 
+            :id="props.id"
+            :data="props.data"
+            :selected="props.selected"
+            @edit-label="openEditLabelModal"
+          />
+        </template>
+
         <!-- 自定义正交避障连线 -->
         <template #edge-orthogonal="props">
           <OrthogonalEdge 
@@ -987,6 +1116,15 @@ onUnmounted(() => {
     <EvolutionModal
       :is-open="isEvolutionModalOpen"
       @close="isEvolutionModalOpen = false"
+    />
+
+    <!-- 弹窗六：新建/编辑极简说明标签 -->
+    <LabelEditModal
+      :is-open="isLabelEditModalOpen"
+      :label="editingLabel"
+      @close="isLabelEditModalOpen = false"
+      @save="handleSaveLabel"
+      @delete="handleDeleteLabel"
     />
   </div>
 </template>

@@ -7,6 +7,7 @@ import type {
   FocusNode, 
   FocusEdge, 
   FocusGroup, 
+  FocusLabel,
   FocusTreeData, 
   ResetNodeItem,
   EvolutionSnapshot, 
@@ -107,6 +108,14 @@ export function initDatabase() {
       sourceAnchor TEXT NOT NULL CHECK(sourceAnchor IN ('TOP', 'BOTTOM', 'LEFT', 'RIGHT')),
       targetAnchor TEXT NOT NULL CHECK(targetAnchor IN ('TOP', 'BOTTOM', 'LEFT', 'RIGHT')),
       style TEXT NOT NULL CHECK(style IN ('SOLID', 'DASHED'))
+    );
+
+    -- 6.1 纯文本说明标签框（如“专注间歇”等极简流转说明）
+    CREATE TABLE IF NOT EXISTS focus_labels (
+      id TEXT PRIMARY KEY,
+      text TEXT NOT NULL,
+      positionX REAL NOT NULL DEFAULT 0,
+      positionY REAL NOT NULL DEFAULT 0
     );
 
     -- 7. 5 槽位版本演化快照
@@ -920,7 +929,14 @@ export function getFullFocusTreeData(): FocusTreeData {
     style: row.style
   }));
 
-  return { nodes, edges, groups };
+  const labelRows = db.prepare('SELECT * FROM focus_labels').all() as any[];
+  const labels: FocusLabel[] = labelRows.map(row => ({
+    id: row.id,
+    text: row.text,
+    position: { x: row.positionX, y: row.positionY }
+  }));
+
+  return { nodes, edges, groups, labels };
 }
 
 // -----------------------------------------------------------------------------

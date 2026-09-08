@@ -24,6 +24,7 @@ router.get('/export', exportLimiter, (_req: Request, res: Response) => {
         groupCount: liveTree.groups.length,
         nodeCount: liveTree.nodes.length,
         edgeCount: liveTree.edges.length,
+        labelCount: liveTree.labels ? liveTree.labels.length : 0,
         snapshotCount: evolutionSnapshots.length,
         logCount: sessionLogs.length,
         caseCount: precedentCases.length
@@ -67,14 +68,16 @@ router.post('/import', importLimiter, async (req: Request, res: Response) => {
 
   try {
     const importTx = db.transaction(() => {
-      // 1. 恢复国策树 (groups, nodes, edges)
+      // 1. 恢复国策树 (groups, nodes, edges, labels)
       const groups = tree.groups || [];
       const nodes = tree.nodes || [];
       const edges = tree.edges || [];
+      const labels = tree.labels || [];
 
       db.prepare('DELETE FROM focus_edges').run();
       db.prepare('DELETE FROM focus_nodes').run();
       db.prepare('DELETE FROM focus_groups').run();
+      db.prepare('DELETE FROM focus_labels').run();
 
       const insertGroup = db.prepare(`
         INSERT INTO focus_groups (id, name, themeColor, positionX, positionY, width, height)
@@ -147,6 +150,19 @@ router.post('/import', importLimiter, async (req: Request, res: Response) => {
         insertEdge.run(e);
       }
 
+      const insertLabel = db.prepare(`
+        INSERT INTO focus_labels (id, text, positionX, positionY)
+        VALUES (@id, @text, @positionX, @positionY)
+      `);
+      for (const l of labels) {
+        insertLabel.run({
+          id: l.id,
+          text: l.text,
+          positionX: l.position?.x ?? 0,
+          positionY: l.position?.y ?? 0
+        });
+      }
+
       // 2. 恢复神圣座位配置
       if (backup.sacredSeatConfig) {
         const cfg = backup.sacredSeatConfig;
@@ -217,6 +233,7 @@ router.post('/import', importLimiter, async (req: Request, res: Response) => {
         nodesRestored: nodes.length,
         groupsRestored: groups.length,
         edgesRestored: edges.length,
+        labelsRestored: labels.length,
         snapshotsRestored: (backup.evolution?.snapshots || []).length,
         logsRestored: (backup.sessionLogs || []).length,
         casesRestored: (backup.precedentCases || []).length

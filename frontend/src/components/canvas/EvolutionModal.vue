@@ -485,7 +485,7 @@ async function executeImportBackup() {
                 <strong>警告：导入将重置当前系统的国策拓扑与演化快照！</strong>
               </div>
               <p class="banner-desc">
-                已成功解析国策备份包。包含 {{ (pendingImportData?.liveTree?.nodes || pendingImportData?.focusTree?.nodes)?.length || 0 }} 项国策节点、{{ (pendingImportData?.liveTree?.groups || pendingImportData?.focusTree?.groups)?.length || 0 }} 个分组及 {{ pendingImportData?.evolution?.snapshots?.length || 0 }} 个演化快照。此操作将重构国策拓扑结构，但绝不影响专注流水记录与判例法典，是否确认执行重构写入？
+                已成功解析国策备份包。包含 {{ (pendingImportData?.liveTree?.nodes || pendingImportData?.focusTree?.nodes)?.length || 0 }} 项国策节点、{{ (pendingImportData?.liveTree?.groups || pendingImportData?.focusTree?.groups)?.length || 0 }} 个分组、{{ (pendingImportData?.liveTree?.labels || pendingImportData?.focusTree?.labels)?.length || 0 }} 个说明标签及 {{ pendingImportData?.evolution?.snapshots?.length || 0 }} 个演化快照。此操作将重构国策拓扑结构，但绝不影响专注流水记录与判例法典，是否确认执行重构写入？
               </p>
               <div class="banner-actions">
                 <button class="btn-confirm-import-danger" :disabled="isSubmitting" @click="executeImportBackup">

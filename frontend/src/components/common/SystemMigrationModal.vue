@@ -334,6 +334,10 @@ async function onCasesFileSelected(e: Event) {
                     <span class="stat-num">{{ (pendingFullBackup?.focusTree?.groups || pendingFullBackup?.liveTree?.groups)?.length || 0 }}</span>
                   </div>
                   <div class="stat-pill">
+                    <span class="stat-lbl">说明标签</span>
+                    <span class="stat-num">{{ (pendingFullBackup?.focusTree?.labels || pendingFullBackup?.liveTree?.labels)?.length || 0 }}</span>
+                  </div>
+                  <div class="stat-pill">
                     <span class="stat-lbl">演化快照</span>
                     <span class="stat-num">{{ pendingFullBackup?.evolution?.snapshots?.length || 0 }}</span>
                   </div>
