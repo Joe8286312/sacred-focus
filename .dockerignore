@@ -1,0 +1,48 @@
+# Version Control
+.git
+.gitignore
+
+# Dependencies
+node_modules
+**/node_modules
+
+# Build artifacts
+dist
+**/dist
+
+# Local SQLite databases & runtime data
+data
+**/data
+*.db
+*.db-wal
+*.db-shm
+*.db-journal
+app_pre_import_*.db
+
+# Local environment and secret files
+.env
+.env.local
+.env.*.local
+backend/.env
+frontend/.env
+
+# Editor & IDE files
+.vscode
+.idea
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# Documentation and temporary files
+docs
+scratch
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Release packaging outputs
+*.tar
+*.tar.gz

@@ -15,6 +15,7 @@ if (isProduction) {
 
 export const config = {
   port: parseInt(process.env.PORT || '3000', 10),
+  host: process.env.HOST || '0.0.0.0',
   appAccessToken: process.env.APP_ACCESS_TOKEN || '',
   dataDir: process.env.DATA_DIR || path.resolve(__dirname, '../data'),
   jwtSecret: rawJwtSecret || 'sacred_focus_default_jwt_secret_change_in_production_2026',

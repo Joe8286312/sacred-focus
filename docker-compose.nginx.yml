@@ -1,0 +1,36 @@
+# ========================================================
+# Sacred Focus 企业级网关反向代理组合编排 (包含 Nginx)
+# 启动方式: docker compose -f docker-compose.yml -f docker-compose.nginx.yml up -d
+# ========================================================
+
+services:
+  sacred-focus:
+    # 隐藏直接暴露的 3000 端口，由内部网络流通
+    ports: !override []
+    networks:
+      - sacred-network
+
+  nginx:
+    image: nginx:1.27-alpine
+    container_name: sacred-focus-gateway
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/conf.d:/etc/nginx/conf.d:ro
+      - ./nginx/ssl:/etc/nginx/ssl:ro
+    depends_on:
+      sacred-focus:
+        condition: service_healthy
+    networks:
+      - sacred-network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "20m"
+        max-file: "3"
+
+networks:
+  sacred-network:
+    driver: bridge

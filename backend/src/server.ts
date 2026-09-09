@@ -116,11 +116,10 @@ app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
 });
 
 const PORT = config.port;
-
-const HOST = config.isProduction ? '127.0.0.1' : '0.0.0.0';
+const HOST = config.host;
 
 app.listen(PORT, HOST, () => {
   console.log(`[Sacred Focus API] Server running at http://${HOST}:${PORT}`);
-  console.log(`[Sacred Focus API] Mode: ${config.isProduction ? 'Production (Loopback Only)' : 'Development'}`);
+  console.log(`[Sacred Focus API] Mode: ${config.isProduction ? 'Production' : 'Development'}`);
   console.log(`[Sacred Focus API] Database path: ${config.dbPath}`);
 });

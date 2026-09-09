@@ -1,0 +1,34 @@
+services:
+  sacred-focus:
+    image: sacred-focus:${APP_VERSION:-latest}
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: sacred-focus
+    restart: unless-stopped
+    ports:
+      - "${PORT:-3000}:3000"
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      - HOST=0.0.0.0
+      - DATA_DIR=/app/data
+      - JWT_SECRET=${JWT_SECRET:-sacred_focus_super_secret_jwt_key_32chars_2026}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD:-admin123456}
+      - TRUSTED_IPS=${TRUSTED_IPS:-}
+      - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-http://localhost:3000,http://127.0.0.1:3000}
+    volumes:
+      # SQLite WAL 数据库与备份文件持久化挂载
+      - ${HOST_DATA_DIR:-./data}:/app/data
+    logging:
+      # 限制容器日志体积，避免虚拟机磁盘被长期日志撑满
+      driver: "json-file"
+      options:
+        max-size: "20m"
+        max-file: "3"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://127.0.0.1:3000/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
