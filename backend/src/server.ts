@@ -1,4 +1,5 @@
-import express, { Request, Response } from 'express';
+import express, { Request, Response, NextFunction } from 'express';
+
 import cors from 'cors';
 import helmet from 'helmet';
 import cookieParser from 'cookie-parser';
@@ -29,16 +30,35 @@ app.set('trust proxy', 1);
 
 // HTTP 安全头加固 (防御点击劫持、MIME嗅探、XSS注入并移除指纹)
 app.use(helmet({
-  contentSecurityPolicy: false, // 前后端同源静态托管或按需自定义
+  contentSecurityPolicy: config.isProduction ? {
+    directives: {
+      defaultSrc: ["'self'"],
+      scriptSrc: ["'self'"],
+      styleSrc: ["'self'", "'unsafe-inline'"],
+      imgSrc: ["'self'", "data:", "blob:"],
+      connectSrc: ["'self'"],
+      fontSrc: ["'self'"],
+      objectSrc: ["'none'"],
+      baseUri: ["'self'"]
+    }
+  } : false,
   crossOriginEmbedderPolicy: false,
   frameguard: { action: 'deny' },
   hidePoweredBy: true
 }));
 
+const allowedOrigins = config.allowedOrigins;
 app.use(cors({
-  origin: true,
+  origin: (origin, callback) => {
+    // 允许同源请求（无 origin）、本地脚本及白名单来源
+    if (!origin || allowedOrigins.includes(origin)) {
+      return callback(null, true);
+    }
+    return callback(new Error(`CORS policy violation: Origin '${origin}' is not allowed`));
+  },
   credentials: true
 }));
+
 
 app.use(cookieParser());
 app.use(express.json({ limit: '15mb' }));
@@ -70,7 +90,12 @@ app.use('/api/evolution', evolutionRouter);
 app.use('/api/system', systemRouter);
 
 // 生产环境静态文件托管 (frontend/dist)
-const frontendDist = path.resolve(process.cwd(), '../frontend/dist');
+const defaultDist = path.resolve(__dirname, '../../frontend/dist');
+const cwdDist = path.resolve(process.cwd(), '../frontend/dist');
+const frontendDist = process.env.FRONTEND_DIST
+  ? path.resolve(process.env.FRONTEND_DIST)
+  : (fs.existsSync(defaultDist) ? defaultDist : cwdDist);
+
 if (fs.existsSync(frontendDist)) {
   app.use(express.static(frontendDist));
   app.get('*', (_req: Request, res: Response) => {
@@ -78,7 +103,20 @@ if (fs.existsSync(frontendDist)) {
   });
 }
 
+// 全局未捕获异常处理中间件 (防御堆栈泄漏、500 挂死与重复发送响应头)
+app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
+  console.error('[Sacred Focus Server] Unhandled internal error:', err);
+  if (res.headersSent) {
+    return;
+  }
+  res.status(err.status || 500).json({
+    error: err.code || 'INTERNAL_SERVER_ERROR',
+    message: config.isProduction ? '服务器自控中枢发生内部异常，请稍后重试' : (err.message || 'Unknown Server Error')
+  });
+});
+
 const PORT = config.port;
+
 const HOST = config.isProduction ? '127.0.0.1' : '0.0.0.0';
 
 app.listen(PORT, HOST, () => {

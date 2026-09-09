@@ -1,6 +1,9 @@
 import { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
+import { timingSafeEqual } from 'crypto';
 import { config } from '../config.js';
+import { db } from '../db.js';
+import type { AuthJwtPayload } from '../types.js';
 
 // 免鉴权白名单子路径（相对于 /api）
 const PUBLIC_PATHS = [
@@ -9,6 +12,14 @@ const PUBLIC_PATHS = [
   '/auth/status',
   '/sync/status'
 ];
+
+function safeCompare(a: string, b: string): boolean {
+  if (typeof a !== 'string' || typeof b !== 'string') return false;
+  const bufA = Buffer.from(a);
+  const bufB = Buffer.from(b);
+  if (bufA.length !== bufB.length) return false;
+  return timingSafeEqual(bufA, bufB);
+}
 
 export function authMiddleware(req: Request, res: Response, next: NextFunction) {
   // 1. 白名单接口直接放行
@@ -22,11 +33,12 @@ export function authMiddleware(req: Request, res: Response, next: NextFunction) 
   const cookieToken = req.cookies ? req.cookies['sf_token'] : undefined;
   const token = headerToken || cookieToken;
 
-  // 向下兼容支持静态 APP_ACCESS_TOKEN（如果配置了）
-  if (config.appAccessToken && token === config.appAccessToken) {
-    (req as any).user = { role: 'admin', staticToken: true };
+  // 向下兼容支持静态 APP_ACCESS_TOKEN（如果配置了），使用常量时间比较抵御时序攻击
+  if (config.appAccessToken && token && safeCompare(token, config.appAccessToken)) {
+    req.user = { role: 'admin', staticToken: true };
     return next();
   }
+
 
   if (!token) {
     return res.status(401).json({
@@ -36,9 +48,26 @@ export function authMiddleware(req: Request, res: Response, next: NextFunction) 
   }
 
   try {
-    const decoded = jwt.verify(token, config.jwtSecret);
-    (req as any).user = decoded;
+    const decoded = jwt.verify(token, config.jwtSecret) as AuthJwtPayload;
+
+    // 检查 jti 是否已在系统吊销黑名单中
+    if (decoded?.jti) {
+      const revoked = db.prepare("SELECT value FROM system_meta WHERE key = ?")
+        .get(`revoked_jti:${decoded.jti}`) as { value: string } | undefined;
+      if (revoked) {
+        const exp = parseInt(revoked.value, 10);
+        if (isNaN(exp) || Date.now() < exp) {
+          return res.status(401).json({
+            error: 'TOKEN_REVOKED',
+            message: '该登录凭证已被安全注销，请重新登录'
+          });
+        }
+      }
+    }
+
+    req.user = decoded;
     next();
+
   } catch (err: any) {
     return res.status(401).json({
       error: 'TOKEN_EXPIRED_OR_INVALID',
@@ -46,3 +75,4 @@ export function authMiddleware(req: Request, res: Response, next: NextFunction) 
     });
   }
 }
+

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue';
+import { ref, onMounted, onUnmounted } from 'vue';
 import { RouterView, useRouter, useRoute } from 'vue-router';
 import ReconstructPromptModal from './components/canvas/ReconstructPromptModal.vue';
 import SystemMigrationModal from './components/common/SystemMigrationModal.vue';
@@ -16,6 +16,7 @@ const isMigrationModalOpen = ref(false);
 const focusStore = useFocusTreeStore();
 const seatStore = useSacredSeatStore();
 const authStore = useAuthStore();
+const cleanupSync = ref<(() => void) | null>(null);
 
 function toggleTheme() {
   currentTheme.value = currentTheme.value === 'dark' ? 'light' : 'dark';
@@ -25,7 +26,7 @@ function toggleTheme() {
 
 onMounted(() => {
   // 启动多端唤醒静默自动同步管理器
-  initSyncManager();
+  cleanupSync.value = initSyncManager();
 
   const saved = localStorage.getItem('sacred-focus-theme') as 'dark' | 'light' | null;
   if (saved) {
@@ -33,24 +34,31 @@ onMounted(() => {
     document.documentElement.setAttribute('data-theme', saved);
   }
 
-  // 暴露调试辅助函数，便于随时在控制台调起断签清零审计弹窗进行预览与测试
-  (window as any).__triggerResetModal = (mockData?: any) => {
-    sessionStorage.removeItem('dismissedResetAlertDate');
-    focusStore.pendingResetSummary = mockData || {
-      settlementDate: new Date().toISOString().slice(0, 10),
-      resetNodes: [
-        { id: 'mock-1', code: 'N7', name: '晨间深度工作流', lostLevel: 1, maxLevel: 3 },
-        { id: 'mock-2', code: '123', name: '离线复盘与整理', lostLevel: 1, maxLevel: 1 }
-      ]
+  // 仅在开发模式下暴露调试辅助函数，生产环境坚决不挂载全局危险方法
+  if (import.meta.env.DEV) {
+    (window as any).__triggerResetModal = (mockData?: any) => {
+      sessionStorage.removeItem('dismissedResetAlertDate');
+      focusStore.pendingResetSummary = mockData || {
+        settlementDate: new Date().toISOString().slice(0, 10),
+        resetNodes: [
+          { id: 'mock-1', code: 'N7', name: '晨间深度工作流', lostLevel: 1, maxLevel: 3 },
+          { id: 'mock-2', code: '123', name: '离线复盘与整理', lostLevel: 1, maxLevel: 1 }
+        ]
+      };
     };
-  };
 
-  (window as any).__resetAndTriggerAudit = async () => {
-    sessionStorage.removeItem('dismissedResetAlertDate');
-    await apiFetch('/api/focus-tree/reset-settlement-audit', { method: 'POST' });
-    await focusStore.fetchTree();
-  };
+    (window as any).__resetAndTriggerAudit = async () => {
+      sessionStorage.removeItem('dismissedResetAlertDate');
+      await apiFetch('/api/focus-tree/reset-settlement-audit', { method: 'POST' });
+      await focusStore.fetchTree();
+    };
+  }
 });
+
+onUnmounted(() => {
+  cleanupSync.value?.();
+});
+
 </script>
 
 <template>

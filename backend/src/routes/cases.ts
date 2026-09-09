@@ -1,18 +1,18 @@
 import { Router, Request, Response } from 'express';
 import { db, incrementSystemRevision } from '../db.js';
-import type { PrecedentCase } from '../types.js';
+import type { PrecedentCase, PrecedentCaseRow } from '../types.js';
 
 const router = Router();
 
 // 获取判例列表
 router.get('/', (req: Request, res: Response) => {
   const verdict = req.query.verdict as string | undefined;
-  let rows: any[];
+  let rows: PrecedentCaseRow[];
 
   if (verdict && (verdict === 'ALLOW' || verdict === 'FORBID')) {
-    rows = db.prepare('SELECT * FROM precedent_cases WHERE verdict = ? ORDER BY date DESC, createdAt DESC').all(verdict);
+    rows = db.prepare('SELECT * FROM precedent_cases WHERE verdict = ? ORDER BY date DESC, createdAt DESC').all(verdict) as PrecedentCaseRow[];
   } else {
-    rows = db.prepare('SELECT * FROM precedent_cases ORDER BY date DESC, createdAt DESC').all();
+    rows = db.prepare('SELECT * FROM precedent_cases ORDER BY date DESC, createdAt DESC').all() as PrecedentCaseRow[];
   }
 
   const cases: PrecedentCase[] = rows.map(r => ({
@@ -29,7 +29,7 @@ router.get('/', (req: Request, res: Response) => {
 
 // 导出全部判例法典
 router.get('/export', (_req: Request, res: Response) => {
-  const rows = db.prepare('SELECT * FROM precedent_cases ORDER BY date DESC, createdAt DESC').all() as any[];
+  const rows = db.prepare('SELECT * FROM precedent_cases ORDER BY date DESC, createdAt DESC').all() as PrecedentCaseRow[];
   const cases: PrecedentCase[] = rows.map(r => ({
     id: r.id,
     date: r.date,
@@ -93,7 +93,7 @@ router.post('/import', (req: Request, res: Response) => {
   try {
     importTx(rawCases);
     incrementSystemRevision();
-    const totalRow = db.prepare('SELECT COUNT(*) as count FROM precedent_cases').get() as any;
+    const totalRow = db.prepare('SELECT COUNT(*) as count FROM precedent_cases').get() as { count: number } | undefined;
     res.json({
       success: true,
       importedCount,

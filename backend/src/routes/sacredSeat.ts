@@ -1,12 +1,19 @@
 import { Router, Request, Response } from 'express';
 import { db, incrementSystemRevision } from '../db.js';
-import type { SacredSeatConfig, FocusSessionLog, DailyFocusHeatmapItem } from '../types.js';
+import type {
+  SacredSeatConfig,
+  FocusSessionLog,
+  DailyFocusHeatmapItem,
+  SacredSeatConfigRow,
+  FocusSessionLogRow,
+  DailyFocusHeatmapRow
+} from '../types.js';
 
 const router = Router();
 
 // 获取神圣座位配置
 router.get('/config', (_req: Request, res: Response) => {
-  const row = db.prepare('SELECT * FROM sacred_seat_config WHERE id = 1').get() as any;
+  const row = db.prepare('SELECT * FROM sacred_seat_config WHERE id = 1').get() as SacredSeatConfigRow | undefined;
   if (!row) {
     return res.status(404).json({ error: 'Config not found' });
   }
@@ -27,7 +34,7 @@ router.get('/config', (_req: Request, res: Response) => {
 router.put('/config', (req: Request, res: Response) => {
   const { sacredToken, reservationSignal, defaultFocusDuration, regretWindowSeconds, currentStreak, maxStreak } = req.body;
 
-  const current = db.prepare('SELECT * FROM sacred_seat_config WHERE id = 1').get() as any;
+  const current = db.prepare('SELECT * FROM sacred_seat_config WHERE id = 1').get() as SacredSeatConfigRow | undefined;
   if (!current) {
     return res.status(404).json({ error: 'Config not found' });
   }
@@ -53,7 +60,11 @@ router.put('/config', (req: Request, res: Response) => {
 
   incrementSystemRevision();
 
-  const updated = db.prepare('SELECT * FROM sacred_seat_config WHERE id = 1').get() as any;
+  const updated = db.prepare('SELECT * FROM sacred_seat_config WHERE id = 1').get() as SacredSeatConfigRow | undefined;
+  if (!updated) {
+    return res.status(500).json({ error: 'Failed to retrieve updated config' });
+  }
+
   res.json({
     sacredToken: updated.sacredToken,
     reservationSignal: updated.reservationSignal,
@@ -75,8 +86,8 @@ router.post('/reset-streak', (_req: Request, res: Response) => {
 
   incrementSystemRevision();
 
-  const updated = db.prepare('SELECT currentStreak, maxStreak FROM sacred_seat_config WHERE id = 1').get() as any;
-  res.json({ currentStreak: updated.currentStreak, maxStreak: updated.maxStreak });
+  const updated = db.prepare('SELECT currentStreak, maxStreak FROM sacred_seat_config WHERE id = 1').get() as Pick<SacredSeatConfigRow, 'currentStreak' | 'maxStreak'> | undefined;
+  res.json({ currentStreak: updated?.currentStreak ?? 0, maxStreak: updated?.maxStreak ?? 0 });
 });
 
 // 获取流水日志
@@ -86,7 +97,7 @@ router.get('/logs', (req: Request, res: Response) => {
     SELECT * FROM focus_session_logs
     ORDER BY startTime DESC
     LIMIT @limit
-  `).all({ limit }) as any[];
+  `).all({ limit }) as FocusSessionLogRow[];
 
   const logs: FocusSessionLog[] = rows.map(r => ({
     id: r.id,
@@ -109,7 +120,7 @@ router.get('/logs/export', (_req: Request, res: Response) => {
   const rows = db.prepare(`
     SELECT * FROM focus_session_logs
     ORDER BY startTime DESC
-  `).all() as any[];
+  `).all() as FocusSessionLogRow[];
 
   const logs: FocusSessionLog[] = rows.map(r => ({
     id: r.id,
@@ -183,7 +194,7 @@ router.post('/logs/import', (req: Request, res: Response) => {
   try {
     importTx(rawLogs);
     incrementSystemRevision();
-    const totalRow = db.prepare('SELECT COUNT(*) as count FROM focus_session_logs').get() as any;
+    const totalRow = db.prepare('SELECT COUNT(*) as count FROM focus_session_logs').get() as { count: number } | undefined;
     res.json({
       success: true,
       importedCount,
@@ -197,8 +208,14 @@ router.post('/logs/import', (req: Request, res: Response) => {
 
 // 获取全周期专注热力图日级聚合数据 (支持 ?days=365 或全部)
 router.get('/heatmap', (req: Request, res: Response) => {
-  const days = parseInt((req.query.days as string) || '365', 10);
-  
+  let days = 365;
+  if (req.query.days === 'all' || req.query.days === '0') {
+    days = 0;
+  } else if (req.query.days !== undefined) {
+    const parsed = parseInt(String(req.query.days), 10);
+    days = isNaN(parsed) || parsed < 0 ? 365 : Math.min(parsed, 3650);
+  }
+
   let query = `
     SELECT 
       substr(startTime, 1, 10) AS date,
@@ -219,7 +236,7 @@ router.get('/heatmap', (req: Request, res: Response) => {
 
   query += ` GROUP BY substr(startTime, 1, 10) ORDER BY date ASC`;
 
-  const rows = db.prepare(query).all(params) as any[];
+  const rows = db.prepare(query).all(params) as DailyFocusHeatmapRow[];
 
   const items: DailyFocusHeatmapItem[] = rows.map(r => ({
     date: r.date,
@@ -233,12 +250,23 @@ router.get('/heatmap', (req: Request, res: Response) => {
   res.json(items);
 });
 
-// 提交专注会话日志并自动结算主链连胜
+const VALID_LOG_TYPES = ['FOCUS', 'RESERVATION'] as const;
+const VALID_LOG_STATUSES = ['SUCCESS', 'FAIL', 'REGRET'] as const;
+
+// 提交专注会话日志并自动结算主链连胜 (D-6 防御校验与原子事务保障)
 router.post('/logs', (req: Request, res: Response) => {
   const { id, type, startTime, endTime, targetDurationMinutes, actualDurationSeconds, status, focusContent, failureReason, note } = req.body;
 
   if (!id || !type || !startTime || !endTime || !status) {
-    return res.status(400).json({ error: 'Missing required session log fields' });
+    return res.status(400).json({ error: 'MISSING_REQUIRED_FIELDS', message: 'Missing required session log fields' });
+  }
+
+  if (!VALID_LOG_TYPES.includes(type)) {
+    return res.status(400).json({ error: 'INVALID_TYPE', message: `Invalid session type: ${type}. Expected FOCUS or RESERVATION.` });
+  }
+
+  if (!VALID_LOG_STATUSES.includes(status)) {
+    return res.status(400).json({ error: 'INVALID_STATUS', message: `Invalid session status: ${status}. Expected SUCCESS, FAIL, or REGRET.` });
   }
 
   const insertStmt = db.prepare(`
@@ -246,53 +274,69 @@ router.post('/logs', (req: Request, res: Response) => {
     VALUES (@id, @type, @startTime, @endTime, @targetDurationMinutes, @actualDurationSeconds, @status, @focusContent, @failureReason, @note)
   `);
 
-  insertStmt.run({
-    id,
-    type,
-    startTime,
-    endTime,
-    targetDurationMinutes: targetDurationMinutes || 0,
-    actualDurationSeconds: actualDurationSeconds || 0,
-    status,
-    focusContent: focusContent || null,
-    failureReason: failureReason || null,
-    note: note || null
-  });
+  let newCurrentStreak = 0;
+  let newMaxStreak = 0;
 
-  // 结算连胜状态
-  const currentConfig = db.prepare('SELECT currentStreak, maxStreak FROM sacred_seat_config WHERE id = 1').get() as any;
-  let newCurrentStreak = currentConfig.currentStreak;
-  let newMaxStreak = currentConfig.maxStreak;
+  try {
+    const logTx = db.transaction(() => {
+      insertStmt.run({
+        id,
+        type,
+        startTime,
+        endTime,
+        targetDurationMinutes: targetDurationMinutes || 0,
+        actualDurationSeconds: actualDurationSeconds || 0,
+        status,
+        focusContent: focusContent || null,
+        failureReason: failureReason || null,
+        note: note || null
+      });
 
-  if (type === 'FOCUS') {
-    if (status === 'SUCCESS') {
-      newCurrentStreak += 1;
-      if (newCurrentStreak > newMaxStreak) {
-        newMaxStreak = newCurrentStreak;
+      // 结算连胜状态
+      const currentConfig = db.prepare('SELECT currentStreak, maxStreak FROM sacred_seat_config WHERE id = 1').get() as Pick<SacredSeatConfigRow, 'currentStreak' | 'maxStreak'> | undefined;
+      newCurrentStreak = currentConfig?.currentStreak ?? 0;
+      newMaxStreak = currentConfig?.maxStreak ?? 0;
+
+      if (type === 'FOCUS') {
+        if (status === 'SUCCESS') {
+          newCurrentStreak += 1;
+          if (newCurrentStreak > newMaxStreak) {
+            newMaxStreak = newCurrentStreak;
+          }
+        } else if (status === 'FAIL') {
+          // 发生违规，主链清零
+          newCurrentStreak = 0;
+        }
+        // REGRET 状态下不计入违规，不增加连胜，保持原值
+
+        db.prepare(`
+          UPDATE sacred_seat_config
+          SET currentStreak = @newCurrentStreak,
+              maxStreak = @newMaxStreak,
+              updatedAt = datetime('now')
+          WHERE id = 1
+        `).run({ newCurrentStreak, newMaxStreak });
       }
-    } else if (status === 'FAIL') {
-      // 发生违规，主链清零
-      newCurrentStreak = 0;
-    }
-    // REGRET 状态下不计入违规，不增加连胜，保持原值
 
-    db.prepare(`
-      UPDATE sacred_seat_config
-      SET currentStreak = @newCurrentStreak,
-          maxStreak = @newMaxStreak,
-          updatedAt = datetime('now')
-      WHERE id = 1
-    `).run({ newCurrentStreak, newMaxStreak });
+      incrementSystemRevision();
+    });
+
+    logTx();
+
+    res.status(201).json({
+      logId: id,
+      status,
+      currentStreak: newCurrentStreak,
+      maxStreak: newMaxStreak
+    });
+  } catch (err: any) {
+    console.error('Failed to save session log:', err);
+    res.status(500).json({
+      error: 'LOG_SAVE_FAILED',
+      message: '专注会话日志保存失败',
+      details: err?.message || String(err)
+    });
   }
-
-  incrementSystemRevision();
-
-  res.status(201).json({
-    logId: id,
-    status,
-    currentStreak: newCurrentStreak,
-    maxStreak: newMaxStreak
-  });
 });
 
 export default router;

@@ -1,8 +1,9 @@
 import { Router, Request, Response } from 'express';
 import path from 'path';
 import { config } from '../config.js';
-import { db, getFullFocusTreeData, incrementSystemRevision } from '../db.js';
+import { db, getFullFocusTreeData, incrementSystemRevision, upsertFocusNode } from '../db.js';
 import { exportLimiter, importLimiter } from '../middleware/rateLimiter.js';
+import { validateFullBackupPayload } from '../utils/validators.js';
 
 const router = Router();
 
@@ -49,12 +50,16 @@ router.get('/export', exportLimiter, (_req: Request, res: Response) => {
 
 // 全量导入整机镜像（跨设备整机恢复，带预热备与 10次/小时频控保护）
 router.post('/import', importLimiter, async (req: Request, res: Response) => {
-  const backup = req.body;
-  const tree = backup?.focusTree || backup?.liveTree;
-
-  if (!backup || !tree) {
-    return res.status(400).json({ error: '备份格式不合法：缺少国策树结构' });
+  const validation = validateFullBackupPayload(req.body);
+  if (!validation.success || !validation.data) {
+    return res.status(400).json({
+      error: 'INVALID_BACKUP_SCHEMA',
+      message: validation.error || '备份文件结构校验未通过',
+      details: validation.details
+    });
   }
+
+  const { tree, sacredSeatConfig, precedentCases, evolution, sessionLogs } = validation.data;
 
   // 导入前自动热备当前 SQLite 数据库快照
   try {
@@ -95,51 +100,9 @@ router.post('/import', importLimiter, async (req: Request, res: Response) => {
         });
       }
 
-      const insertNode = db.prepare(`
-        INSERT INTO focus_nodes (
-          id, code, name, groupId, triggerTime, triggerScene, hasExactTime, timeValueMinutes,
-          level, maxLevel, isLit, isFrozen, lastLitDate, previousLevel, positionX, positionY,
-          specInstruction, specFailCondition, specBenefitMechanism, specNotes, sortOrder
-        ) VALUES (
-          @id, @code, @name, @groupId, @triggerTime, @triggerScene, @hasExactTime, @timeValueMinutes,
-          @level, @maxLevel, @isLit, @isFrozen, @lastLitDate, @previousLevel, @positionX, @positionY,
-          @specInstruction, @specFailCondition, @specBenefitMechanism, @specNotes, @sortOrder
-        )
-      `);
+      // 恢复节点 (使用共享 upsertFocusNode 消除重复 SQL)
       for (let i = 0; i < nodes.length; i++) {
-        const n = nodes[i];
-        let hasExactTime = 0;
-        let timeValueMinutes: number | null = null;
-        if (n.triggerTime) {
-          const match = n.triggerTime.match(/^(\d{1,2})[:：](\d{2})$/);
-          if (match) {
-            hasExactTime = 1;
-            timeValueMinutes = parseInt(match[1], 10) * 60 + parseInt(match[2], 10);
-          }
-        }
-        insertNode.run({
-          id: n.id,
-          code: n.code,
-          name: n.name,
-          groupId: n.groupId,
-          triggerTime: n.triggerTime || '',
-          triggerScene: n.triggerScene || n.triggerTime || '全天候',
-          hasExactTime,
-          timeValueMinutes,
-          level: n.level ?? 0,
-          maxLevel: n.maxLevel ?? 0,
-          isLit: n.isLit ? 1 : 0,
-          isFrozen: n.isFrozen ? 1 : 0,
-          lastLitDate: n.lastLitDate ?? null,
-          previousLevel: n.previousLevel ?? 0,
-          positionX: n.position?.x ?? 0,
-          positionY: n.position?.y ?? 0,
-          specInstruction: n.specCard?.instruction || '',
-          specFailCondition: n.specCard?.failCondition || '',
-          specBenefitMechanism: n.specCard?.benefitMechanism || '',
-          specNotes: n.specCard?.notes ?? null,
-          sortOrder: i
-        });
+        upsertFocusNode(nodes[i], i);
       }
 
       const insertEdge = db.prepare(`
@@ -164,38 +127,37 @@ router.post('/import', importLimiter, async (req: Request, res: Response) => {
       }
 
       // 2. 恢复神圣座位配置
-      if (backup.sacredSeatConfig) {
-        const cfg = backup.sacredSeatConfig;
+      if (sacredSeatConfig) {
         db.prepare(`
           INSERT OR REPLACE INTO sacred_seat_config (id, sacredToken, reservationSignal, defaultFocusDuration, regretWindowSeconds, currentStreak, maxStreak, updatedAt)
           VALUES (1, @sacredToken, @reservationSignal, @defaultFocusDuration, @regretWindowSeconds, @currentStreak, @maxStreak, @updatedAt)
-        `).run(cfg);
+        `).run(sacredSeatConfig);
       }
 
       // 3. 恢复判例法典
-      if (Array.isArray(backup.precedentCases)) {
+      if (precedentCases) {
         db.prepare('DELETE FROM precedent_cases').run();
         const insertCase = db.prepare(`
           INSERT INTO precedent_cases (id, date, behavior, verdict, boundaryCondition, createdAt)
           VALUES (@id, @date, @behavior, @verdict, @boundaryCondition, @createdAt)
         `);
-        for (const c of backup.precedentCases) {
+        for (const c of precedentCases) {
           insertCase.run(c);
         }
       }
 
       // 4. 恢复演化状态与快照
-      if (backup.evolution) {
-        if (backup.evolution.state) {
-          db.prepare('UPDATE evolution_state SET activePointerIndex = ? WHERE id = 1').run(backup.evolution.state.activePointerIndex ?? 0);
+      if (evolution) {
+        if (evolution.state) {
+          db.prepare('UPDATE evolution_state SET activePointerIndex = ? WHERE id = 1').run(evolution.state.activePointerIndex ?? 0);
         }
-        if (Array.isArray(backup.evolution.snapshots)) {
+        if (evolution.snapshots) {
           db.prepare('DELETE FROM evolution_snapshots').run();
           const insertSnap = db.prepare(`
             INSERT INTO evolution_snapshots (slotIndex, id, version, timestamp, changelogNotes, isMajor, dataJson)
             VALUES (@slotIndex, @id, @version, @timestamp, @changelogNotes, @isMajor, @dataJson)
           `);
-          for (const s of backup.evolution.snapshots) {
+          for (const s of evolution.snapshots) {
             insertSnap.run({
               slotIndex: s.slotIndex,
               id: s.id,
@@ -210,13 +172,13 @@ router.post('/import', importLimiter, async (req: Request, res: Response) => {
       }
 
       // 5. 恢复流水日志
-      if (Array.isArray(backup.sessionLogs)) {
+      if (sessionLogs) {
         db.prepare('DELETE FROM focus_session_logs').run();
         const insertLog = db.prepare(`
           INSERT INTO focus_session_logs (id, type, startTime, endTime, targetDurationMinutes, actualDurationSeconds, status, focusContent, failureReason, note)
           VALUES (@id, @type, @startTime, @endTime, @targetDurationMinutes, @actualDurationSeconds, @status, @focusContent, @failureReason, @note)
         `);
-        for (const l of backup.sessionLogs) {
+        for (const l of sessionLogs) {
           insertLog.run({
             ...l,
             focusContent: l.focusContent ?? null,
@@ -234,9 +196,9 @@ router.post('/import', importLimiter, async (req: Request, res: Response) => {
         groupsRestored: groups.length,
         edgesRestored: edges.length,
         labelsRestored: labels.length,
-        snapshotsRestored: (backup.evolution?.snapshots || []).length,
-        logsRestored: (backup.sessionLogs || []).length,
-        casesRestored: (backup.precedentCases || []).length
+        snapshotsRestored: (evolution?.snapshots || []).length,
+        logsRestored: (sessionLogs || []).length,
+        casesRestored: (precedentCases || []).length
       };
     });
 

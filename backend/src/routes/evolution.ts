@@ -1,15 +1,16 @@
 import { Router, Request, Response } from 'express';
-import { db, getFullFocusTreeData, incrementSystemRevision } from '../db.js';
-import type { EvolutionSnapshot, EvolutionState, FocusTreeData } from '../types.js';
+import { db, getFullFocusTreeData, incrementSystemRevision, upsertFocusNode } from '../db.js';
+import type { EvolutionSnapshot, EvolutionState, FocusTreeData, EvolutionSnapshotRow, EvolutionStateRow } from '../types.js';
+import { validateFullBackupPayload } from '../utils/validators.js';
 
 const router = Router();
 
 // 获取演化状态（活跃指针与全部 5 槽位快照）
 router.get('/', (_req: Request, res: Response) => {
-  const stateRow = db.prepare('SELECT activePointerIndex FROM evolution_state WHERE id = 1').get() as { activePointerIndex: number } | undefined;
+  const stateRow = db.prepare('SELECT activePointerIndex FROM evolution_state WHERE id = 1').get() as Pick<EvolutionStateRow, 'activePointerIndex'> | undefined;
   const activePointerIndex = stateRow?.activePointerIndex ?? 0;
 
-  const rows = db.prepare('SELECT * FROM evolution_snapshots ORDER BY slotIndex ASC').all() as any[];
+  const rows = db.prepare('SELECT * FROM evolution_snapshots ORDER BY slotIndex ASC').all() as EvolutionSnapshotRow[];
   const snapshots: EvolutionSnapshot[] = rows.map(r => {
     const parsed = JSON.parse(r.dataJson);
     return {
@@ -48,9 +49,9 @@ router.post('/snapshot', (req: Request, res: Response) => {
 
   const snapshotTx = db.transaction(() => {
     // 1. 获取当前指针与现有快照
-    const stateRow = db.prepare('SELECT activePointerIndex FROM evolution_state WHERE id = 1').get() as { activePointerIndex: number };
+    const stateRow = db.prepare('SELECT activePointerIndex FROM evolution_state WHERE id = 1').get() as Pick<EvolutionStateRow, 'activePointerIndex'> | undefined;
     const currentPointer = stateRow ? stateRow.activePointerIndex : 0;
-    const existingSnapshots = db.prepare('SELECT * FROM evolution_snapshots ORDER BY slotIndex ASC').all() as any[];
+    const existingSnapshots = db.prepare('SELECT * FROM evolution_snapshots ORDER BY slotIndex ASC').all() as EvolutionSnapshotRow[];
 
     // 2. 计算新版本号
     const currentSnapshotRow = existingSnapshots.find(s => s.slotIndex === currentPointer);
@@ -108,9 +109,9 @@ router.post('/snapshot', (req: Request, res: Response) => {
     db.prepare('UPDATE evolution_state SET activePointerIndex = ? WHERE id = 1').run(targetSlotIndex);
     incrementSystemRevision();
 
-    return { 
+    return {
       version: nextVersion,
-      nextVersion, 
+      nextVersion,
       slotIndex: targetSlotIndex,
       targetSlotIndex,
       activePointerIndex: targetSlotIndex
@@ -129,7 +130,7 @@ router.post('/rollback', (req: Request, res: Response) => {
     return res.status(400).json({ error: 'targetSlotIndex must be between 0 and 4' });
   }
 
-  const snapshotRow = db.prepare('SELECT * FROM evolution_snapshots WHERE slotIndex = ?').get(targetSlotIndex) as any;
+  const snapshotRow = db.prepare('SELECT * FROM evolution_snapshots WHERE slotIndex = ?').get(targetSlotIndex) as EvolutionSnapshotRow | undefined;
   if (!snapshotRow) {
     return res.status(404).json({ error: `Snapshot not found at slot ${targetSlotIndex}` });
   }
@@ -163,52 +164,9 @@ router.post('/rollback', (req: Request, res: Response) => {
       });
     }
 
-    // 恢复节点
-    const insertNode = db.prepare(`
-      INSERT INTO focus_nodes (
-        id, code, name, groupId, triggerTime, triggerScene, hasExactTime, timeValueMinutes,
-        level, maxLevel, isLit, isFrozen, lastLitDate, previousLevel, positionX, positionY,
-        specInstruction, specFailCondition, specBenefitMechanism, specNotes, sortOrder
-      ) VALUES (
-        @id, @code, @name, @groupId, @triggerTime, @triggerScene, @hasExactTime, @timeValueMinutes,
-        @level, @maxLevel, @isLit, @isFrozen, @lastLitDate, @previousLevel, @positionX, @positionY,
-        @specInstruction, @specFailCondition, @specBenefitMechanism, @specNotes, @sortOrder
-      )
-    `);
+    // 恢复节点 (使用共享 upsertFocusNode 消除重复 SQL)
     for (let i = 0; i < snapshotData.nodes.length; i++) {
-      const n = snapshotData.nodes[i];
-      let hasExactTime = 0;
-      let timeValueMinutes: number | null = null;
-      if (n.triggerTime) {
-        const match = n.triggerTime.match(/^(\d{1,2})[:：](\d{2})$/);
-        if (match) {
-          hasExactTime = 1;
-          timeValueMinutes = parseInt(match[1], 10) * 60 + parseInt(match[2], 10);
-        }
-      }
-      insertNode.run({
-        id: n.id,
-        code: n.code,
-        name: n.name,
-        groupId: n.groupId,
-        triggerTime: n.triggerTime || '',
-        triggerScene: n.triggerScene || n.triggerTime || '全天候',
-        hasExactTime,
-        timeValueMinutes,
-        level: n.level ?? 0,
-        maxLevel: n.maxLevel ?? 0,
-        isLit: n.isLit ? 1 : 0,
-        isFrozen: n.isFrozen ? 1 : 0,
-        lastLitDate: n.lastLitDate ?? null,
-        previousLevel: n.previousLevel ?? 0,
-        positionX: n.position.x,
-        positionY: n.position.y,
-        specInstruction: n.specCard?.instruction || '',
-        specFailCondition: n.specCard?.failCondition || '',
-        specBenefitMechanism: n.specCard?.benefitMechanism || '',
-        specNotes: n.specCard?.notes ?? null,
-        sortOrder: i
-      });
+      upsertFocusNode(snapshotData.nodes[i], i);
     }
 
     // 恢复连线
@@ -257,8 +215,8 @@ router.post('/rollback', (req: Request, res: Response) => {
 router.get('/export', (_req: Request, res: Response) => {
   try {
     const liveTree = getFullFocusTreeData();
-    const evolutionState = db.prepare('SELECT * FROM evolution_state WHERE id = 1').get();
-    const evolutionSnapshots = db.prepare('SELECT * FROM evolution_snapshots ORDER BY slotIndex ASC').all();
+    const evolutionState = db.prepare('SELECT * FROM evolution_state WHERE id = 1').get() as EvolutionStateRow | undefined;
+    const evolutionSnapshots = db.prepare('SELECT * FROM evolution_snapshots ORDER BY slotIndex ASC').all() as EvolutionSnapshotRow[];
 
     const backupData = {
       schemaVersion: '1.0',
@@ -281,11 +239,16 @@ router.get('/export', (_req: Request, res: Response) => {
 
 // 仅导入国策架构数据（绝不影响专注流水与判例法典）
 router.post('/import', (req: Request, res: Response) => {
-  const backup = req.body;
-  const tree = backup?.focusTree || backup?.liveTree;
-  if (!backup || !tree) {
-    return res.status(400).json({ error: 'Invalid backup file format: missing focusTree or liveTree' });
+  const validation = validateFullBackupPayload(req.body);
+  if (!validation.success || !validation.data) {
+    return res.status(400).json({
+      error: 'INVALID_BACKUP_SCHEMA',
+      message: validation.error || '国策架构备份文件结构校验未通过',
+      details: validation.details
+    });
   }
+
+  const { tree, evolution } = validation.data;
 
   try {
     const importTx = db.transaction(() => {
@@ -316,51 +279,9 @@ router.post('/import', (req: Request, res: Response) => {
         });
       }
 
-      const insertNode = db.prepare(`
-        INSERT INTO focus_nodes (
-          id, code, name, groupId, triggerTime, triggerScene, hasExactTime, timeValueMinutes,
-          level, maxLevel, isLit, isFrozen, lastLitDate, previousLevel, positionX, positionY,
-          specInstruction, specFailCondition, specBenefitMechanism, specNotes, sortOrder
-        ) VALUES (
-          @id, @code, @name, @groupId, @triggerTime, @triggerScene, @hasExactTime, @timeValueMinutes,
-          @level, @maxLevel, @isLit, @isFrozen, @lastLitDate, @previousLevel, @positionX, @positionY,
-          @specInstruction, @specFailCondition, @specBenefitMechanism, @specNotes, @sortOrder
-        )
-      `);
+      // 恢复节点 (使用共享 upsertFocusNode 消除重复 SQL)
       for (let i = 0; i < nodes.length; i++) {
-        const n = nodes[i];
-        let hasExactTime = 0;
-        let timeValueMinutes: number | null = null;
-        if (n.triggerTime) {
-          const match = n.triggerTime.match(/^(\d{1,2})[:：](\d{2})$/);
-          if (match) {
-            hasExactTime = 1;
-            timeValueMinutes = parseInt(match[1], 10) * 60 + parseInt(match[2], 10);
-          }
-        }
-        insertNode.run({
-          id: n.id,
-          code: n.code,
-          name: n.name,
-          groupId: n.groupId,
-          triggerTime: n.triggerTime || '',
-          triggerScene: n.triggerScene || n.triggerTime || '全天候',
-          hasExactTime,
-          timeValueMinutes,
-          level: n.level ?? 0,
-          maxLevel: n.maxLevel ?? 0,
-          isLit: n.isLit ? 1 : 0,
-          isFrozen: n.isFrozen ? 1 : 0,
-          lastLitDate: n.lastLitDate ?? null,
-          previousLevel: n.previousLevel ?? 0,
-          positionX: n.position?.x ?? 0,
-          positionY: n.position?.y ?? 0,
-          specInstruction: n.specCard?.instruction || '',
-          specFailCondition: n.specCard?.failCondition || '',
-          specBenefitMechanism: n.specCard?.benefitMechanism || '',
-          specNotes: n.specCard?.notes ?? null,
-          sortOrder: i
-        });
+        upsertFocusNode(nodes[i], i);
       }
 
       const insertEdge = db.prepare(`
@@ -385,17 +306,17 @@ router.post('/import', (req: Request, res: Response) => {
       }
 
       // 2. 恢复演化状态与快照
-      if (backup.evolution) {
-        if (backup.evolution.state) {
-          db.prepare('UPDATE evolution_state SET activePointerIndex = ? WHERE id = 1').run(backup.evolution.state.activePointerIndex ?? 0);
+      if (evolution) {
+        if (evolution.state) {
+          db.prepare('UPDATE evolution_state SET activePointerIndex = ? WHERE id = 1').run(evolution.state.activePointerIndex ?? 0);
         }
-        if (Array.isArray(backup.evolution.snapshots)) {
+        if (Array.isArray(evolution.snapshots)) {
           db.prepare('DELETE FROM evolution_snapshots').run();
           const insertSnap = db.prepare(`
             INSERT INTO evolution_snapshots (slotIndex, id, version, timestamp, changelogNotes, isMajor, dataJson)
             VALUES (@slotIndex, @id, @version, @timestamp, @changelogNotes, @isMajor, @dataJson)
           `);
-          for (const s of backup.evolution.snapshots) {
+          for (const s of evolution.snapshots) {
             insertSnap.run({
               slotIndex: s.slotIndex,
               id: s.id,

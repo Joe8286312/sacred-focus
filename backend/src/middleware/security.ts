@@ -1,5 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import { isLocalOrTrusted, getClientIp } from './ipRules.js';
+import { db } from '../db.js';
 
 const HONEYPOT_PATHS = [
   '/.env',
@@ -17,8 +18,46 @@ const BANNED_UA_PATTERNS = [
   /zgrab/i
 ];
 
-// 内存级临时封禁黑名单 (IP -> 解封时间戳)
+// 内存级临时封禁高速缓存 (IP -> 解封时间戳)
 const ipBlacklist = new Map<string, number>();
+
+function banIp(ip: string, durationMs: number) {
+  const unbanTime = Date.now() + durationMs;
+  ipBlacklist.set(ip, unbanTime);
+  try {
+    db.prepare("INSERT OR REPLACE INTO system_meta (key, value) VALUES (?, ?)")
+      .run(`ip_ban:${ip}`, String(unbanTime));
+  } catch (e) {
+    console.error('[Sacred Focus Security] Failed to persist IP ban:', e);
+  }
+}
+
+function isIpBanned(ip: string): boolean {
+  const now = Date.now();
+  const cachedTime = ipBlacklist.get(ip);
+  if (cachedTime !== undefined) {
+    if (now < cachedTime) return true;
+    ipBlacklist.delete(ip);
+  }
+
+  try {
+    const row = db.prepare("SELECT value FROM system_meta WHERE key = ?")
+      .get(`ip_ban:${ip}`) as { value: string } | undefined;
+    if (row && row.value) {
+      const dbUnban = parseInt(row.value, 10);
+      if (!isNaN(dbUnban) && now < dbUnban) {
+        ipBlacklist.set(ip, dbUnban);
+        return true;
+      } else {
+        db.prepare("DELETE FROM system_meta WHERE key = ?").run(`ip_ban:${ip}`);
+      }
+    }
+  } catch (e) {
+    // 降级使用内存状态
+  }
+
+  return false;
+}
 
 export function securityFilter(req: Request, res: Response, next: NextFunction) {
   // 本机与可信内网完全放行
@@ -27,25 +66,20 @@ export function securityFilter(req: Request, res: Response, next: NextFunction) 
   }
 
   const clientIp = getClientIp(req);
-  const now = Date.now();
 
-  // 1. 检查黑名单
-  const unbanTime = ipBlacklist.get(clientIp);
-  if (unbanTime) {
-    if (now < unbanTime) {
-      return res.status(403).json({ error: 'ACCESS_DENIED', message: '由于异常网络探测行为，该 IP 已被安全系统临时封锁' });
-    } else {
-      ipBlacklist.delete(clientIp);
-    }
+  // 1. 检查黑名单（持久化 + 缓存）
+  if (isIpBanned(clientIp)) {
+    return res.status(403).json({ error: 'ACCESS_DENIED', message: '由于异常网络探测行为，该 IP 已被安全系统临时封锁' });
   }
 
-  // 2. 蜜罐路径拦截与封禁
+  // 2. 蜜罐路径拦截与持久化封禁
   const lowerPath = req.path.toLowerCase();
   if (HONEYPOT_PATHS.some(hp => lowerPath.startsWith(hp))) {
     console.warn(`[Sacred Focus Security] Honeypot trap triggered by ${clientIp} on path ${req.path}`);
-    ipBlacklist.set(clientIp, now + 72 * 60 * 60 * 1000); // 封禁 72 小时
+    banIp(clientIp, 72 * 60 * 60 * 1000); // 封禁 72 小时
     return res.status(403).json({ error: 'SECURITY_TRAP_TRIGGERED' });
   }
+
 
   // 3. 爬虫特征 User-Agent 过滤
   const ua = req.headers['user-agent'] || '';

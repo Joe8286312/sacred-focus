@@ -1,14 +1,15 @@
 import { Router, Request, Response } from 'express';
-import { 
-  db, 
-  getFullFocusTreeData, 
-  getBusinessDay, 
-  getPreviousBusinessDay, 
+import {
+  db,
+  getFullFocusTreeData,
+  getBusinessDay,
+  getPreviousBusinessDay,
   settleFocusTreeDailyState,
   getSystemRevision,
-  incrementSystemRevision
+  incrementSystemRevision,
+  upsertFocusNode
 } from '../db.js';
-import type { FocusNode, FocusEdge, FocusGroup, FocusLabel } from '../types.js';
+import type { FocusNode, FocusEdge, FocusGroup, FocusLabel, FocusNodeRow, FocusGroupRow } from '../types.js';
 
 const router = Router();
 
@@ -71,54 +72,11 @@ router.put('/', (req: Request, res: Response) => {
       }
     }
 
-    // 2. 同步节点
+    // 2. 同步节点 (使用共享 upsertFocusNode 治理重复 SQL)
     if (nodes) {
       db.prepare('DELETE FROM focus_nodes').run();
-      const insertNode = db.prepare(`
-        INSERT INTO focus_nodes (
-          id, code, name, groupId, triggerTime, triggerScene, hasExactTime, timeValueMinutes,
-          level, maxLevel, isLit, isFrozen, lastLitDate, previousLevel, positionX, positionY,
-          specInstruction, specFailCondition, specBenefitMechanism, specNotes, sortOrder
-        ) VALUES (
-          @id, @code, @name, @groupId, @triggerTime, @triggerScene, @hasExactTime, @timeValueMinutes,
-          @level, @maxLevel, @isLit, @isFrozen, @lastLitDate, @previousLevel, @positionX, @positionY,
-          @specInstruction, @specFailCondition, @specBenefitMechanism, @specNotes, @sortOrder
-        )
-      `);
       for (let i = 0; i < nodes.length; i++) {
-        const n = nodes[i];
-        let hasExactTime = 0;
-        let timeValueMinutes: number | null = null;
-        if (n.triggerTime) {
-          const match = n.triggerTime.match(/^(\d{1,2})[:：](\d{2})$/);
-          if (match) {
-            hasExactTime = 1;
-            timeValueMinutes = parseInt(match[1], 10) * 60 + parseInt(match[2], 10);
-          }
-        }
-        insertNode.run({
-          id: n.id,
-          code: n.code,
-          name: n.name,
-          groupId: n.groupId,
-          triggerTime: n.triggerTime || '',
-          triggerScene: n.triggerScene || n.triggerTime || '全天候',
-          hasExactTime,
-          timeValueMinutes,
-          level: n.level ?? 0,
-          maxLevel: n.maxLevel ?? 0,
-          isLit: n.isLit ? 1 : 0,
-          isFrozen: n.isFrozen ? 1 : 0,
-          lastLitDate: n.lastLitDate ?? null,
-          previousLevel: n.previousLevel ?? 0,
-          positionX: n.position.x,
-          positionY: n.position.y,
-          specInstruction: n.specCard?.instruction || '',
-          specFailCondition: n.specCard?.failCondition || '',
-          specBenefitMechanism: n.specCard?.benefitMechanism || '',
-          specNotes: n.specCard?.notes ?? null,
-          sortOrder: i
-        });
+        upsertFocusNode(nodes[i], i);
       }
     }
 
@@ -154,8 +112,17 @@ router.put('/', (req: Request, res: Response) => {
     incrementSystemRevision();
   });
 
-  syncTx();
-  res.json({ message: 'Focus tree synchronized successfully', revision: getSystemRevision(), data: getFullFocusTreeData() });
+  try {
+    syncTx();
+    res.json({ message: 'Focus tree synchronized successfully', revision: getSystemRevision(), data: getFullFocusTreeData() });
+  } catch (err: any) {
+    console.error('Focus tree sync error:', err);
+    res.status(500).json({
+      error: 'SYNC_TRANSACTION_FAILED',
+      message: '国策树同步事务执行失败，数据库约束或数据格式异常',
+      details: err?.message || String(err)
+    });
+  }
 });
 
 // 点亮/反悔取消点亮节点（基于连续天数与凌晨 4 点业务日状态机）
@@ -277,69 +244,15 @@ router.post('/nodes', (req: Request, res: Response) => {
   const maxOrderRow = db.prepare('SELECT MAX(sortOrder) as maxOrder FROM focus_nodes').get() as { maxOrder: number | null };
   const sortOrder = (maxOrderRow?.maxOrder ?? -1) + 1;
 
-  let finalTime: string | null = null;
-  let hasExactTime = 0;
-  let timeValueMinutes: number | null = null;
-  if (n.triggerTime) {
-    const match = n.triggerTime.match(/^(\d{1,2})[:：](\d{2})$/);
-    if (match) {
-      const h = parseInt(match[1], 10);
-      const m = parseInt(match[2], 10);
-      finalTime = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
-      hasExactTime = 1;
-      timeValueMinutes = h * 60 + m;
-    }
-  }
-  const finalScene = n.triggerScene?.trim() || finalTime || '全天候';
-
-  db.prepare(`
-    INSERT INTO focus_nodes (
-      id, code, name, groupId, triggerTime, triggerScene, hasExactTime, timeValueMinutes,
-      level, maxLevel, isLit, isFrozen, lastLitDate, previousLevel, positionX, positionY,
-      specInstruction, specFailCondition, specBenefitMechanism, specNotes, sortOrder
-    ) VALUES (
-      @id, @code, @name, @groupId, @triggerTime, @triggerScene, @hasExactTime, @timeValueMinutes,
-      @level, @maxLevel, @isLit, @isFrozen, @lastLitDate, @previousLevel, @positionX, @positionY,
-      @specInstruction, @specFailCondition, @specBenefitMechanism, @specNotes, @sortOrder
-    )
-  `).run({
-    id: n.id,
-    code: n.code,
-    name: n.name,
-    groupId: n.groupId || null,
-    triggerTime: finalTime || '',
-    triggerScene: finalScene,
-    hasExactTime,
-    timeValueMinutes,
-    level: n.level ?? 0,
-    maxLevel: n.maxLevel ?? 0,
-    isLit: n.isLit ? 1 : 0,
-    isFrozen: n.isFrozen ? 1 : 0,
-    lastLitDate: n.lastLitDate ?? null,
-    previousLevel: n.previousLevel ?? 0,
-    positionX: n.position?.x ?? 0,
-    positionY: n.position?.y ?? 0,
-    specInstruction: n.specCard?.instruction || '',
-    specFailCondition: n.specCard?.failCondition || '',
-    specBenefitMechanism: n.specCard?.benefitMechanism || '',
-    specNotes: n.specCard?.notes ?? null,
-    sortOrder
-  });
-
-  res.status(201).json({
-    ...n,
-    triggerTime: finalTime,
-    triggerScene: finalScene,
-    hasExactTime: Boolean(hasExactTime),
-    timeValueMinutes
-  });
+  const savedNode = upsertFocusNode(n, sortOrder);
+  res.status(201).json(savedNode);
 });
 
 router.put('/nodes/:id', (req: Request, res: Response) => {
   const { id } = req.params;
   const n = req.body as Partial<FocusNode>;
 
-  const current = db.prepare('SELECT * FROM focus_nodes WHERE id = ?').get(id) as any;
+  const current = db.prepare('SELECT * FROM focus_nodes WHERE id = ?').get(id) as FocusNodeRow | undefined;
   if (!current) {
     return res.status(404).json({ error: 'Node not found' });
   }
@@ -369,8 +282,8 @@ router.put('/nodes/:id', (req: Request, res: Response) => {
     }
   }
 
-  const finalScene = n.triggerScene !== undefined 
-    ? (n.triggerScene.trim() || finalTime || '全天候') 
+  const finalScene = n.triggerScene !== undefined
+    ? (n.triggerScene.trim() || finalTime || '全天候')
     : (current.triggerScene || current.triggerTime || '全天候');
 
   db.prepare(`
@@ -466,7 +379,7 @@ router.put('/groups/:id', (req: Request, res: Response) => {
   const { id } = req.params;
   const updates = req.body as Partial<FocusGroup>;
 
-  const current = db.prepare('SELECT * FROM focus_groups WHERE id = ?').get(id) as any;
+  const current = db.prepare('SELECT * FROM focus_groups WHERE id = ?').get(id) as FocusGroupRow | undefined;
   if (!current) {
     return res.status(404).json({ error: 'Group not found' });
   }

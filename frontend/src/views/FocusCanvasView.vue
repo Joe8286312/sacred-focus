@@ -86,10 +86,10 @@ const forceResetPositions = ref(false);
 
 function takeSnapshot(): CanvasSnapshot {
   return {
-    nodes: JSON.parse(JSON.stringify(draftNodes.value)),
-    groups: JSON.parse(JSON.stringify(draftGroups.value)),
-    edges: JSON.parse(JSON.stringify(draftEdges.value)),
-    labels: JSON.parse(JSON.stringify(draftLabels.value))
+    nodes: structuredClone(draftNodes.value),
+    groups: structuredClone(draftGroups.value),
+    edges: structuredClone(draftEdges.value),
+    labels: structuredClone(draftLabels.value)
   };
 }
 
@@ -254,6 +254,15 @@ function syncToFlow() {
   }));
 }
 
+// 单值状态变更快速同步（模式切换、手柄激活、高亮节点）
+watch(
+  [isEditMode, activeConnectingHandle, highlightedNodeId],
+  () => {
+    syncToFlow();
+  }
+);
+
+// 底层树数据与草稿数组深层监听（使用 flush: 'post' 批处理消减重绘颠簸）
 watch(
   [
     () => store.nodes, 
@@ -263,14 +272,12 @@ watch(
     draftNodes, 
     draftGroups, 
     draftEdges, 
-    draftLabels,
-    isEditMode, 
-    activeConnectingHandle
+    draftLabels
   ], 
   () => {
     syncToFlow();
   }, 
-  { deep: true }
+  { deep: true, flush: 'post' }
 );
 
 // -----------------------------------------------------------------------------
@@ -595,23 +602,25 @@ function initiateSaveLayout() {
 // 执行全量覆盖持久化保存
 async function executeSaveLayout() {
   isAuditModalOpen.value = false;
-  await store.saveWholeTree({
+  const success = await store.saveWholeTree({
     nodes: draftNodes.value,
     groups: draftGroups.value,
     edges: draftEdges.value,
     labels: draftLabels.value
   });
-  // 成功保存后清空草稿并退出编辑模式
-  historyStack.value = [];
-  redoStack.value = [];
-  dragStartSnapshot = null;
-  draftNodes.value = [];
-  draftGroups.value = [];
-  draftEdges.value = [];
-  draftLabels.value = [];
-  isEditMode.value = false;
-  activeConnectingHandle.value = null;
-  syncToFlow();
+  if (success) {
+    // 成功保存后清空草稿并退出编辑模式
+    historyStack.value = [];
+    redoStack.value = [];
+    dragStartSnapshot = null;
+    draftNodes.value = [];
+    draftGroups.value = [];
+    draftEdges.value = [];
+    draftLabels.value = [];
+    isEditMode.value = false;
+    activeConnectingHandle.value = null;
+    syncToFlow();
+  }
 }
 
 function handleKeyDown(e: KeyboardEvent) {
@@ -987,6 +996,16 @@ onUnmounted(() => {
       </div>
     </div>
 
+    <!-- 并发版本冲突非阻塞告警横幅 -->
+    <Transition name="fade-banner">
+      <div v-if="store.versionConflictWarning" class="conflict-alert-banner font-mono">
+        <span class="conflict-dot"></span>
+        <span class="conflict-text">【并发冲突提示】检测到云端已被其他终端修改。为保护数据安全，请刷新同步最新版本！</span>
+        <button class="btn-conflict-refresh" @click="store.fetchTree(); store.dismissConflictWarning();">立即刷新</button>
+        <button class="btn-conflict-close" @click="store.dismissConflictWarning()">关闭</button>
+      </div>
+    </Transition>
+
     <!-- 两步连线提示条 -->
     <Transition name="slide-banner">
       <div v-if="activeConnectingHandle" class="connecting-hint-banner">
@@ -1291,6 +1310,78 @@ onUnmounted(() => {
   background: var(--bg-tertiary);
   color: var(--color-danger);
   border-color: rgba(244, 63, 94, 0.35);
+}
+
+/* 并发版本冲突非阻塞告警横幅 */
+.conflict-alert-banner {
+  position: absolute;
+  top: 64px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(26, 16, 16, 0.94);
+  border: 1px solid rgba(239, 68, 68, 0.5);
+  box-shadow: 0 4px 24px rgba(239, 68, 68, 0.28);
+  padding: 8px 18px;
+  border-radius: var(--radius-full);
+  z-index: 160;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 13px;
+  color: #fca5a5;
+  backdrop-filter: blur(12px);
+}
+
+.conflict-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #ef4444;
+  box-shadow: 0 0 10px #ef4444;
+  animation: pulse-dot 0.8s infinite alternate;
+}
+
+.btn-conflict-refresh {
+  background: #dc2626;
+  border: none;
+  color: #fff;
+  padding: 4px 12px;
+  border-radius: 4px;
+  font-size: 12px;
+  cursor: pointer;
+  font-weight: 500;
+  transition: background 0.2s;
+}
+
+.btn-conflict-refresh:hover {
+  background: #b91c1c;
+}
+
+.btn-conflict-close {
+  background: transparent;
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  color: #fca5a5;
+  padding: 4px 10px;
+  border-radius: 4px;
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.btn-conflict-close:hover {
+  background: rgba(239, 68, 68, 0.15);
+  color: #fff;
+}
+
+.fade-banner-enter-active,
+.fade-banner-leave-active {
+  transition: opacity 0.25s ease, transform 0.25s ease;
+}
+
+.fade-banner-enter-from,
+.fade-banner-leave-to {
+  opacity: 0;
+  transform: translate(-50%, -10px);
 }
 
 /* 连线提示条 */

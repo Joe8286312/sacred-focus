@@ -1,9 +1,12 @@
 import { Router, Request, Response } from 'express';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
+import crypto from 'crypto';
 import { config } from '../config.js';
+
 import { db } from '../db.js';
 import { loginLimiter } from '../middleware/rateLimiter.js';
+import type { AuthJwtPayload } from '../types.js';
 
 const router = Router();
 
@@ -46,9 +49,11 @@ router.post('/login', loginLimiter, (req: Request, res: Response) => {
     });
   }
 
-  // 签发 30 天有效期的 JWT
+  // 签发 30 天有效期的 JWT，附加唯一 jti 防重放与支持主动吊销
+  const jti = crypto.randomUUID();
+
   const token = jwt.sign(
-    { role: 'admin', timestamp: Date.now() },
+    { role: 'admin', jti, timestamp: Date.now() },
     config.jwtSecret,
     { expiresIn: '30d' }
   );
@@ -85,17 +90,46 @@ router.get('/status', (req: Request, res: Response) => {
   }
 
   try {
-    const decoded = jwt.verify(token, config.jwtSecret);
+    const decoded = jwt.verify(token, config.jwtSecret) as AuthJwtPayload;
+    if (decoded?.jti) {
+      const revoked = db.prepare("SELECT value FROM system_meta WHERE key = ?")
+        .get(`revoked_jti:${decoded.jti}`) as { value: string } | undefined;
+      if (revoked) {
+        const exp = parseInt(revoked.value, 10);
+        if (isNaN(exp) || Date.now() < exp) {
+          return res.json({ isAuthenticated: false });
+        }
+      }
+    }
     return res.json({ isAuthenticated: true, user: decoded });
   } catch (e) {
     return res.json({ isAuthenticated: false });
   }
 });
 
-// 安全登出
-router.post('/logout', (_req: Request, res: Response) => {
+// 安全登出（清理 Cookie 并持久化吊销 JWT jti）
+router.post('/logout', (req: Request, res: Response) => {
+  const authHeader = req.headers['authorization'] || '';
+  const headerToken = authHeader.replace(/^Bearer\s+/i, '').trim() || (req.headers['x-access-token'] as string);
+  const cookieToken = req.cookies ? req.cookies['sf_token'] : undefined;
+  const token = headerToken || cookieToken;
+
+  if (token) {
+    try {
+      const decoded = jwt.decode(token) as { jti?: string; exp?: number } | null;
+      if (decoded?.jti) {
+        const exp = decoded.exp ? decoded.exp * 1000 : Date.now() + 30 * 24 * 60 * 60 * 1000;
+        db.prepare("INSERT OR REPLACE INTO system_meta (key, value) VALUES (?, ?)")
+          .run(`revoked_jti:${decoded.jti}`, String(exp));
+      }
+    } catch (e) {
+      // 忽略解析错误
+    }
+  }
+
   res.clearCookie('sf_token');
   res.json({ success: true, message: '已安全登出自控中枢' });
 });
+
 
 export default router;
