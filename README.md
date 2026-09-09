@@ -1,10 +1,6 @@
 # 📐 Sacred Focus (国策树与神圣座位)
 
 <p align="center">
-  <img src="frontend/public/favicon.svg" alt="Sacred Focus Logo" width="80" height="80" />
-</p>
-
-<p align="center">
   <strong>基于自控工程学体系构建的跨端个人自控与全域效能管理中枢</strong><br>
   融汇 <strong>CTDP（链式时延协议）</strong> 与 <strong>RSIP（递归稳态迭代协议）</strong> 双核心引擎
 </p>
