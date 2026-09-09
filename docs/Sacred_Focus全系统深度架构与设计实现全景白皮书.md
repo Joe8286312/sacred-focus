@@ -1,8 +1,8 @@
 # 🏛️ Sacred Focus（神圣座位与国策树）全系统深度架构与设计实现全景白皮书
 
 > **文档定位**：Sacred Focus 系统的权威级全景技术设计与架构实现白皮书。全面涵盖系统底层哲学、宏微观交互状态机、前后端模块架构、高对比度双主题设计规范、Better-SQLite3 WAL 持久化设计及灾备演化体系。  
-> **工程版本**：v1.2.0 (Milestone 1 ~ Milestone 8 完整闭环版)  
-> **基准日期**：2026年9月7日  
+> **工程版本**：v2.0.0 (Milestone 1 ~ Milestone 9 闭环与生产级安全版)  
+> **基准日期**：2026年9月9日  
 
 ---
 
@@ -19,9 +19,9 @@
   - [2.3 全局目录与代码工程布局](#23-全局目录与代码工程布局)
 - [三、 数据库与持久化中枢深度设计](#三-数据库与持久化中枢深度设计)
   - [3.1 SQLite WAL 模式与并发事务安全性](#31-sqlite-wal-模式与并发事务安全性)
-  - [3.2 九大核心数据表 DDL 规范与关联语义](#32-九大核心数据表-ddl-规范与关联语义)
+  - [3.2 十大核心数据表 DDL 规范与关联语义](#32-十大核心数据表-ddl-规范与关联语义)
   - [3.3 数据库平滑升级机制（Schema Migration）](#33-数据库平滑升级机制schema-migration)
-  - [3.4 演化快照与系统全量 JSON 冷备份还原机制](#34-演化快照与系统全量-json-冷备份还原机制)
+  - [3.4 演化快照与全系统整机热备恢复机制](#34-演化快照与全系统整机热备恢复机制)
 - [四、 核心模块交互逻辑与状态机实现拆解](#四-核心模块交互逻辑与状态机实现拆解)
   - [4.1 模块一：神圣座位（CTDP 微观专注防御引擎）](#41-模块一神圣座位ctdp-微观专注防御引擎)
     - [4.1.1 核心五态运行状态机](#411-核心五态运行状态机)
@@ -164,9 +164,11 @@ Sacred Focus 并非一款普通的待办工具或番茄钟，而是一套**基�
 ┌────────────────────────────────────────────────────────────────────────┐
 │                        后端服务层 (Backend Service)                     │
 │                                                                        │
-│   Node.js (LTS) + TypeScript 5.7+ (tsx 运行时零编译热重启)              │
-│   ├─ Web 框架: Express 4.21+ (模块化路由: seat, focusTree, cases, evo)  │
-│   ├─ 核心算法: 04:00 跨日判定引擎、SemVer 语义推演、5槽位环形缓冲      │
+│   Node.js (LTS) + TypeScript 5.7+ (Express 4.21+)                      │
+│   ├─ 生产安全防护: Helmet CSP 标头 + 细粒度分级限流 (Rate Limiter)      │
+│   ├─ 身份鉴权中枢: JWT 双轨验证 (HttpOnly Cookie + Bearer) + bcryptjs    │
+│   ├─ 智能边界分流: isLocalTrustedIP 本地与局域网免检通道                │
+│   ├─ 核心业务算法: 04:00 跨日判定引擎、SemVer 语义推演、5槽位环形缓冲  │
 │   └─ 数据库驱动: better-sqlite3 11.8+ (C++ 原生绑定，极速同步执行)     │
 └───────────────────────────────────┬────────────────────────────────────┘
                                     │ Direct Sync Native Bindings
@@ -177,6 +179,7 @@ Sacred Focus 并非一款普通的待办工具或番茄钟，而是一套**基�
 │   嵌入式 SQLite 3 (backend/data/app.db)                                 │
 │   ├─ 运行模式: PRAGMA journal_mode = WAL (读写完全并发零锁死)          │
 │   ├─ 完整性约束: PRAGMA foreign_keys = ON (外键级联与置空保护)         │
+│   ├─ 乐观并发锁: system_meta 表维护 system_revision 原子自增版本号     │
 │   └─ 迁移中枢: PRAGMA table_info 启动时动态增量平滑迁移               │
 └────────────────────────────────────────────────────────────────────────┘
 ```
@@ -185,9 +188,10 @@ Sacred Focus 并非一款普通的待办工具或番茄钟，而是一套**基�
 
 ### 2.2 单机本地优先（Local-First）与分层通信架构
 
-1. **零外部网络依赖**：全站所有业务逻辑、数据持久化与静态资产均运行于本地环境。没有第三方云服务登录或远程验证，即便断网也能秒级响应；
+1. **零外部网络依赖**：全站所有业务逻辑、数据持久化与静态资产均可在本地环境独立运行。没有第三方云服务登录或远程验证，即便断网也能秒级响应；
 2. **0ms 乐观更新（Optimistic UI）**：对于预约切换、后悔药退出、节点点亮等高频操作，前端在触发瞬间即同步切换内存状态更新界面，随后通过异步非阻塞 HTTP 请求与 SQLite 同步，主线程体验极为流畅；
-3. **PWA 离线视窗**：配备 Manifest 与 Service Worker，支持“安装”至桌面或手机主屏，剥离浏览器地址栏与标签页外壳，实现类似原生桌面应用的专注质感。
+3. **PWA 离线视窗**：配备 Manifest 与 Service Worker，支持“安装”至桌面或手机主屏，剥离浏览器地址栏与标签页外壳，实现类似原生桌面应用的专注质感；
+4. **生产级六道纵深安全防线**：在暴露于局域网或公网时，全面启用 Helmet CSP、JWT 双轨鉴权、细粒度分级限流、可信内网免检白名单与全系统整机热备（详见 [Sacred_Focus全系统生产级安全加固与鉴权防护方案.md](file:///d:/Codes/Projects/sacred-focus/docs/Sacred_Focus全系统生产级安全加固与鉴权防护方案.md)）。
 
 ---
 
@@ -198,15 +202,25 @@ sacred-focus/
 ├── backend/                         # 后端服务工程
 │   ├── data/                        # SQLite 物理数据库目录 (app.db)
 │   ├── src/
+│   │   ├── middleware/              # 生产级安全防护中间件管道
+│   │   │   ├── auth.ts              # JWT 鉴权与管理员会话守卫
+│   │   │   ├── ipRules.ts           # 本地/局域网受信任网段智能免检
+│   │   │   ├── rateLimiter.ts       # 细粒度分级请求限流 (登录/导出/导入/通用)
+│   │   │   └── security.ts          # Helmet 响应头与爬虫蜜罐诱捕
 │   │   ├── routes/
+│   │   │   ├── auth.ts              # 身份核验、Cookie/Token 签发与登出
 │   │   │   ├── cases.ts             # 判例法典 REST API
-│   │   │   ├── evolution.ts         # 演化日志、快照回滚与系统冷备恢复
-│   │   │   ├── focusTree.ts         # 国策树节点/连线/分组 CRUD 与 04:00 结算审计
-│   │   │   └── sacredSeat.ts        # 神圣座位配置、专注流水日志与连胜计算
-│   │   ├── config.ts                # 服务端口与数据路径配置
-│   │   ├── db.ts                    # Better-SQLite3 初始化、建表与迁移脚本
-│   │   ├── index.ts                 # Express 服务端入口
+│   │   │   ├── evolution.ts         # 演化日志、快照回滚与架构独立导出导入
+│   │   │   ├── focusTree.ts         # 国策树节点/连线/分组/标签 CRUD 与 04:00 结算审计
+│   │   │   ├── sacredSeat.ts        # 神圣座位配置、专注流水日志与连胜计算
+│   │   │   ├── sync.ts              # 原子系统版本号与静默协同探针
+│   │   │   └── system.ts            # 全系统整机镜像导出与预热备灾备恢复
+│   │   ├── config.ts                # 服务端口、JWT密钥、安全哈希与数据路径配置
+│   │   ├── db.ts                    # Better-SQLite3 初始化、建表与增量迁移脚本
+│   │   ├── server.ts                # Express 生产级服务端入口
 │   │   └── types.ts                 # 后端全量 TypeScript 核心接口声明
+│   ├── .env.example                 # 环境变量模板
+│   ├── package.json
 │   └── tsconfig.json
 ├── frontend/                        # 前端单页面工程
 │   ├── src/
@@ -214,19 +228,26 @@ sacred-focus/
 │   │   │   ├── canvas/              # 国策树画布核心子组件
 │   │   │   │   ├── DeletionAuditModal.vue     # 集中删除影响审计弹窗
 │   │   │   │   ├── EvolutionModal.vue         # 5 槽位版本演化与回滚模态框
-│   │   │   │   ├── FocusGroupFrame.vue        # 画布分组外框组件
+│   │   │   │   ├── FocusGroupFrame.vue        # 画布分组外框容器组件
+│   │   │   │   ├── FocusLabelCard.vue         # 画布极简流转说明标签
 │   │   │   │   ├── FocusNodeCard.vue          # 画布国策节点卡片
 │   │   │   │   ├── GroupEditModal.vue         # 分组创建/编辑模态框
+│   │   │   │   ├── LabelEditModal.vue         # 说明标签创建/编辑模态框
 │   │   │   │   ├── NodeEditModal.vue          # 节点创建/编辑模态框
 │   │   │   │   ├── NodeSpecModal.vue          # 节点执行规范详情卡
 │   │   │   │   ├── OrthogonalEdge.vue         # 曼哈顿正交避障有向引线
-│   │   │   │   └── ReconstructPromptModal.vue # 04:00 结算崩溃重构引导弹窗
+│   │   │   │   └── ReconstructPromptModal.vue # 04:00 结算断签重构引导弹窗
+│   │   │   ├── common/              # 全局通用模态框
+│   │   │   │   ├── ResetConfirmModal.vue      # 系统重置安全口令门禁
+│   │   │   │   └── SystemMigrationModal.vue   # 跨设备全系统数据迁移中枢
 │   │   │   └── seat/                # 神圣座位核心子组件
+│   │   │       ├── FocusHeatmap.vue           # 52 周全周期专注效能热力图
 │   │   │       ├── FocusHistoryModal.vue      # 专注全量历史档案模态框
+│   │   │       ├── FocusSessionLogCard.vue    # 历史流水单卡详情
 │   │   │       ├── PrecedentCaseModal.vue     # 专注完成/下必为例结算弹窗
 │   │   │       ├── SeatSettingsModal.vue      # 神圣座位个性化设置弹窗
-│   │   │       └── StreakWarningModal.vue     # 破坏性中断清零严正警告弹窗
-│   │   ├── router/index.ts          # 路由映射表与全局前置守卫
+│   │   │       └── StreakWarningModal.vue     # 违规中断清零严正警告弹窗
+│   │   ├── router/index.ts          # 路由映射表、专注态隔离与身份前置守卫
 │   │   ├── stores/
 │   │   │   ├── focusTree.ts         # 国策树核心 Pinia Store
 │   │   │   └── sacredSeat.ts        # 神圣座位与全屏沉浸 Pinia Store
@@ -235,17 +256,25 @@ sacred-focus/
 │   │   │   └── variables.css        # 双主题高对比 CSS 变量与设计令牌
 │   │   ├── types/index.ts           # 前端 TypeScript 接口类型定义
 │   │   ├── utils/
+│   │   │   ├── api.ts               # Axios/Fetch 统一封装与 Bearer Token 注入
 │   │   │   ├── audio.ts             # 极简纯净 Chime 鸣响合成器
 │   │   │   └── time.ts              # 紧凑时长 formatCompactDuration 算法
 │   │   ├── views/
-│   │   │   ├── CaseLawView.vue      # 判例法典主视图
-│   │   │   ├── FocusCanvasView.vue  # 国策树画布主视图
-│   │   │   ├── FocusListView.vue    # 国策列表主视图
-│   │   │   └── SacredSeatView.vue   # 神圣座位主视图
+│   │   │   ├── CaseLawView.vue      # 判例法典主视图 (行内二次确认)
+│   │   │   ├── FocusCanvasView.vue  # 国策树画布主视图 (展示/编辑双模)
+│   │   │   ├── FocusListView.vue    # 国策列表主视图 (复合排序/智能沉底)
+│   │   │   ├── LoginView.vue        # 管理员极简双模身份认证页
+│   │   │   └── SacredSeatView.vue   # 神圣座位主视图 (全屏沉浸/热力图)
 │   │   ├── App.vue                  # 全局顶栏（专注隔离）、主题中枢
 │   │   └── main.ts                  # 前端启动挂载入口
+│   ├── index.html
+│   ├── package.json
+│   ├── tsconfig.json
 │   └── vite.config.ts               # Vite 6 与 PWA 配置
-└── docs/                            # 权威技术设计文档库
+├── docs/                            # 权威技术架构与运维规范库
+├── scratch/                         # 自动化数据重置与验证脚本
+├── package.json                     # 根目录并发联调与编译脚本
+└── README.md
 ```
 
 ---
@@ -271,7 +300,7 @@ db.pragma('foreign_keys = ON');
 
 ---
 
-### 3.2 九大核心数据表 DDL 规范与关联语义
+### 3.2 十大核心数据表 DDL 规范与关联语义
 
 ```sql
 -- 1. 神圣座位全局配置表 (单行固定记录)
@@ -359,7 +388,15 @@ CREATE TABLE IF NOT EXISTS focus_edges (
   style TEXT NOT NULL CHECK(style IN ('SOLID', 'DASHED')) -- 实线强依赖 / 虚线弱参考
 );
 
--- 7. 5 槽位版本演化快照表 (防震荡环形缓冲区)
+-- 7. 纯文本说明标签表 (画布极简流转文字说明)
+CREATE TABLE IF NOT EXISTS focus_labels (
+  id TEXT PRIMARY KEY,
+  text TEXT NOT NULL,                          -- 说明文本 (如: "专注间歇 15m")
+  positionX REAL NOT NULL DEFAULT 0,          -- 画布绝对 X 坐标
+  positionY REAL NOT NULL DEFAULT 0           -- 画布绝对 Y 坐标
+);
+
+-- 8. 5 槽位版本演化快照表 (防震荡环形缓冲区)
 CREATE TABLE IF NOT EXISTS evolution_snapshots (
   slotIndex INTEGER PRIMARY KEY CHECK (slotIndex >= 0 AND slotIndex <= 4),
   id TEXT NOT NULL,                            -- 快照 UUID
@@ -367,18 +404,18 @@ CREATE TABLE IF NOT EXISTS evolution_snapshots (
   timestamp TEXT NOT NULL,                     -- 产生时间
   changelogNotes TEXT NOT NULL,                -- 演化变更日志内容
   isMajor INTEGER NOT NULL DEFAULT 0,          -- 是否重大版本变更
-  dataJson TEXT NOT NULL                       -- 包含 groups, nodes, edges 的全景 JSON
+  dataJson TEXT NOT NULL                       -- 包含 groups, nodes, edges, labels 的全景 JSON
 );
 
--- 8. 演化活跃指针状态表 (单行记录游标)
+-- 9. 演化活跃指针状态表 (单行记录游标)
 CREATE TABLE IF NOT EXISTS evolution_state (
   id INTEGER PRIMARY KEY CHECK (id = 1),
   activePointerIndex INTEGER NOT NULL DEFAULT 0 -- 当前生效的 Slot 索引 (0~4)
 );
 
--- 9. 系统全局元数据与跨日审计打标表
+-- 10. 系统全局元数据与协同版本控制表
 CREATE TABLE IF NOT EXISTS system_meta (
-  key TEXT PRIMARY KEY,                        -- 如 "lastAuditBusinessDate"
+  key TEXT PRIMARY KEY,                        -- 如 "system_revision", "last_sync_timestamp", "lastDailySettlementDate"
   value TEXT NOT NULL
 );
 ```
@@ -390,25 +427,33 @@ CREATE TABLE IF NOT EXISTS system_meta (
 为了确保老用户无缝平滑迭代而不丢失本地数据，在 [backend/src/db.ts](file:///d:/Codes/Projects/sacred-focus/backend/src/db.ts) 启动时，使用原生 `PRAGMA table_info` 自动探测并安全执行增量 `ALTER TABLE`：
 
 ```typescript
-// 自动为 focus_session_logs 增加 focusContent 与 failureReason
-const logCols = (db.prepare('PRAGMA table_info(focus_session_logs)').all() as Array<{ name: string }>).map(c => c.name);
-if (!logCols.includes('focusContent')) {
-  db.prepare('ALTER TABLE focus_session_logs ADD COLUMN focusContent TEXT').run();
-}
-if (!logCols.includes('failureReason')) {
-  db.prepare('ALTER TABLE focus_session_logs ADD COLUMN failureReason TEXT').run();
-}
+// 1. 节点升级字段动态平滑增补
+const nodeCols = (db.prepare('PRAGMA table_info(focus_nodes)').all() as Array<{ name: string }>).map(c => c.name);
+if (!nodeCols.includes('lastLitDate')) db.prepare('ALTER TABLE focus_nodes ADD COLUMN lastLitDate TEXT').run();
+if (!nodeCols.includes('previousLevel')) db.prepare('ALTER TABLE focus_nodes ADD COLUMN previousLevel INTEGER NOT NULL DEFAULT 0').run();
+if (!nodeCols.includes('triggerScene')) db.prepare("ALTER TABLE focus_nodes ADD COLUMN triggerScene TEXT NOT NULL DEFAULT '全天候'").run();
+
+// 2. 专注日志归因字段增补
+const sessionLogCols = (db.prepare('PRAGMA table_info(focus_session_logs)').all() as Array<{ name: string }>).map(c => c.name);
+if (!sessionLogCols.includes('focusContent')) db.prepare('ALTER TABLE focus_session_logs ADD COLUMN focusContent TEXT').run();
+if (!sessionLogCols.includes('failureReason')) db.prepare('ALTER TABLE focus_session_logs ADD COLUMN failureReason TEXT').run();
+
+// 3. 历史时间与场景拆分自动回填算法
+// 智能将 "07:00" 规整为标准时刻，将非纯时刻场景字符串迁移至 triggerScene，彻底解决列表排序问题
 ```
 
 任何历史版本的数据库均能在毫秒内自动对齐到最新模式，绝无手工迁移门槛。
 
 ---
 
-### 3.4 演化快照与系统全量 JSON 冷备份还原机制
+### 3.4 演化快照与全系统整机热备恢复机制
 
-针对意外崩溃或跨设备迁移，[backend/src/routes/evolution.ts](file:///d:/Codes/Projects/sacred-focus/backend/src/routes/evolution.ts) 提供了**事务级全量冷备份**：
-1. **冷备导出 (`GET /api/evolution/backup`)**：将 `config`, `sessionLogs`, `precedents`, `treeData`, `snapshots`, `evolutionState` 整体打包为结构化 JSON，附带导出时戳与架构版本号；
-2. **原子还原 (`POST /api/evolution/restore`)**：使用 SQLite 原子事务 `db.transaction()`，校验 JSON 结构后清空当前表并全量批量插入。若途中发生任何语法或约束冲突，**系统将自动完整回滚，绝无半写入损毁风险**。
+针对意外崩溃或跨设备迁移，系统提供两级数据容灾体系：
+1. **国策树演化快照 (`/api/evolution/*`)**：支持 5 槽位环形无损回滚与拓扑架构单独导出/导入；
+2. **全系统整机冷备与预热备导入 (`/api/system/*`)**：
+   - **镜像导出 (`GET /api/system/export`)**：将 `config`, `sessionLogs`, `precedents`, `treeData`（含 nodes/groups/edges/labels）, `snapshots`, `evolutionState`, `systemMeta` 整体打包为结构化 JSON；
+   - **安全导入与 Pre-Import 预热备 (`POST /api/system/import`)**：在执行清空覆盖前，系统**强制自动在 Slot 4 建立紧急安全冷备快照**，并配合原子事务 `db.transaction()` 全量写入。一旦发生任何约束冲突，全自动无损回滚，实现零数据损毁风险；
+3. **乐观并发版本协同 (`GET /api/sync/version`)**：基于 `system_revision` 原子自增计数器，支持多端与静默探针检测，发现服务端版本更新时前端温和提示刷新，防止覆盖。
 
 ---
 
@@ -641,14 +686,15 @@ if (!logCols.includes('failureReason')) {
 ## 六、 系统可靠性、构建与未来演化展望
 
 ### 6.1 研发质量与构建表现
-- **类型安全**：前后端实现全量 TypeScript 覆盖，编译过程开启严格模式；
-- **前端构建**：通过 `vue-tsc -b && vite build` 生产构建打包，构建耗时仅约 4.6 秒，PWA 资源预缓存无差错；
-- **后端构建**：原生 `tsc` 编译通过，服务支持 Node.js 环境一键守护启动。
+- **全栈类型安全**：前后端实现全量 TypeScript 覆盖，编译开启严格类型检查模式；
+- **前端工程构建**：通过 `vue-tsc -b && vite build` 生产构建打包，构建耗时仅约 4.6 秒，PWA 资源预缓存无差错，移动端触控与响应式（Milestone 8）全面达标；
+- **后端安全与稳定性**：Node.js Express + Better-SQLite3 WAL 极速响应，落地生产级六道防御纵深（Milestone 9）；
+- **自动化测试覆盖**：覆盖 04:00 分界线、首次点亮、后悔药回滚、断签清零、时间场景字段拆分、时间沉底算法、复合排序、5 槽位环形快照推演、系统全量冷备导入导出与预热备灾备机制全部通过。
 
 ### 6.2 后续演化路线图 (Roadmap)
 1. **多端本地中继同步**：基于局域网 WebRTC / LAN WebSocket 探索无云端中心节点的多机点对点同步；
-2. **全周期专注热力图**：将 `focus_session_logs` 的全量秒数沉淀，进一步衍生为 GitHub 风格的周/月度自控热力图表；
-3. **离线冲突 CRDT 演算**：未来跨端多活编辑时，引入 CRDT 有向无环图实现零锁冲突自愈合并。
+2. **离线冲突 CRDT 演算**：未来跨端多活编辑时，引入 CRDT 有向无环图实现零锁冲突自愈合并；
+3. **原生跨平台打包**：结合 Tauri 探索零外部运行时的超轻量本地原生安装包（< 15MB）。
 
 ---
 
