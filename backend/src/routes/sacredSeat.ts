@@ -298,10 +298,14 @@ router.post('/logs', (req: Request, res: Response) => {
       newMaxStreak = currentConfig?.maxStreak ?? 0;
 
       if (type === 'FOCUS') {
+        const safeActualDuration = Number(actualDurationSeconds || 0);
         if (status === 'SUCCESS') {
-          newCurrentStreak += 1;
-          if (newCurrentStreak > newMaxStreak) {
-            newMaxStreak = newCurrentStreak;
+          // 最低有效时长校验：至少专注满 60 秒方可累积神圣座位连胜，防止异常刷分
+          if (safeActualDuration >= 60) {
+            newCurrentStreak += 1;
+            if (newCurrentStreak > newMaxStreak) {
+              newMaxStreak = newCurrentStreak;
+            }
           }
         } else if (status === 'FAIL') {
           // 发生违规，主链清零
