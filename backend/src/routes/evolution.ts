@@ -332,6 +332,7 @@ router.post('/import', (req: Request, res: Response) => {
     });
 
     importTx();
+    incrementSystemRevision();
     res.json({ message: 'Focus tree architecture successfully imported and restored' });
   } catch (e: any) {
     console.error('Failed to import focus tree backup', e);
