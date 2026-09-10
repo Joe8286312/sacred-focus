@@ -6,6 +6,7 @@ import { config } from '../config.js';
 
 import { db } from '../db.js';
 import { loginLimiter } from '../middleware/rateLimiter.js';
+import { safeCompare } from '../middleware/auth.js';
 import type { AuthJwtPayload } from '../types.js';
 
 const router = Router();
@@ -32,7 +33,7 @@ export function getAdminPasswordHash(): string {
 }
 
 // 登录验证并签发 30 天凭证
-router.post('/login', loginLimiter, (req: Request, res: Response) => {
+router.post('/login', loginLimiter, async (req: Request, res: Response) => {
   const { password } = req.body || {};
 
   if (!password || typeof password !== 'string') {
@@ -40,7 +41,8 @@ router.post('/login', loginLimiter, (req: Request, res: Response) => {
   }
 
   const hash = getAdminPasswordHash();
-  const isValid = bcrypt.compareSync(password, hash);
+  // P2-003 性能治理：使用非阻塞异步 bcrypt.compare，彻底消除主线程 150-300ms 事件循环阻塞卡死风险
+  const isValid = await bcrypt.compare(password, hash);
 
   if (!isValid) {
     return res.status(401).json({
@@ -81,7 +83,7 @@ router.get('/status', (req: Request, res: Response) => {
   const cookieToken = req.cookies ? req.cookies['sf_token'] : undefined;
   const token = headerToken || cookieToken;
 
-  if (config.appAccessToken && token === config.appAccessToken) {
+  if (config.appAccessToken && token && safeCompare(token, config.appAccessToken)) {
     return res.json({ isAuthenticated: true, role: 'admin', staticToken: true });
   }
 
