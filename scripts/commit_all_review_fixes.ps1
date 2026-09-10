@@ -27,7 +27,7 @@ Write-Host "   Sacred Focus 代码审查修复 - 自动化原子 Git 提交    "
 Write-Host "====================================================" -ForegroundColor Cyan
 
 # 0. 审查文档与修复日志
-Commit-Fix @("CODE_REVIEW.md", "docs/代码审查问题修复记录.md") "docs: record code review findings and remediation log"
+Commit-Fix @("docs/CODE_REVIEW.md", "docs/代码审查问题修复记录.md") "docs: record code review findings and remediation log"
 
 # 1. P0-001: 安全防御：修复反向代理真实客户端 IP 获取与伪造绕过漏洞
 Commit-Fix @("backend/src/middleware/ipRules.ts") "fix(security): sanitize client IP extraction using trusted req.ip (P0-001)"
