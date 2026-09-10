@@ -1,8 +1,9 @@
 import assert from 'node:assert/strict';
 import Database from 'better-sqlite3';
-import { timingSafeEqual } from 'node:crypto';
 import { validateFullBackupPayload } from '../src/utils/validators.js';
 import { getBusinessDay, getPreviousBusinessDay } from '../src/db/dateUtils.js';
+import { safeCompare } from '../src/middleware/auth.js';
+import { createTables } from '../src/db/schema.js';
 
 // 简易单元测试运行器
 let passedCount = 0;
@@ -55,17 +56,9 @@ async function runAllTests() {
   });
 
   // -----------------------------------------------------------
-  // 2. 静态令牌恒定时间安全比对测试 (crypto.timingSafeEqual)
+  // 2. 静态令牌恒定时间安全比对测试 (crypto.timingSafeEqual via auth.ts)
   // -----------------------------------------------------------
-  console.log('\n[Suite 2] 安全防御：常量时间比对防御时序嗅探 (auth.ts)');
-
-  function safeCompare(a: string, b: string): boolean {
-    if (typeof a !== 'string' || typeof b !== 'string') return false;
-    const bufA = Buffer.from(a);
-    const bufB = Buffer.from(b);
-    if (bufA.length !== bufB.length) return false;
-    return timingSafeEqual(bufA, bufB);
-  }
+  console.log('\n[Suite 2] 安全防御：常量时间比对防御时序嗅探 (auth.ts safeCompare)');
 
   test('正确令牌比对成功', () => {
     const secret = 'super_secret_token_1234567890_abcdef';
@@ -158,63 +151,44 @@ async function runAllTests() {
   // -----------------------------------------------------------
   // 4. SQLite 内存数据库事务、DDL 与核心查询测试 (db/*)
   // -----------------------------------------------------------
-  console.log('\n[Suite 4] 内存 SQLite 数据库架构与事务稳态 (db/queries)');
+  console.log('\n[Suite 4] 内存 SQLite 数据库架构与事务稳态 (db/schema & queries)');
 
   const testDb = new Database(':memory:');
   testDb.pragma('foreign_keys = ON');
 
-  test('7 大核心表 DDL 顺利在 SQLite 中初始化', () => {
-    testDb.exec(`
-      CREATE TABLE IF NOT EXISTS system_meta (
-        key TEXT PRIMARY KEY,
-        value TEXT NOT NULL,
-        updatedAt TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
-      );
-      CREATE TABLE IF NOT EXISTS focus_nodes (
-        id TEXT PRIMARY KEY,
-        code TEXT NOT NULL UNIQUE,
-        name TEXT NOT NULL,
-        category TEXT NOT NULL DEFAULT '',
-        triggerScene TEXT NOT NULL DEFAULT '全天候',
-        triggerTime TEXT,
-        hasExactTime INTEGER NOT NULL DEFAULT 0,
-        timeValueMinutes INTEGER,
-        isLit INTEGER NOT NULL DEFAULT 0,
-        level INTEGER NOT NULL DEFAULT 0,
-        maxLevel INTEGER NOT NULL DEFAULT 0,
-        sortOrder INTEGER NOT NULL DEFAULT 0,
-        color TEXT NOT NULL DEFAULT '#f59e0b',
-        lastLitDate TEXT
-      );
-      CREATE TABLE IF NOT EXISTS focus_groups (
-        id TEXT PRIMARY KEY,
-        title TEXT NOT NULL,
-        color TEXT NOT NULL DEFAULT '#64748b',
-        x REAL NOT NULL DEFAULT 0,
-        y REAL NOT NULL DEFAULT 0,
-        width REAL NOT NULL DEFAULT 360,
-        height REAL NOT NULL DEFAULT 240
-      );
-    `);
+  test('7 大核心表与 5 大索引通过真实 createTables DDL 顺利在 SQLite 中初始化', () => {
+    createTables(testDb);
 
     const tables = testDb.prepare("SELECT name FROM sqlite_master WHERE type='table'").all() as any[];
     const names = tables.map(t => t.name);
-    assert.ok(names.includes('system_meta'));
-    assert.ok(names.includes('focus_nodes'));
+    assert.ok(names.includes('sacred_seat_config'));
+    assert.ok(names.includes('focus_session_logs'));
+    assert.ok(names.includes('precedent_cases'));
     assert.ok(names.includes('focus_groups'));
+    assert.ok(names.includes('focus_nodes'));
+    assert.ok(names.includes('focus_edges'));
+    assert.ok(names.includes('system_meta'));
+
+    const indexes = testDb.prepare("SELECT name FROM sqlite_master WHERE type='index'").all() as any[];
+    const idxNames = indexes.map(i => i.name);
+    assert.ok(idxNames.includes('idx_logs_type_starttime'));
+    assert.ok(idxNames.includes('idx_cases_verdict_date'));
+    assert.ok(idxNames.includes('idx_nodes_group'));
+    assert.ok(idxNames.includes('idx_edges_source'));
+    assert.ok(idxNames.includes('idx_edges_target'));
   });
 
-  test('upsertFocusNode 正确清洗、补全并写入数据库', () => {
+  test('upsertFocusNode 正确清洗、补全并写入真实结构数据库', () => {
     const insertStmt = testDb.prepare(`
       INSERT INTO focus_nodes (
-        id, code, name, category, triggerScene, triggerTime, hasExactTime, timeValueMinutes,
-        isLit, level, maxLevel, sortOrder, color, lastLitDate
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        id, code, name, triggerScene, triggerTime, hasExactTime, timeValueMinutes,
+        isLit, level, maxLevel, sortOrder, lastLitDate
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     insertStmt.run(
-      'N-TEST', 'T1', '测试国策', '测试', '起床后', '08:30',
-      1, 510, 1, 2, 3, 0, '#10b981', '2026-09-09'
+      'N-TEST', 'T1', '测试国策', '起床后', '08:30',
+      1, 510, 1, 2, 3, 0, '2026-09-09'
     );
 
     const row = testDb.prepare('SELECT * FROM focus_nodes WHERE id = ?').get('N-TEST') as any;
