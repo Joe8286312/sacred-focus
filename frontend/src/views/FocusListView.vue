@@ -5,6 +5,9 @@ import NodeSpecModal from '../components/canvas/NodeSpecModal.vue';
 import NodeEditModal from '../components/canvas/NodeEditModal.vue';
 import type { FocusNode } from '../types';
 
+import { useListSort } from '../composables/useListSort';
+import type { SortableKey, SortRuleItem } from '../composables/useListSort';
+
 const store = useFocusTreeStore();
 
 // 规范卡与编辑弹窗状态
@@ -17,14 +20,17 @@ const editingNode = ref<FocusNode | null>(null);
 // 搜索与分组过滤
 const searchQuery = ref('');
 const selectedGroupFilter = ref('');
+const isFiltered = computed(() => Boolean(searchQuery.value.trim() || selectedGroupFilter.value));
 
-// 类 Excel 复合排序规则栈（自然记忆先选的优先级高：第 1、第 2、第 3...）
-export type SortableKey = 'code' | 'name' | 'group' | 'time' | 'level' | 'maxLevel' | 'status';
-export interface SortRuleItem {
-  key: SortableKey;
-  dir: 'asc' | 'desc';
-}
-const sortStack = ref<SortRuleItem[]>([]);
+// 引入类 Excel 多列复合排序 Composable
+const {
+  sortStack,
+  toggleColumnSort,
+  getSortInfo,
+  getSortPriority,
+  clearSort,
+  applyCompoundSort
+} = useListSort();
 
 // 本地可拖拽工作列表
 const localNodeList = ref<FocusNode[]>([]);
@@ -37,7 +43,7 @@ const dropPosition = ref<'top' | 'bottom' | null>(null);
 
 // 每次进入页面时，无论之前如何临时排序，均自动复原并以基准持久化顺序呈现（Zero-Friction Auto-Reset）
 onMounted(async () => {
-  sortStack.value = [];
+  clearSort();
   selectedGroupFilter.value = '';
   searchQuery.value = '';
   isOrderDirty.value = false;
@@ -68,30 +74,6 @@ function getGroupThemeColor(groupId: string | null): string {
   return group?.themeColor || 'var(--color-lit)';
 }
 
-// 表头列点击切换排序：循环状态 (asc -> desc -> 取消)
-function toggleColumnSort(key: SortableKey) {
-  const existingIdx = sortStack.value.findIndex(item => item.key === key);
-  if (existingIdx !== -1) {
-    const currentDir = sortStack.value[existingIdx].dir;
-    if (currentDir === 'asc') {
-      sortStack.value[existingIdx].dir = 'desc';
-    } else {
-      sortStack.value.splice(existingIdx, 1);
-    }
-  } else {
-    // 首次点击此列：追加至排序栈末尾（自动保证先选的优先级最高）
-    sortStack.value.push({ key, dir: 'asc' });
-  }
-}
-
-function getSortInfo(key: SortableKey): SortRuleItem | undefined {
-  return sortStack.value.find(item => item.key === key);
-}
-
-function getSortPriority(key: SortableKey): number {
-  return sortStack.value.findIndex(item => item.key === key) + 1;
-}
-
 // 计算最终展示列表
 const displayNodes = computed(() => {
   let list = [...localNodeList.value];
@@ -117,46 +99,8 @@ const displayNodes = computed(() => {
     );
   }
 
-  // 3. 类 Excel 多列复合排序应用
-  if (sortStack.value.length > 0) {
-    list.sort((a, b) => {
-      for (const rule of sortStack.value) {
-        let cmp = 0;
-        if (rule.key === 'time') {
-          // 核心时间排序规则：“按触发查询时，没有时间的场景放在最下面”
-          const aHas = Boolean(a.hasExactTime && a.timeValueMinutes != null);
-          const bHas = Boolean(b.hasExactTime && b.timeValueMinutes != null);
-          if (aHas && !bHas) return -1;
-          if (!aHas && bHas) return 1;
-          if (aHas && bHas) {
-            cmp = (a.timeValueMinutes! - b.timeValueMinutes!) * (rule.dir === 'asc' ? 1 : -1);
-          } else {
-            cmp = (a.triggerScene || '').localeCompare(b.triggerScene || '', 'zh-CN') * (rule.dir === 'asc' ? 1 : -1);
-          }
-        } else if (rule.key === 'code') {
-          cmp = a.code.localeCompare(b.code, undefined, { numeric: true }) * (rule.dir === 'asc' ? 1 : -1);
-        } else if (rule.key === 'name') {
-          cmp = a.name.localeCompare(b.name, 'zh-CN') * (rule.dir === 'asc' ? 1 : -1);
-        } else if (rule.key === 'group') {
-          const aGrp = getGroupName(a.groupId);
-          const bGrp = getGroupName(b.groupId);
-          cmp = aGrp.localeCompare(bGrp, 'zh-CN') * (rule.dir === 'asc' ? 1 : -1);
-        } else if (rule.key === 'level') {
-          cmp = (a.level - b.level) * (rule.dir === 'asc' ? 1 : -1);
-        } else if (rule.key === 'maxLevel') {
-          cmp = (a.maxLevel - b.maxLevel) * (rule.dir === 'asc' ? 1 : -1);
-        } else if (rule.key === 'status') {
-          const aVal = a.isLit ? 1 : 0;
-          const bVal = b.isLit ? 1 : 0;
-          cmp = (aVal - bVal) * (rule.dir === 'asc' ? 1 : -1);
-        }
-        if (cmp !== 0) return cmp;
-      }
-      return 0;
-    });
-  }
-
-  return list;
+  // 3. 类 Excel 多列复合排序应用 (Composable)
+  return applyCompoundSort(list, getGroupName);
 });
 
 // -----------------------------------------------------------------------------
@@ -164,16 +108,21 @@ const displayNodes = computed(() => {
 // -----------------------------------------------------------------------------
 
 function restoreBaseline() {
-  sortStack.value = [];
+  clearSort();
   selectedGroupFilter.value = '';
   isOrderDirty.value = false;
   localNodeList.value = [...store.nodes];
 }
 
 async function saveCurrentOrder() {
+  // P1-003 防御：严禁在筛选过滤态下保存局部子集排序，防止冲掉未筛选节点
+  if (isFiltered.value) {
+    alert('当前处于筛选或搜索过滤模式，为保护数据完整性，请先清除筛选条件后再保存基准排序。');
+    return;
+  }
   const currentIds = displayNodes.value.map(n => n.id);
   await store.saveReorder(currentIds);
-  sortStack.value = [];
+  clearSort();
   isOrderDirty.value = false;
 }
 
@@ -182,6 +131,10 @@ async function saveCurrentOrder() {
 // -----------------------------------------------------------------------------
 
 function onHandleDragStart(index: number, e: DragEvent) {
+  if (isFiltered.value) {
+    e.preventDefault();
+    return;
+  }
   draggedIndex.value = index;
   if (e.dataTransfer) {
     e.dataTransfer.effectAllowed = 'move';
@@ -190,7 +143,7 @@ function onHandleDragStart(index: number, e: DragEvent) {
 }
 
 function onRowDragOver(index: number, e: DragEvent) {
-  if (draggedIndex.value === null) return;
+  if (isFiltered.value || draggedIndex.value === null) return;
   e.preventDefault();
   dropTargetIndex.value = index;
 
@@ -207,12 +160,12 @@ function onRowDragLeave(index: number) {
 }
 
 function onRowDrop(index: number) {
-  if (draggedIndex.value === null || draggedIndex.value === index) {
+  if (isFiltered.value || draggedIndex.value === null || draggedIndex.value === index) {
     onDragEnd();
     return;
   }
 
-  // 处于临时过滤排序时，拖拽将自动应用并转入自定义微调基准态
+  // 处于非过滤状态时的正常拖拽重排
   const currentArr = [...displayNodes.value];
   const itemToMove = currentArr.splice(draggedIndex.value, 1)[0];
   let targetIdx = index;
@@ -225,7 +178,7 @@ function onRowDrop(index: number) {
 
   currentArr.splice(targetIdx, 0, itemToMove);
   localNodeList.value = currentArr;
-  sortStack.value = []; // 拖动后即转为用户自定义物理基准序列
+  clearSort(); // 拖动后即转为用户自定义物理基准序列
   isOrderDirty.value = true;
   onDragEnd();
 }
@@ -339,9 +292,10 @@ async function confirmDeleteNode(node: FocusNode) {
         <!-- 保存当前排序：固化为新的永久基准 -->
         <button 
           class="btn-tool btn-save-order"
-          :class="{ 'is-highlight': sortStack.length > 0 || isOrderDirty }"
+          :class="{ 'is-highlight': (sortStack.length > 0 || isOrderDirty) && !isFiltered, 'is-disabled': isFiltered }"
+          :disabled="isFiltered"
           @click="saveCurrentOrder" 
-          title="将当前排列顺序持久化固化为新的默认基准"
+          :title="isFiltered ? '当前处于筛选状态，请先清空筛选再保存基准排序' : '将当前排列顺序持久化固化为新的默认基准'"
         >
           保存当前排序
         </button>
@@ -469,10 +423,11 @@ async function confirmDeleteNode(node: FocusNode) {
           <!-- 极简拖拽色块手柄（仅手柄响应拖拽，物理绝对隔离） -->
           <div 
             class="col-handle"
-            draggable="true"
+            :class="{ 'is-disabled': isFiltered }"
+            :draggable="!isFiltered"
             @dragstart="onHandleDragStart(idx, $event)"
             @dragend="onDragEnd"
-            title="按住拖拽即可调整排列顺序"
+            :title="isFiltered ? '当前处于筛选状态，已禁用拖拽排序（防止丢失未筛选节点）' : '按住拖拽即可调整排列顺序'"
           >
             <span 
               class="color-handle-bar"
