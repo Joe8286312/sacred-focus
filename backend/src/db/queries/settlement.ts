@@ -1,5 +1,6 @@
 import { db } from '../connection.js';
 import { getBusinessDay, getPreviousBusinessDay } from '../dateUtils.js';
+import { incrementSystemRevision } from '../revision.js';
 import type { ResetNodeItem, FocusNodeRow } from '../../types.js';
 
 // 每日首次上线结算引擎：
@@ -24,9 +25,15 @@ export function settleFocusTreeDailyState(): { resetNodes: ResetNodeItem[]; sett
       return false;
     }
 
-    const allNodes = db.prepare('SELECT id, code, name, level, maxLevel, isLit, lastLitDate FROM focus_nodes').all() as Array<Pick<FocusNodeRow, 'id' | 'code' | 'name' | 'level' | 'maxLevel' | 'isLit' | 'lastLitDate'>>;
+    // P1-001: 查询中必须包含 isFrozen 字段
+    const allNodes = db.prepare('SELECT id, code, name, level, maxLevel, isLit, isFrozen, lastLitDate FROM focus_nodes').all() as Array<Pick<FocusNodeRow, 'id' | 'code' | 'name' | 'level' | 'maxLevel' | 'isLit' | 'isFrozen' | 'lastLitDate'>>;
 
     for (const node of allNodes) {
+      // P1-001: 处于冰蓝冻结保全态的节点豁免断签归零惩罚，完整保留现有等级与最高等级
+      if (node.isFrozen) {
+        continue;
+      }
+
       const isLitToday = node.lastLitDate === today;
       const isLitYesterday = node.lastLitDate === yesterday;
 
@@ -53,6 +60,12 @@ export function settleFocusTreeDailyState(): { resetNodes: ResetNodeItem[]; sett
 
     // 2. 写入/更新今日结算标记，确保当天后续所有刷新绝不再重复触发
     db.prepare('INSERT OR REPLACE INTO system_meta (key, value) VALUES (?, ?)').run('lastDailySettlementDate', today);
+
+    // P0-003: 若结算产生了实际的断签清零，必须原子递增系统版本号，防止旧客户端带旧 expectedRevision 覆写逆转
+    if (resetNodes.length > 0) {
+      incrementSystemRevision();
+    }
+
     return true;
   });
 
