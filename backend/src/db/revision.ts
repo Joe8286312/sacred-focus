@@ -8,10 +8,23 @@ export function getSystemRevision(): number {
 
 // 原子递增系统版本号并更新最新修改时间戳
 export function incrementSystemRevision(): number {
-  const current = getSystemRevision();
-  const next = current + 1;
   const now = new Date().toISOString();
-  db.prepare("INSERT OR REPLACE INTO system_meta (key, value) VALUES ('system_revision', ?)").run(String(next));
-  db.prepare("INSERT OR REPLACE INTO system_meta (key, value) VALUES ('last_sync_timestamp', ?)").run(now);
-  return next;
+  const tx = db.transaction(() => {
+    db.prepare(`
+      INSERT INTO system_meta (key, value)
+      VALUES ('system_revision', '1')
+      ON CONFLICT(key) DO UPDATE SET value = CAST(CAST(system_meta.value AS INTEGER) + 1 AS TEXT)
+    `).run();
+
+    db.prepare(`
+      INSERT INTO system_meta (key, value)
+      VALUES ('last_sync_timestamp', @now)
+      ON CONFLICT(key) DO UPDATE SET value = excluded.value
+    `).run({ now });
+
+    const row = db.prepare("SELECT CAST(value AS INTEGER) AS rev FROM system_meta WHERE key = 'system_revision'").get() as { rev: number };
+    return row.rev;
+  });
+
+  return tx();
 }
