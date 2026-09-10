@@ -63,6 +63,9 @@ export function createTables(db: DatabaseType) {
       maxLevel INTEGER NOT NULL DEFAULT 1,
       isLit INTEGER NOT NULL DEFAULT 0,
       isFrozen INTEGER NOT NULL DEFAULT 0,
+      lastLitDate TEXT,
+      previousLevel INTEGER NOT NULL DEFAULT 0,
+      previousLastLitDate TEXT,
       positionX REAL NOT NULL DEFAULT 0,
       positionY REAL NOT NULL DEFAULT 0,
       specInstruction TEXT NOT NULL DEFAULT '',
@@ -115,6 +118,13 @@ export function createTables(db: DatabaseType) {
       key TEXT PRIMARY KEY,
       value TEXT NOT NULL
     );
+
+    -- 10. 高频检索与级联关联关键索引 (P2-001 性能治理)
+    CREATE INDEX IF NOT EXISTS idx_logs_type_starttime ON focus_session_logs(type, startTime);
+    CREATE INDEX IF NOT EXISTS idx_cases_verdict_date ON precedent_cases(verdict, date DESC);
+    CREATE INDEX IF NOT EXISTS idx_nodes_group ON focus_nodes(groupId);
+    CREATE INDEX IF NOT EXISTS idx_edges_source ON focus_edges(sourceId);
+    CREATE INDEX IF NOT EXISTS idx_edges_target ON focus_edges(targetId);
   `);
 
   // 初始化原子系统版本号与最后同步时间戳
