@@ -56,6 +56,14 @@ const actualCollectionSeconds = ref(0);
 const reservationDurationMinutes = ref(15);
 const reservationRemainingSeconds = ref(15 * 60);
 
+// 生成安全唯一的专注流水日志 ID (P3-001 消除 Date.now 碰撞风险)
+function generateLogId(): string {
+  if (typeof crypto !== 'undefined' && crypto.randomUUID) {
+    return `log-${crypto.randomUUID()}`;
+  }
+  return `log-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
 // 格式化秒数为 HH:MM:SS 或 MM:SS
 function formatTime(totalSec: number): string {
   const sec = Math.max(0, Math.floor(totalSec));
@@ -171,7 +179,7 @@ function triggerRegretExit() {
 
   // 2. 异步后台提交持久化，不阻塞主线程 UI
   const log: FocusSessionLog = {
-    id: `log-${Date.now()}`,
+    id: generateLogId(),
     type: 'FOCUS',
     startTime: startIso,
     endTime: new Date().toISOString(),
@@ -203,7 +211,7 @@ function handleConfirmReset(payload: { focusContent: string; failureReason: stri
 
   // 2. 异步后台提交
   const log: FocusSessionLog = {
-    id: `log-${Date.now()}`,
+    id: generateLogId(),
     type: 'FOCUS',
     startTime: startIso,
     endTime: new Date().toISOString(),
@@ -233,7 +241,7 @@ async function handleCompleteSession(withCase: boolean, completedContent: string
   currentState.value = 'IDLE';
 
   const log: FocusSessionLog = {
-    id: `log-${Date.now()}`,
+    id: generateLogId(),
     type: 'FOCUS',
     startTime: startIso,
     endTime: new Date().toISOString(),
@@ -297,11 +305,28 @@ async function handleSaveSettings(updated: any) {
   isSettingsModalOpen.value = false;
 }
 
-// 页面离开路由守卫：防止意外导航打断专注
+// 页面离开路由守卫：防止意外导航打断专注 (P1-005 修复惩罚逃逸漏洞)
 onBeforeRouteLeave((_to, _from, next) => {
   if (currentState.value === 'FOCUSING' || currentState.value === 'OVER_FOCUS') {
     const confirmLeave = window.confirm('神圣专注正在进行中，离开页面将中断本次专注。确认要离开吗？');
     if (confirmLeave) {
+      // 若已超出 30 秒后悔药窗口，强行离开判定为违规，上报 FAIL 日志并清零连胜
+      if (!isInsideRegretWindow.value) {
+        const actualSec = calculateActualSeconds();
+        const log: FocusSessionLog = {
+          id: generateLogId(),
+          type: 'FOCUS',
+          startTime: sessionStartTime.value ? sessionStartTime.value.toISOString() : new Date().toISOString(),
+          endTime: new Date().toISOString(),
+          targetDurationMinutes: Math.round(targetDurationSeconds.value / 60),
+          actualDurationSeconds: actualSec,
+          status: 'FAIL',
+          focusContent: currentFocusContent.value.trim() || undefined,
+          failureReason: '专注中途直接离开页面，判定违规中断',
+          note: '在专注过程中切出页面离开，主链连胜清零'
+        };
+        store.recordSession(log).catch(err => console.error('Failed to log navigation fail session', err));
+      }
       clearTimer();
       store.isFocusMode = false;
       store.exitFullscreen();
