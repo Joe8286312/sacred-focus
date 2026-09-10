@@ -50,10 +50,14 @@ if [ -f "${DATA_DIR}/app.db" ]; then
     mkdir -p "${BACKUP_DIR}"
     TIMESTAMP=$(date +%Y%m%d_%H%M%S)
     BACKUP_FILE="${BACKUP_DIR}/app_pre_update_${TIMESTAMP}.db"
-    echo "🛡️ 正在执行升级前数据库原子冷备 -> ${BACKUP_FILE} ..."
-    cp "${DATA_DIR}/app.db" "${BACKUP_FILE}"
-    # 若存在 WAL 临时文件一并备份
-    [ -f "${DATA_DIR}/app.db-wal" ] && cp "${DATA_DIR}/app.db-wal" "${BACKUP_DIR}/app_pre_update_${TIMESTAMP}.db-wal"
+    echo "🛡️ 正在执行升级前数据库原子热备 -> ${BACKUP_FILE} ..."
+    if command -v sqlite3 >/dev/null 2>&1; then
+        sqlite3 "${DATA_DIR}/app.db" ".backup '${BACKUP_FILE}'"
+    else
+        cp "${DATA_DIR}/app.db" "${BACKUP_FILE}"
+        # 若存在 WAL 临时文件一并备份
+        [ -f "${DATA_DIR}/app.db-wal" ] && cp "${DATA_DIR}/app.db-wal" "${BACKUP_DIR}/app_pre_update_${TIMESTAMP}.db-wal"
+    fi
     echo "✓ 数据备份完毕，安全防线已就绪！"
 fi
 
