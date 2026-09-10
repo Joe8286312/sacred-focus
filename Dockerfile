@@ -58,13 +58,15 @@ FROM node:22-bookworm-slim AS runner
 
 WORKDIR /app
 
-# 安装 curl 用于健康状态探测
+# 安装 curl 用于健康状态探测，安装 tzdata 支持业务日时区精确对齐 (P2-004)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
+    tzdata \
     && rm -rf /var/lib/apt/lists/*
 
 # 生产级默认环境变量
 ENV NODE_ENV=production \
+    TZ=Asia/Shanghai \
     PORT=3000 \
     HOST=0.0.0.0 \
     DATA_DIR=/app/data \

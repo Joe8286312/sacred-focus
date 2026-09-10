@@ -13,8 +13,9 @@ services:
       - PORT=3000
       - HOST=0.0.0.0
       - DATA_DIR=/app/data
-      - JWT_SECRET=${JWT_SECRET:-sacred_focus_super_secret_jwt_key_32chars_2026}
-      - ADMIN_PASSWORD=${ADMIN_PASSWORD:-admin123456}
+      - TZ=${TZ:-Asia/Shanghai}
+      - JWT_SECRET=${JWT_SECRET}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD}
       - TRUSTED_IPS=${TRUSTED_IPS:-}
       - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-http://localhost:3000,http://127.0.0.1:3000}
     volumes:
