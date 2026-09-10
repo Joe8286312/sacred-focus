@@ -2,8 +2,9 @@ import { Request } from 'express';
 import { config } from '../config.js';
 
 export function getClientIp(req: Request): string {
-  const forwarded = req.headers['x-forwarded-for'];
-  const rawIp = (typeof forwarded === 'string' ? forwarded.split(',')[0] : req.socket.remoteAddress) || '';
+  // 生产环境下借助 Express app.set('trust proxy', 1) 获取受信任代理传递的真实客户端 IP
+  // 杜绝直接提取 req.headers['x-forwarded-for'].split(',')[0] 造成的伪造标头与限流绕过 (P0-001)
+  const rawIp = req.ip || req.socket.remoteAddress || '';
   return rawIp.replace(/^::ffff:/i, '').trim();
 }
 
