@@ -67,6 +67,7 @@ export interface FocusNode {
   isFrozen: boolean;              // 是否处于水密隔舱冻结态
   lastLitDate?: string;           // 最后一次点亮的业务日期 (YYYY-MM-DD，以凌晨4点为界)
   previousLevel?: number;         // 点亮前的备份等级（用于当天反悔回退）
+  previousLastLitDate?: string | null; // 点亮前的备份业务日期（用于当天反悔精准回退，防刷级 P1-004）
   position: { x: number; y: number }; // 画布坐标
   specCard: FocusNodeSpecCard;
 }

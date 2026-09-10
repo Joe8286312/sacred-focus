@@ -19,11 +19,11 @@ function getUpsertFocusNodeStmt(): Statement {
     _upsertFocusNodeStmt = db.prepare(`
       INSERT OR REPLACE INTO focus_nodes (
         id, code, name, groupId, triggerTime, triggerScene, hasExactTime, timeValueMinutes,
-        level, maxLevel, isLit, isFrozen, lastLitDate, previousLevel, positionX, positionY,
+        level, maxLevel, isLit, isFrozen, lastLitDate, previousLevel, previousLastLitDate, positionX, positionY,
         specInstruction, specFailCondition, specBenefitMechanism, specNotes, sortOrder
       ) VALUES (
         @id, @code, @name, @groupId, @triggerTime, @triggerScene, @hasExactTime, @timeValueMinutes,
-        @level, @maxLevel, @isLit, @isFrozen, @lastLitDate, @previousLevel, @positionX, @positionY,
+        @level, @maxLevel, @isLit, @isFrozen, @lastLitDate, @previousLevel, @previousLastLitDate, @positionX, @positionY,
         @specInstruction, @specFailCondition, @specBenefitMechanism, @specNotes, @sortOrder
       )
     `);
@@ -69,6 +69,7 @@ export function upsertFocusNode(node: FocusNode, sortOrder?: number): FocusNode 
     isFrozen: node.isFrozen ? 1 : 0,
     lastLitDate: node.lastLitDate ?? null,
     previousLevel: node.previousLevel ?? 0,
+    previousLastLitDate: node.previousLastLitDate ?? null,
     positionX: node.position?.x ?? 0,
     positionY: node.position?.y ?? 0,
     specInstruction: node.specCard?.instruction || '',
@@ -83,7 +84,8 @@ export function upsertFocusNode(node: FocusNode, sortOrder?: number): FocusNode 
     triggerTime: finalTime || null,
     triggerScene: finalScene,
     hasExactTime,
-    timeValueMinutes
+    timeValueMinutes,
+    previousLastLitDate: node.previousLastLitDate ?? null
   };
 }
 
@@ -114,6 +116,7 @@ export function getFullFocusTreeData(): FocusTreeData {
     isFrozen: Boolean(row.isFrozen),
     lastLitDate: row.lastLitDate || undefined,
     previousLevel: row.previousLevel ?? 0,
+    previousLastLitDate: row.previousLastLitDate || null,
     position: { x: row.positionX, y: row.positionY },
     specCard: {
       instruction: row.specInstruction,

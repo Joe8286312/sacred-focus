@@ -128,13 +128,14 @@ router.put('/', (req: Request, res: Response) => {
 // 点亮/反悔取消点亮节点（基于连续天数与凌晨 4 点业务日状态机）
 router.patch('/nodes/:id/toggle-lit', (req: Request, res: Response) => {
   const { id } = req.params;
-  const current = db.prepare('SELECT id, level, maxLevel, isLit, lastLitDate, previousLevel FROM focus_nodes WHERE id = ?').get(id) as {
+  const current = db.prepare('SELECT id, level, maxLevel, isLit, lastLitDate, previousLevel, previousLastLitDate FROM focus_nodes WHERE id = ?').get(id) as {
     id: string;
     level: number;
     maxLevel: number;
     isLit: number;
     lastLitDate?: string | null;
     previousLevel?: number;
+    previousLastLitDate?: string | null;
   } | undefined;
 
   if (!current) {
@@ -149,11 +150,13 @@ router.patch('/nodes/:id/toggle-lit', (req: Request, res: Response) => {
   let nextMaxLevel: number;
   let nextLastLitDate: string | null;
   let nextPreviousLevel = current.previousLevel ?? 0;
+  let nextPreviousLastLitDate = current.previousLastLitDate ?? null;
 
   if (current.isLit === 0) {
     // 动作：执行今日点亮升级
     nextLit = true;
     nextPreviousLevel = current.level; // 备份当前等级供反悔回退
+    nextPreviousLastLitDate = current.lastLitDate ?? null; // 备份当前打卡日期供反悔精确回退 (P1-004)
 
     if (current.lastLitDate === yesterday) {
       // 连续天数：昨日已点亮，今日连续打卡，等级 +1
@@ -181,13 +184,15 @@ router.patch('/nodes/:id/toggle-lit', (req: Request, res: Response) => {
       nextMaxLevel = Math.max(current.maxLevel, 1);
     }
 
-    // 用户明确要求：“反悔时业务天数也要回退一天”
-    // 若回退后等级 > 0，则业务日期回退至昨日；若回退后归零，则回退为 null
-    if (nextLevel > 0) {
+    // P1-004 治理：反悔时精准还原打卡前保存的真实历史业务日期，杜绝写死 yesterday 导致的断签洗白刷级漏洞
+    if (current.previousLastLitDate !== undefined && current.previousLastLitDate !== null) {
+      nextLastLitDate = current.previousLastLitDate;
+    } else if (nextLevel > 0) {
       nextLastLitDate = yesterday;
     } else {
       nextLastLitDate = null;
     }
+    nextPreviousLastLitDate = null;
   }
 
   db.prepare(`
@@ -196,7 +201,8 @@ router.patch('/nodes/:id/toggle-lit', (req: Request, res: Response) => {
       level = @level,
       maxLevel = @maxLevel,
       lastLitDate = @lastLitDate,
-      previousLevel = @previousLevel
+      previousLevel = @previousLevel,
+      previousLastLitDate = @previousLastLitDate
     WHERE id = @id
   `).run({
     id,
@@ -204,8 +210,12 @@ router.patch('/nodes/:id/toggle-lit', (req: Request, res: Response) => {
     level: nextLevel,
     maxLevel: nextMaxLevel,
     lastLitDate: nextLastLitDate,
-    previousLevel: nextPreviousLevel
+    previousLevel: nextPreviousLevel,
+    previousLastLitDate: nextPreviousLastLitDate
   });
+
+  // P1-002: 状态机单点修改必须原子递增版本号，通知多端探针
+  incrementSystemRevision();
 
   res.json({
     id,
@@ -231,6 +241,7 @@ router.put('/nodes/reorder', (req: Request, res: Response) => {
   });
 
   reorderTx();
+  incrementSystemRevision();
   res.json({ message: 'Sort order updated successfully' });
 });
 
@@ -245,6 +256,7 @@ router.post('/nodes', (req: Request, res: Response) => {
   const sortOrder = (maxOrderRow?.maxOrder ?? -1) + 1;
 
   const savedNode = upsertFocusNode(n, sortOrder);
+  incrementSystemRevision();
   res.status(201).json(savedNode);
 });
 
@@ -331,6 +343,7 @@ router.put('/nodes/:id', (req: Request, res: Response) => {
     specNotes: n.specCard?.notes !== undefined ? n.specCard.notes : current.specNotes
   });
 
+  incrementSystemRevision();
   res.json({ message: 'Node updated successfully', id });
 });
 
@@ -349,6 +362,7 @@ router.delete('/nodes/:id', (req: Request, res: Response) => {
     return res.status(404).json({ error: 'Node not found' });
   }
 
+  incrementSystemRevision();
   res.json({ message: 'Node deleted successfully', id });
 });
 
@@ -372,6 +386,7 @@ router.post('/groups', (req: Request, res: Response) => {
     height: g.size?.height ?? 200
   });
 
+  incrementSystemRevision();
   res.status(201).json(g);
 });
 
@@ -405,6 +420,7 @@ router.put('/groups/:id', (req: Request, res: Response) => {
     height
   });
 
+  incrementSystemRevision();
   res.json({
     id,
     name,
@@ -437,6 +453,7 @@ router.delete('/groups/:id', (req: Request, res: Response) => {
   });
 
   deleteGroupTx();
+  incrementSystemRevision();
   res.json({ message: 'Group deleted successfully', id });
 });
 
