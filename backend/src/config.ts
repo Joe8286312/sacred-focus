@@ -6,10 +6,20 @@ dotenv.config();
 const rawJwtSecret = process.env.JWT_SECRET;
 const isProduction = process.env.NODE_ENV === 'production';
 
-// 生产环境下强制校验 JWT 密钥强度，杜绝默认弱口令哑弹
+const BANNED_SECRETS = [
+  'sacred_focus_super_secret_jwt_key_32chars_2026',
+  'sacred_focus_default_jwt_secret_change_in_production_2026'
+];
+
+// 生产环境下强制校验 JWT 密钥强度，杜绝默认弱口令哑弹与公开预设密钥 (P0-002)
 if (isProduction) {
-  if (!rawJwtSecret || rawJwtSecret.length < 32 || rawJwtSecret.includes('change_in_production')) {
-    throw new Error('[FATAL] JWT_SECRET 未配置、包含弱口令标识或长度不足 32 位，生产模式拒绝启动');
+  if (
+    !rawJwtSecret ||
+    rawJwtSecret.length < 32 ||
+    rawJwtSecret.includes('change_in_production') ||
+    BANNED_SECRETS.includes(rawJwtSecret)
+  ) {
+    throw new Error('[FATAL] JWT_SECRET 未配置、包含已知预设弱口令或长度不足 32 位，生产模式拒绝启动');
   }
 }
 
