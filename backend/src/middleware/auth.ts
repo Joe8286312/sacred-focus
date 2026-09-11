@@ -22,12 +22,9 @@ export function safeCompare(a: string, b: string): boolean {
 }
 
 export function authMiddleware(req: Request, res: Response, next: NextFunction) {
-  // 1. 白名单接口直接放行
-  if (PUBLIC_PATHS.some(p => req.path === p)) {
-    return next();
-  }
+  const isPublic = PUBLIC_PATHS.some(p => req.path === p);
 
-  // 2. 提取凭据（优先请求头 Authorization: Bearer，备选 Cookie 中的 sf_token）
+  // 提取凭据（优先请求头 Authorization: Bearer，备选 Cookie 中的 sf_token）
   const authHeader = req.headers['authorization'] || '';
   const headerToken = authHeader.replace(/^Bearer\s+/i, '').trim() || (req.headers['x-access-token'] as string);
   const cookieToken = req.cookies ? req.cookies['sf_token'] : undefined;
@@ -39,8 +36,8 @@ export function authMiddleware(req: Request, res: Response, next: NextFunction) 
     return next();
   }
 
-
   if (!token) {
+    if (isPublic) return next();
     return res.status(401).json({
       error: 'UNAUTHORIZED',
       message: '神圣契约拒绝未授权访问，请先验证管理员身份'
@@ -57,6 +54,7 @@ export function authMiddleware(req: Request, res: Response, next: NextFunction) 
       if (revoked) {
         const exp = parseInt(revoked.value, 10);
         if (isNaN(exp) || Date.now() < exp) {
+          if (isPublic) return next();
           return res.status(401).json({
             error: 'TOKEN_REVOKED',
             message: '该登录凭证已被安全注销，请重新登录'
@@ -66,9 +64,10 @@ export function authMiddleware(req: Request, res: Response, next: NextFunction) 
     }
 
     req.user = decoded;
-    next();
+    return next();
 
   } catch (err: any) {
+    if (isPublic) return next();
     return res.status(401).json({
       error: 'TOKEN_EXPIRED_OR_INVALID',
       message: '登录凭证已过期或无效，请重新登录'

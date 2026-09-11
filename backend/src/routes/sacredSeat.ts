@@ -39,6 +39,44 @@ router.put('/config', (req: Request, res: Response) => {
     return res.status(404).json({ error: 'Config not found' });
   }
 
+  // 边界与类型强校验 (P2-006)
+  if (sacredToken !== undefined && (typeof sacredToken !== 'string' || sacredToken.trim().length === 0 || sacredToken.length > 128)) {
+    return res.status(400).json({ error: 'INVALID_SACRED_TOKEN', message: '神圣图腾指令必须为 1-128 字符的有效字符串' });
+  }
+
+  if (reservationSignal !== undefined && (typeof reservationSignal !== 'string' || reservationSignal.trim().length === 0 || reservationSignal.length > 128)) {
+    return res.status(400).json({ error: 'INVALID_RESERVATION_SIGNAL', message: '预约暗号必须为 1-128 字符的有效字符串' });
+  }
+
+  if (defaultFocusDuration !== undefined) {
+    const dur = Number(defaultFocusDuration);
+    if (!Number.isInteger(dur) || dur < 1 || dur > 1440) {
+      return res.status(400).json({ error: 'INVALID_FOCUS_DURATION', message: '默认专注时长必须为 1 到 1440 分钟之间的整数' });
+    }
+  }
+
+  if (regretWindowSeconds !== undefined) {
+    const reg = Number(regretWindowSeconds);
+    if (!Number.isInteger(reg) || reg < 5 || reg > 300) {
+      return res.status(400).json({ error: 'INVALID_REGRET_WINDOW', message: '后悔药窗口时长必须为 5 到 300 秒之间的整数' });
+    }
+  }
+
+  const targetCurrentStreak = currentStreak !== undefined ? Number(currentStreak) : current.currentStreak;
+  const targetMaxStreak = maxStreak !== undefined ? Number(maxStreak) : current.maxStreak;
+
+  if (currentStreak !== undefined && (!Number.isInteger(targetCurrentStreak) || targetCurrentStreak < 0)) {
+    return res.status(400).json({ error: 'INVALID_CURRENT_STREAK', message: '当前连胜天数必须为非负整数' });
+  }
+
+  if (maxStreak !== undefined && (!Number.isInteger(targetMaxStreak) || targetMaxStreak < 0)) {
+    return res.status(400).json({ error: 'INVALID_MAX_STREAK', message: '最大连胜天数必须为非负整数' });
+  }
+
+  if (targetCurrentStreak > targetMaxStreak) {
+    return res.status(400).json({ error: 'INVALID_STREAK_RANGE', message: '当前连胜不能超过历史最大连胜' });
+  }
+
   db.prepare(`
     UPDATE sacred_seat_config
     SET sacredToken = @sacredToken,
@@ -50,12 +88,12 @@ router.put('/config', (req: Request, res: Response) => {
         updatedAt = datetime('now')
     WHERE id = 1
   `).run({
-    sacredToken: sacredToken ?? current.sacredToken,
-    reservationSignal: reservationSignal ?? current.reservationSignal,
-    defaultFocusDuration: defaultFocusDuration ?? current.defaultFocusDuration,
-    regretWindowSeconds: regretWindowSeconds ?? current.regretWindowSeconds,
-    currentStreak: currentStreak ?? current.currentStreak,
-    maxStreak: maxStreak ?? current.maxStreak
+    sacredToken: sacredToken !== undefined ? String(sacredToken).trim() : current.sacredToken,
+    reservationSignal: reservationSignal !== undefined ? String(reservationSignal).trim() : current.reservationSignal,
+    defaultFocusDuration: defaultFocusDuration !== undefined ? Number(defaultFocusDuration) : current.defaultFocusDuration,
+    regretWindowSeconds: regretWindowSeconds !== undefined ? Number(regretWindowSeconds) : current.regretWindowSeconds,
+    currentStreak: targetCurrentStreak,
+    maxStreak: targetMaxStreak
   });
 
   incrementSystemRevision();
@@ -90,9 +128,11 @@ router.post('/reset-streak', (_req: Request, res: Response) => {
   res.json({ currentStreak: updated?.currentStreak ?? 0, maxStreak: updated?.maxStreak ?? 0 });
 });
 
-// 获取流水日志
+// 获取流水日志 (P2-006: limit 范围规范与防御)
 router.get('/logs', (req: Request, res: Response) => {
-  const limit = parseInt((req.query.limit as string) || '50', 10);
+  const rawLimit = parseInt(String(req.query.limit || '50'), 10);
+  const limit = isNaN(rawLimit) || rawLimit < 1 ? 50 : Math.min(rawLimit, 500);
+
   const rows = db.prepare(`
     SELECT * FROM focus_session_logs
     ORDER BY startTime DESC
@@ -267,6 +307,19 @@ router.post('/logs', (req: Request, res: Response) => {
 
   if (!VALID_LOG_STATUSES.includes(status)) {
     return res.status(400).json({ error: 'INVALID_STATUS', message: `Invalid session status: ${status}. Expected SUCCESS, FAIL, or REGRET.` });
+  }
+
+  // P1-005 幂等性支持：如果该日志 ID 已存在，直接返回已有记录及当前连胜状态，不重复记账或抛出唯一键冲突
+  const existing = db.prepare('SELECT * FROM focus_session_logs WHERE id = ?').get(id) as FocusSessionLogRow | undefined;
+  if (existing) {
+    const currentConfig = db.prepare('SELECT currentStreak, maxStreak FROM sacred_seat_config WHERE id = 1').get() as Pick<SacredSeatConfigRow, 'currentStreak' | 'maxStreak'> | undefined;
+    return res.status(200).json({
+      logId: existing.id,
+      status: existing.status,
+      currentStreak: currentConfig?.currentStreak ?? 0,
+      maxStreak: currentConfig?.maxStreak ?? 0,
+      idempotent: true
+    });
   }
 
   const insertStmt = db.prepare(`

@@ -1,0 +1,50 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="100%" height="100%">
+  <defs>
+    <radialGradient id="bgGlow" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#1E1B4B" stop-opacity="0.8"/>
+      <stop offset="100%" stop-color="#0A0A0C" stop-opacity="1"/>
+    </radialGradient>
+    <linearGradient id="goldGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#FCD34D"/>
+      <stop offset="50%" stop-color="#F59E0B"/>
+      <stop offset="100%" stop-color="#D97706"/>
+    </linearGradient>
+    <linearGradient id="cyanGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#38BDF8"/>
+      <stop offset="100%" stop-color="#0284C7"/>
+    </linearGradient>
+    <filter id="coreGlow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="8" result="blur"/>
+      <feComposite in="SourceGraphic" in2="blur" operator="over"/>
+    </filter>
+  </defs>
+
+  <!-- Background rounded canvas -->
+  <rect width="512" height="512" rx="108" fill="url(#bgGlow)"/>
+  <rect width="504" height="504" x="4" y="4" rx="104" fill="none" stroke="#F59E0B" stroke-opacity="0.2" stroke-width="4"/>
+
+  <!-- Outer Hexagonal Nexus -->
+  <polygon points="256,64 420,158 420,354 256,448 92,354 92,158" 
+           fill="none" stroke="url(#goldGrad)" stroke-width="8" stroke-linejoin="round" stroke-opacity="0.4"/>
+
+  <!-- Inner Concentric Tree Network Links -->
+  <line x1="256" y1="120" x2="256" y2="256" stroke="url(#cyanGrad)" stroke-width="6" stroke-linecap="round" stroke-dasharray="8 8"/>
+  <line x1="256" y1="256" x2="160" y2="340" stroke="url(#cyanGrad)" stroke-width="6" stroke-linecap="round"/>
+  <line x1="256" y1="256" x2="352" y2="340" stroke="url(#cyanGrad)" stroke-width="6" stroke-linecap="round"/>
+
+  <!-- Sacred Seat / Flame Pyramid -->
+  <path d="M 256,130 L 350,300 L 162,300 Z" 
+        fill="url(#goldGrad)" fill-opacity="0.15" stroke="url(#goldGrad)" stroke-width="7" stroke-linejoin="round"/>
+
+  <!-- Core Radiant Focus Diamond -->
+  <g filter="url(#coreGlow)">
+    <polygon points="256,190 310,256 256,322 202,256" fill="url(#goldGrad)"/>
+    <polygon points="256,215 285,256 256,297 227,256" fill="#FFFBEB"/>
+  </g>
+
+  <!-- Satellite Focus Nodes (Nodes on the Tree) -->
+  <circle cx="256" cy="120" r="14" fill="#38BDF8" stroke="#0A0A0C" stroke-width="4"/>
+  <circle cx="160" cy="340" r="14" fill="#F59E0B" stroke="#0A0A0C" stroke-width="4"/>
+  <circle cx="352" cy="340" r="14" fill="#F59E0B" stroke="#0A0A0C" stroke-width="4"/>
+  <circle cx="256" cy="390" r="18" fill="url(#goldGrad)" stroke="#0A0A0C" stroke-width="4"/>
+</svg>

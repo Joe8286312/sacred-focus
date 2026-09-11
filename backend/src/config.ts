@@ -8,18 +8,59 @@ const isProduction = process.env.NODE_ENV === 'production';
 
 const BANNED_SECRETS = [
   'sacred_focus_super_secret_jwt_key_32chars_2026',
-  'sacred_focus_default_jwt_secret_change_in_production_2026'
+  'sacred_focus_default_jwt_secret_change_in_production_2026',
+  'SacredFocus_Production_Secure_JWT_Key_2026_ChangeMeImmediately!',
+  '<GENERATE_HIGH_ENTROPY_JWT_SECRET_MIN_32_CHARS>'
 ];
 
-// 生产环境下强制校验 JWT 密钥强度，杜绝默认弱口令哑弹与公开预设密钥 (P0-002)
+const BANNED_ADMIN_PASSWORDS = [
+  'admin123456',
+  'SacredFocus@Admin2026',
+  '123456',
+  'admin',
+  'password',
+  '<SET_STRONG_ADMIN_PASSWORD_MIN_12_CHARS>'
+];
+
+function isWeakOrPlaceholderSecret(secret: string): boolean {
+  const lower = secret.toLowerCase();
+  return (
+    secret.length < 32 ||
+    lower.includes('change_in_production') ||
+    lower.includes('changeme') ||
+    lower.includes('example') ||
+    lower.includes('placeholder') ||
+    lower.includes('<generate') ||
+    BANNED_SECRETS.includes(secret)
+  );
+}
+
+function isWeakOrPlaceholderPassword(pwd: string): boolean {
+  const lower = pwd.toLowerCase();
+  return (
+    pwd.length < 8 ||
+    lower.includes('admin2026') ||
+    lower.includes('123456') ||
+    lower.includes('changeme') ||
+    lower.includes('placeholder') ||
+    lower.includes('<set_strong') ||
+    BANNED_ADMIN_PASSWORDS.includes(pwd)
+  );
+}
+
+const rawAdminPassword = process.env.ADMIN_PASSWORD;
+const rawAdminPasswordHash = process.env.ADMIN_PASSWORD_HASH;
+
+// 生产环境下强制校验 JWT 密钥与管理员初始密码强度，杜绝默认弱口令与公开预设密钥 (P0-001)
 if (isProduction) {
-  if (
-    !rawJwtSecret ||
-    rawJwtSecret.length < 32 ||
-    rawJwtSecret.includes('change_in_production') ||
-    BANNED_SECRETS.includes(rawJwtSecret)
-  ) {
-    throw new Error('[FATAL] JWT_SECRET 未配置、包含已知预设弱口令或长度不足 32 位，生产模式拒绝启动');
+  if (!rawJwtSecret || isWeakOrPlaceholderSecret(rawJwtSecret)) {
+    throw new Error('[FATAL] JWT_SECRET 未配置、包含已知预设/占位符弱口令或长度不足 32 位，生产模式拒绝启动');
+  }
+
+  if (!rawAdminPasswordHash) {
+    if (!rawAdminPassword || isWeakOrPlaceholderPassword(rawAdminPassword)) {
+      throw new Error('[FATAL] 生产环境下 ADMIN_PASSWORD 未配置、包含已知默认弱口令或示例占位符，生产模式拒绝启动');
+    }
   }
 }
 

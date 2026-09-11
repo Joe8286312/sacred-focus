@@ -6,7 +6,6 @@ import NodeEditModal from '../components/canvas/NodeEditModal.vue';
 import type { FocusNode } from '../types';
 
 import { useListSort } from '../composables/useListSort';
-import type { SortableKey, SortRuleItem } from '../composables/useListSort';
 
 const store = useFocusTreeStore();
 
@@ -121,9 +120,13 @@ async function saveCurrentOrder() {
     return;
   }
   const currentIds = displayNodes.value.map(n => n.id);
-  await store.saveReorder(currentIds);
-  clearSort();
-  isOrderDirty.value = false;
+  try {
+    await store.saveReorder(currentIds);
+    clearSort();
+    isOrderDirty.value = false;
+  } catch (err: any) {
+    alert('保存排序失败：' + (err?.message || '网络异常，请重试'));
+  }
 }
 
 // -----------------------------------------------------------------------------

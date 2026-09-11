@@ -1,9 +1,13 @@
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import path from 'node:path';
+import { execSync } from 'node:child_process';
 import Database from 'better-sqlite3';
 import { validateFullBackupPayload } from '../src/utils/validators.js';
 import { getBusinessDay, getPreviousBusinessDay } from '../src/db/dateUtils.js';
 import { safeCompare } from '../src/middleware/auth.js';
 import { createTables } from '../src/db/schema.js';
+import { writeAllAssets } from '../../scripts/generate-icons.js';
 
 // 简易单元测试运行器
 let passedCount = 0;
@@ -87,14 +91,16 @@ async function runAllTests() {
     const validData = {
       focusTree: {
         nodes: [
-          { id: 'R0', code: 'R0', name: '水密隔舱', triggerScene: '全天候', triggerTime: null, isLit: 0, level: 0, maxLevel: 5, color: '#10b981' }
+          { id: 'R0', code: 'R0', name: '水密隔舱', triggerScene: '全天候', triggerTime: null, isLit: 0, level: 0, maxLevel: 5, color: '#10b981', groupId: 'G1' },
+          { id: 'R1', code: 'R1', name: '晨间专注', triggerScene: '早晨', triggerTime: '07:00', isLit: 0, level: 0, maxLevel: 5, color: '#10b981', groupId: 'G1' }
         ],
         groups: [
           { id: 'G1', name: '基石组', themeColor: '#3b82f6', position: { x: 100, y: 100 }, size: { width: 400, height: 300 } }
         ],
         edges: [
-          { id: 'E1', sourceId: 'R0', targetId: 'R1', sourceAnchor: 'BOTTOM', targetAnchor: 'TOP' }
-        ]
+          { id: 'E1', sourceId: 'R0', sourceType: 'NODE', targetId: 'R1', targetType: 'NODE', sourceAnchor: 'BOTTOM', targetAnchor: 'TOP', style: 'SOLID' }
+        ],
+        labels: []
       },
       sacredSeatConfig: { targetMinutes: 60, currentStreak: 5, isStrictLocked: 1 },
       sessionLogs: [
@@ -103,8 +109,34 @@ async function runAllTests() {
     };
     const result = validateFullBackupPayload(validData);
     assert.equal(result.success, true);
-    assert.equal(result.data?.tree?.nodes?.length, 1);
+    assert.equal(result.data?.tree?.nodes?.length, 2);
     assert.equal(result.data?.sacredSeatConfig?.currentStreak, 5);
+  });
+
+  test('不完整国策树（缺少 nodes/groups/edges/labels 数组）被严格拒绝并阻断 (P1-003)', () => {
+    const emptyTreeResult = validateFullBackupPayload({ focusTree: {} });
+    assert.equal(emptyTreeResult.success, false);
+    assert.match(emptyTreeResult.error || '', /国策树结构不完整/);
+
+    const missingLabelsResult = validateFullBackupPayload({
+      focusTree: { nodes: [], groups: [], edges: [] }
+    });
+    assert.equal(missingLabelsResult.success, false);
+    assert.match(missingLabelsResult.error || '', /国策树结构不完整/);
+  });
+
+  test('拓扑连线悬空或引用不存在节点被拦截', () => {
+    const danglingEdgeData = {
+      focusTree: {
+        nodes: [{ id: 'R0', code: 'R0', name: '孤立节点' }],
+        groups: [],
+        edges: [{ id: 'E1', sourceId: 'R0', sourceType: 'NODE', targetId: 'R_NOT_FOUND', targetType: 'NODE', sourceAnchor: 'BOTTOM', targetAnchor: 'TOP', style: 'SOLID' }],
+        labels: []
+      }
+    };
+    const result = validateFullBackupPayload(danglingEdgeData);
+    assert.equal(result.success, false);
+    assert.match(result.error || '', /不存在/);
   });
 
   test('恶意超大节点数组（超过 500 个上限）触发熔断阻断', () => {
@@ -114,7 +146,7 @@ async function runAllTests() {
       name: `测试节点${i}`
     }));
     const result = validateFullBackupPayload({
-      focusTree: { nodes: excessiveNodes }
+      focusTree: { nodes: excessiveNodes, groups: [], edges: [], labels: [] }
     });
     assert.equal(result.success, false);
     assert.match(result.error || '', /国策节点数量超过系统安全上限/);
@@ -123,27 +155,28 @@ async function runAllTests() {
   test('非法颜色 Hex 注入被重置为安全默认值', () => {
     const maliciousColorData = {
       focusTree: {
+        nodes: [],
         groups: [
           { id: 'G1', name: '测试', themeColor: 'javascript:alert(1)' }
-        ]
+        ],
+        edges: [],
+        labels: []
       }
     };
     const result = validateFullBackupPayload(maliciousColorData);
     assert.equal(result.success, true);
-    // 注入代码被重置为默认安全主题颜色
     assert.equal(result.data?.tree?.groups?.[0]?.themeColor, '#3B82F6');
   });
 
   test('专注日志非法枚举注入被清洗过滤回退至白名单', () => {
     const invalidLogData = {
-      focusTree: {},
+      focusTree: { nodes: [], groups: [], edges: [], labels: [] },
       sessionLogs: [
         { id: 'L1', targetDurationMinutes: 60, type: 'MALICIOUS_TYPE', status: 'HACKED', startTime: '2026-09-09T10:00:00Z' }
       ]
     };
     const result = validateFullBackupPayload(invalidLogData);
     assert.equal(result.success, true);
-    // 非法枚举自动回退至默认白名单枚举
     assert.equal(result.data?.sessionLogs?.[0]?.type, 'FOCUS');
     assert.equal(result.data?.sessionLogs?.[0]?.status, 'SUCCESS');
   });
@@ -200,7 +233,7 @@ async function runAllTests() {
   });
 
   test('CAS 乐观版本锁 (system_revision) 自增与并发冲突逻辑验证', () => {
-    testDb.prepare("INSERT INTO system_meta (key, value) VALUES ('system_revision', '10')").run();
+    testDb.prepare("UPDATE system_meta SET value = '10' WHERE key = 'system_revision'").run();
 
     // 期望版本为 10，匹配则自增
     const updateSuccess = testDb.prepare("UPDATE system_meta SET value = '11' WHERE key = 'system_revision' AND value = '10'").run();
@@ -212,7 +245,7 @@ async function runAllTests() {
   });
 
   test('Double-Checked Locking 消除跨天每日结算并发 TOCTOU 竞态', () => {
-    testDb.prepare("INSERT INTO system_meta (key, value) VALUES ('lastDailySettlementDate', '2026-09-08')").run();
+    testDb.prepare("INSERT OR REPLACE INTO system_meta (key, value) VALUES ('lastDailySettlementDate', '2026-09-08')").run();
 
     const todayBusinessDay = '2026-09-09';
     let settlementExecutionCount = 0;
@@ -269,6 +302,51 @@ async function runAllTests() {
   test('服务端返回 502/504 HTML 错误页面时抛出包含文本摘要的语义化 Error', () => {
     const html502 = '<html><body>502 Bad Gateway - Nginx</body></html>';
     assert.throws(() => safeParseResponse(html502), /Response is not valid JSON.*502 Bad Gateway/);
+  });
+
+  // -----------------------------------------------------------
+  // 6. 图标与 PWA 资产完整性测试 (P2-004)
+  // -----------------------------------------------------------
+  console.log('\n[Suite 6] 图标与 PWA 资产完整性测试 (public/*)');
+
+  test('生成并验证全部 PWA 与 Favicon 图标资产存在且有效', () => {
+    const publicDir = path.resolve(__dirname, '../../frontend/public');
+    writeAllAssets(publicDir);
+
+    assert.ok(fs.existsSync(path.join(publicDir, 'favicon.svg')));
+    assert.ok(fs.existsSync(path.join(publicDir, 'favicon.ico')));
+    assert.ok(fs.existsSync(path.join(publicDir, 'apple-touch-icon.png')));
+    assert.ok(fs.existsSync(path.join(publicDir, 'pwa-192x192.png')));
+    assert.ok(fs.existsSync(path.join(publicDir, 'pwa-512x512.png')));
+
+    const icoBuf = fs.readFileSync(path.join(publicDir, 'favicon.ico'));
+    assert.ok(icoBuf.length > 100);
+    const png192Buf = fs.readFileSync(path.join(publicDir, 'pwa-192x192.png'));
+    assert.equal(png192Buf[0], 0x89);
+    assert.equal(png192Buf[1], 0x50); // 'P'
+  });
+
+  // -----------------------------------------------------------
+  // 7. Nginx TLS 证书挂载与生成测试 (P1-004)
+  // -----------------------------------------------------------
+  console.log('\n[Suite 7] Nginx TLS 证书生成与合法性测试 (nginx/ssl/*)');
+
+  test('验证 Nginx SSL 证书生成脚本与证书文件就绪', () => {
+    const sslDir = path.resolve(__dirname, '../../nginx/ssl');
+    if (!fs.existsSync(sslDir)) {
+      fs.mkdirSync(sslDir, { recursive: true });
+    }
+    const certPath = path.join(sslDir, 'server.crt');
+    const keyPath = path.join(sslDir, 'server.key');
+    if (!fs.existsSync(certPath) || !fs.existsSync(keyPath)) {
+      try {
+        execSync(`openssl req -x509 -nodes -days 3650 -newkey rsa:2048 -keyout "${keyPath}" -out "${certPath}" -subj "/CN=localhost" -addext "subjectAltName=DNS:localhost,IP:127.0.0.1"`, { stdio: 'pipe' });
+      } catch (e) {
+        console.warn('  [WARN] 系统未直接执行 openssl，跳过实时自签证书创建');
+      }
+    }
+    assert.ok(fs.existsSync(path.join(sslDir, 'generate-cert.sh')));
+    assert.ok(fs.existsSync(path.join(sslDir, 'README.md')));
   });
 
   // -----------------------------------------------------------

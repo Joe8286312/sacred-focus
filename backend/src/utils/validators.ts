@@ -182,57 +182,118 @@ export function validateFullBackupPayload(body: unknown): ValidationResult<any> 
     return { success: false, error: '备份文件缺少合法的 focusTree 或 liveTree 树结构数据' };
   }
 
+  // P1-003 防御：国策树必须完整包含 nodes, groups, edges, labels 数组，禁止缺少字段导致清空现有数据
+  if (
+    !Array.isArray(rawTree.nodes) ||
+    !Array.isArray(rawTree.groups) ||
+    !Array.isArray(rawTree.edges) ||
+    !Array.isArray(rawTree.labels)
+  ) {
+    return {
+      success: false,
+      error: '备份文件国策树结构不完整：nodes、groups、edges、labels 必须均为数组'
+    };
+  }
+
   const errors: string[] = [];
 
   // 1. 节点数组校验 (上限 500)
-  const rawNodes = Array.isArray(rawTree.nodes) ? rawTree.nodes : [];
+  const rawNodes = rawTree.nodes;
   if (rawNodes.length > 500) {
     return { success: false, error: '国策节点数量超过系统安全上限 (最大500条)' };
   }
   const validatedNodes: any[] = [];
+  const nodeIds = new Set<string>();
   for (let i = 0; i < rawNodes.length; i++) {
     const node = validateNodeItem(rawNodes[i], i, errors);
-    if (node) validatedNodes.push(node);
+    if (node) {
+      if (nodeIds.has(node.id)) {
+        errors.push(`第 ${i + 1} 个节点 ID 重复: ${node.id}`);
+      } else {
+        nodeIds.add(node.id);
+      }
+      validatedNodes.push(node);
+    }
   }
 
   // 2. 分组数组校验 (上限 100)
-  const rawGroups = Array.isArray(rawTree.groups) ? rawTree.groups : [];
+  const rawGroups = rawTree.groups;
   if (rawGroups.length > 100) {
     return { success: false, error: '分组数量超过系统安全上限 (最大100个)' };
   }
   const validatedGroups: any[] = [];
+  const groupIds = new Set<string>();
   for (let i = 0; i < rawGroups.length; i++) {
     const group = validateGroupItem(rawGroups[i], i, errors);
-    if (group) validatedGroups.push(group);
+    if (group) {
+      if (groupIds.has(group.id)) {
+        errors.push(`第 ${i + 1} 个分组 ID 重复: ${group.id}`);
+      } else {
+        groupIds.add(group.id);
+      }
+      validatedGroups.push(group);
+    }
+  }
+
+  // 校验节点的分组引用有效性
+  for (const node of validatedNodes) {
+    if (node.groupId && !groupIds.has(node.groupId)) {
+      errors.push(`节点 ${node.id} 引用的分组 ${node.groupId} 不存在`);
+    }
   }
 
   // 3. 连线数组校验 (上限 1000)
-  const rawEdges = Array.isArray(rawTree.edges) ? rawTree.edges : [];
+  const rawEdges = rawTree.edges;
   if (rawEdges.length > 1000) {
     return { success: false, error: '拓扑连线数量超过系统安全上限 (最大1000条)' };
   }
   const validatedEdges: any[] = [];
+  const edgeIds = new Set<string>();
   for (let i = 0; i < rawEdges.length; i++) {
     const edge = validateEdgeItem(rawEdges[i], i, errors);
-    if (edge) validatedEdges.push(edge);
+    if (edge) {
+      if (edgeIds.has(edge.id)) {
+        errors.push(`第 ${i + 1} 条连线 ID 重复: ${edge.id}`);
+      } else {
+        edgeIds.add(edge.id);
+      }
+      // 拓扑连线端点有效性校验
+      const validSource = edge.sourceType === 'GROUP' ? groupIds.has(edge.sourceId) : nodeIds.has(edge.sourceId);
+      const validTarget = edge.targetType === 'GROUP' ? groupIds.has(edge.targetId) : nodeIds.has(edge.targetId);
+      if (!validSource) {
+        errors.push(`连线 ${edge.id} 的源节点/分组 ${edge.sourceId} 不存在`);
+      }
+      if (!validTarget) {
+        errors.push(`连线 ${edge.id} 的目标节点/分组 ${edge.targetId} 不存在`);
+      }
+      validatedEdges.push(edge);
+    }
   }
 
   // 4. 说明标签校验 (上限 200)
-  const rawLabels = Array.isArray(rawTree.labels) ? rawTree.labels : [];
+  const rawLabels = rawTree.labels;
   if (rawLabels.length > 200) {
     return { success: false, error: '标签数量超过系统安全上限 (最大200个)' };
   }
   const validatedLabels: any[] = [];
+  const labelIds = new Set<string>();
   for (let i = 0; i < rawLabels.length; i++) {
     const label = validateLabelItem(rawLabels[i], i, errors);
-    if (label) validatedLabels.push(label);
+    if (label) {
+      if (labelIds.has(label.id)) {
+        errors.push(`第 ${i + 1} 个标签 ID 重复: ${label.id}`);
+      } else {
+        labelIds.add(label.id);
+      }
+      validatedLabels.push(label);
+    }
   }
 
-  if (errors.length > 10) {
+  if (errors.length > 0) {
     return {
       success: false,
-      error: `数据包含过多结构错误 (${errors.length} 项)，导入终止`,
-      details: errors.slice(0, 10)
+      error: `备份数据结构校验未通过 (${errors.length} 项错误): ${errors[0]}`,
+      details: errors.slice(0, 20)
     };
   }
 

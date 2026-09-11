@@ -198,6 +198,7 @@ export const useFocusTreeStore = defineStore('focusTree', () => {
       });
     } catch (e) {
       console.error('Failed to reorder nodes', e);
+      throw e;
     }
   }
 

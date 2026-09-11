@@ -61,14 +61,19 @@ router.post('/import', importLimiter, async (req: Request, res: Response) => {
 
   const { tree, sacredSeatConfig, precedentCases, evolution, sessionLogs } = validation.data;
 
-  // 导入前自动热备当前 SQLite 数据库快照
+  // 导入前自动热备当前 SQLite 数据库快照 (P1-002: 热备失败必须终止导入，严禁破坏性覆写)
   try {
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
     const backupFile = path.join(config.dataDir, `app_pre_import_${timestamp}.db`);
     await db.backup(backupFile);
     console.log(`[Sacred Focus System] 预导入安全热备已生成: ${backupFile}`);
-  } catch (backupErr) {
-    console.warn('[Sacred Focus System] 预导入热备创建失败 (继续执行导入):', backupErr);
+  } catch (backupErr: any) {
+    console.error('[Sacred Focus System] 预导入热备创建失败，终止导入操作以防数据丢失:', backupErr);
+    return res.status(500).json({
+      error: 'BACKUP_FAILED_ABORT_IMPORT',
+      message: '导入前热备数据库快照失败，为防止数据损坏已终止导入',
+      details: backupErr?.message || String(backupErr)
+    });
   }
 
   try {

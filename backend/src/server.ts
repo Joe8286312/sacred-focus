@@ -66,16 +66,17 @@ app.use(express.json({ limit: '15mb' }));
 // 1. 全局爬虫特征过滤与蜜罐诱捕
 app.use(securityFilter);
 
-// 2. 通用 API 请求限流器 (已认证 1000次/分，未认证 60次/分，本机豁免)
-app.use('/api', apiGeneralLimiter);
-
-// 3. 全局统一身份鉴权中间件 (支持白名单放行与双轨 JWT/Cookie 校验)
+// 2. 全局统一身份鉴权中间件 (前置解析身份以向后继限流器提供 req.user 判定依据)
 app.use('/api', authMiddleware);
+
+// 3. 通用 API 请求限流器 (已认证 1000次/分，未认证 60次/分，本机豁免)
+app.use('/api', apiGeneralLimiter);
 
 // 核心业务与系统路由挂载
 app.get('/api/health', (_req: Request, res: Response) => {
   res.json({
     status: 'ok',
+    version: process.env.APP_VERSION || '1.0.0',
     timestamp: new Date().toISOString(),
     service: 'sacred-focus-backend'
   });

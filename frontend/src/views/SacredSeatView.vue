@@ -37,8 +37,29 @@ function openHistoryModal(tab: 'LOGS' | 'HEATMAP' = 'LOGS') {
   isHistoryModalOpen.value = true;
 }
 
-// 后悔药即时提示气泡
+// 后悔药即时提示气泡与错误重试状态 (P1-005)
 const regretNotice = ref('');
+const pendingFailedLog = ref<FocusSessionLog | null>(null);
+const saveErrorMsg = ref('');
+const ACTIVE_SESSION_KEY = 'sacred_focus_active_session';
+
+async function retrySaveFailedLog() {
+  if (!pendingFailedLog.value) return;
+  try {
+    saveErrorMsg.value = '';
+    await store.recordSession(pendingFailedLog.value);
+    const savedLog = pendingFailedLog.value;
+    pendingFailedLog.value = null;
+    if (savedLog.status === 'SUCCESS') {
+      regretNotice.value = `恭喜！专注已成功补记，主链推进至 #${store.config.currentStreak}！`;
+    } else {
+      regretNotice.value = '会话记录已补记保存成功。';
+    }
+    setTimeout(() => { regretNotice.value = ''; }, 3500);
+  } catch (err: any) {
+    saveErrorMsg.value = `重试保存失败: ${err?.message || '网络异常，请重试'}`;
+  }
+}
 
 // 专注目标与内容
 const currentFocusContent = ref('');
@@ -114,6 +135,13 @@ function startFocus(minutes?: number) {
   sessionStartTime.value = new Date();
   currentState.value = 'FOCUSING';
 
+  localStorage.setItem(ACTIVE_SESSION_KEY, JSON.stringify({
+    id: generateLogId(),
+    startTime: sessionStartTime.value.toISOString(),
+    targetDurationMinutes: mins,
+    focusContent: currentFocusContent.value.trim()
+  }));
+
   // 关键：点击开启专注时直接进入沉浸式全屏（F11 效果）
   store.enterFullscreen();
 
@@ -170,6 +198,7 @@ function handleGiveUpClick() {
 // 触发后悔药免责退出（0ms 乐观更新，非阻塞异步上报）
 function triggerRegretExit() {
   clearTimer();
+  localStorage.removeItem(ACTIVE_SESSION_KEY);
   const actualSec = calculateActualSeconds();
   const startIso = sessionStartTime.value ? sessionStartTime.value.toISOString() : new Date().toISOString();
   const targetMins = Math.round(targetDurationSeconds.value / 60);
@@ -189,7 +218,11 @@ function triggerRegretExit() {
     focusContent: currentFocusContent.value.trim() || undefined,
     note: '在30秒免责窗口内使用后悔药退出，主链连胜完整保留'
   };
-  store.recordSession(log).catch(err => console.error('Failed to log regret session', err));
+  store.recordSession(log).catch(err => {
+    console.error('Failed to log regret session', err);
+    pendingFailedLog.value = log;
+    saveErrorMsg.value = '后悔药会话同步失败，请点击重试保存。';
+  });
 
   // 3. 提示横幅
   regretNotice.value = '已触发后悔药国策：本次退出不扣连胜，无负罪感退出。';
@@ -202,6 +235,7 @@ function triggerRegretExit() {
 function handleConfirmReset(payload: { focusContent: string; failureReason: string }) {
   isWarningModalOpen.value = false;
   clearTimer();
+  localStorage.removeItem(ACTIVE_SESSION_KEY);
   const actualSec = calculateActualSeconds();
   const startIso = sessionStartTime.value ? sessionStartTime.value.toISOString() : new Date().toISOString();
   const targetMins = Math.round(targetDurationSeconds.value / 60);
@@ -222,18 +256,23 @@ function handleConfirmReset(payload: { focusContent: string; failureReason: stri
     failureReason: payload.failureReason,
     note: `中途主动中断专注：${payload.failureReason}`
   };
-  store.recordSession(log).catch(err => console.error('Failed to log fail session', err));
-
-  regretNotice.value = '专注已中断：承认本次主链断裂，连胜纪录重置为 #0。';
-  setTimeout(() => {
-    regretNotice.value = '';
-  }, 3500);
+  store.recordSession(log).then(() => {
+    regretNotice.value = '专注已中断：承认本次主链断裂，连胜纪录重置为 #0。';
+    setTimeout(() => {
+      regretNotice.value = '';
+    }, 3500);
+  }).catch(err => {
+    console.error('Failed to log fail session', err);
+    pendingFailedLog.value = log;
+    saveErrorMsg.value = '中断记录上传失败，请点击重试以确保连胜状态准确同步。';
+  });
 }
 
 // 正常结算（无争议 或 存入判例）
 async function handleCompleteSession(withCase: boolean, completedContent: string) {
   isCaseModalOpen.value = false;
   clearTimer();
+  localStorage.removeItem(ACTIVE_SESSION_KEY);
   const actualSec = actualCollectionSeconds.value > 0 ? actualCollectionSeconds.value : calculateActualSeconds();
   const startIso = sessionStartTime.value ? sessionStartTime.value.toISOString() : new Date().toISOString();
   const targetMins = Math.round(targetDurationSeconds.value / 60);
@@ -252,12 +291,17 @@ async function handleCompleteSession(withCase: boolean, completedContent: string
     note: withCase ? '专注成功完成（已增量录入下必为例判例）' : '专注成功完成（无争议）'
   };
 
-  await store.recordSession(log);
-
-  regretNotice.value = `恭喜！本次专注圆满完成，主链推进至 #${store.config.currentStreak}！`;
-  setTimeout(() => {
-    regretNotice.value = '';
-  }, 3500);
+  try {
+    await store.recordSession(log);
+    regretNotice.value = `恭喜！本次专注圆满完成，主链推进至 #${store.config.currentStreak}！`;
+    setTimeout(() => {
+      regretNotice.value = '';
+    }, 3500);
+  } catch (err: any) {
+    console.error('Failed to record complete session', err);
+    pendingFailedLog.value = log;
+    saveErrorMsg.value = `专注完成记录上传失败：${err?.message || '网络异常'}。请点击右侧重试按钮！`;
+  }
 }
 
 // -----------------------------------------------------------------------------
@@ -339,11 +383,44 @@ onBeforeRouteLeave((_to, _from, next) => {
   }
 });
 
-// 浏览器关闭或刷新防误触拦截
+// 浏览器关闭或刷新防误触拦截与防逃逸结算 (P2-005)
 function handleBeforeUnload(e: BeforeUnloadEvent) {
   if (currentState.value === 'FOCUSING' || currentState.value === 'OVER_FOCUS') {
     e.preventDefault();
     e.returnValue = '';
+  }
+}
+
+function handleUnloadSession() {
+  if (currentState.value === 'FOCUSING' || currentState.value === 'OVER_FOCUS') {
+    const raw = localStorage.getItem(ACTIVE_SESSION_KEY);
+    if (raw) {
+      try {
+        const data = JSON.parse(raw);
+        const actualSec = calculateActualSeconds();
+        const payload = {
+          id: data.id || generateLogId(),
+          type: 'FOCUS',
+          startTime: data.startTime || new Date().toISOString(),
+          endTime: new Date().toISOString(),
+          targetDurationMinutes: data.targetDurationMinutes || Math.round(targetDurationSeconds.value / 60),
+          actualDurationSeconds: actualSec,
+          status: 'FAIL',
+          focusContent: data.focusContent || currentFocusContent.value.trim() || undefined,
+          failureReason: '浏览器窗口或标签页被非正常关闭/刷新导致专注中断',
+          note: '页面被意外关闭或刷新，触发防逃逸失败记录并清零连胜'
+        };
+        fetch('/api/sacred-seat/logs', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+          keepalive: true
+        }).catch(() => {});
+        localStorage.removeItem(ACTIVE_SESSION_KEY);
+      } catch (err) {
+        console.error('Failed to send unload beacon', err);
+      }
+    }
   }
 }
 
@@ -352,11 +429,37 @@ onMounted(() => {
   store.fetchLogs();
   store.fetchHeatmapData();
   window.addEventListener('beforeunload', handleBeforeUnload);
+  window.addEventListener('pagehide', handleUnloadSession);
+
+  // 检测并恢复/结算上一次未完成的孤儿会话 (Orphan Session Recovery)
+  const savedSession = localStorage.getItem(ACTIVE_SESSION_KEY);
+  if (savedSession) {
+    try {
+      const s = JSON.parse(savedSession);
+      localStorage.removeItem(ACTIVE_SESSION_KEY);
+      const failLog: FocusSessionLog = {
+        id: s.id || generateLogId(),
+        type: 'FOCUS',
+        startTime: s.startTime || new Date().toISOString(),
+        endTime: new Date().toISOString(),
+        targetDurationMinutes: s.targetDurationMinutes || 60,
+        actualDurationSeconds: 1,
+        status: 'FAIL',
+        focusContent: s.focusContent || undefined,
+        failureReason: '前次专注被非正常中断（进程崩溃或强退）',
+        note: '系统自检恢复：检测到未正常关闭的专注心流，已记为主链断裂'
+      };
+      store.recordSession(failLog).catch(e => console.warn('Failed to recover abandoned session', e));
+    } catch (e) {
+      localStorage.removeItem(ACTIVE_SESSION_KEY);
+    }
+  }
 });
 
 onUnmounted(() => {
   clearTimer();
   window.removeEventListener('beforeunload', handleBeforeUnload);
+  window.removeEventListener('pagehide', handleUnloadSession);
   window.removeEventListener('click', handleWakeUpAction);
   window.removeEventListener('touchstart', handleWakeUpAction);
   store.isFocusMode = false;
@@ -368,7 +471,11 @@ onUnmounted(() => {
   <div class="seat-view-container" :class="{ 'is-focus-mode': currentState === 'FOCUSING' || currentState === 'OVER_FOCUS' }">
     <!-- 顶部后悔药或结算通知条 -->
     <Transition name="slide-down">
-      <div v-if="regretNotice" class="toast-notice">
+      <div v-if="pendingFailedLog" class="toast-notice toast-error">
+        <span>{{ saveErrorMsg || '会话记录保存失败，状态可能未同步！' }}</span>
+        <button class="btn-retry-save" @click="retrySaveFailedLog">立即重试保存</button>
+      </div>
+      <div v-else-if="regretNotice" class="toast-notice">
         {{ regretNotice }}
       </div>
     </Transition>
@@ -654,6 +761,30 @@ onUnmounted(() => {
   z-index: 50;
   text-align: center;
   backdrop-filter: blur(10px);
+}
+
+.toast-error {
+  border-color: #ef4444;
+  color: #fca5a5;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.btn-retry-save {
+  background: #ef4444;
+  color: #ffffff;
+  border: none;
+  border-radius: var(--radius-full);
+  padding: 4px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: opacity 0.2s;
+}
+
+.btn-retry-save:hover {
+  opacity: 0.9;
 }
 
 .seat-header {

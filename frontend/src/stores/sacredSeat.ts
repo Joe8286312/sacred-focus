@@ -132,10 +132,17 @@ export const useSacredSeatStore = defineStore('sacredSeat', () => {
       });
       config.value.currentStreak = data.currentStreak;
       config.value.maxStreak = data.maxStreak;
-      logs.value.unshift(session);
+      const existingIdx = logs.value.findIndex(l => l.id === session.id);
+      if (existingIdx >= 0) {
+        logs.value[existingIdx] = session;
+      } else {
+        logs.value.unshift(session);
+      }
       fetchHeatmapData();
+      return data;
     } catch (e) {
       console.error('Failed to record session', e);
+      throw e;
     }
   }
 
