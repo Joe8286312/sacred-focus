@@ -11,22 +11,14 @@ export function getClientIp(req: Request): string {
 export function isLocalOrTrusted(req: Request): boolean {
   const ip = getClientIp(req);
 
-  // 1. 本机回环 IP
+  // 1. 本机回环 IP (本地单机开发免密与单机调用放行)
   if (ip === '127.0.0.1' || ip === '::1' || ip === 'localhost' || ip === '') {
     return true;
   }
 
-  // 2. 局域网私有网段 (10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16)
-  if (
-    ip.startsWith('192.168.') ||
-    ip.startsWith('10.') ||
-    /^172\.(1[6-9]|2[0-9]|3[0-1])\./.test(ip)
-  ) {
-    return true;
-  }
-
-  // 3. 用户显式配置的受信任公网 IP 白名单
-  if (config.trustedIps && config.trustedIps.includes(ip)) {
+  // 2. 仅当用户在环境变量中显式配置 TRUSTED_IPS 时，特定受信任局域网/公网 IP 方可豁免 (P1-SEC-01)
+  // 杜绝盲目信任所有 192.168.x.x / 10.x.x.x / 172.16-31.x.x，防范公用/共享网络下的密码爆破与限流穿透
+  if (config.trustedIps && config.trustedIps.length > 0 && config.trustedIps.includes(ip)) {
     return true;
   }
 
