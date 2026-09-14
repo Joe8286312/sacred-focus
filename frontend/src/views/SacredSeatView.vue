@@ -107,8 +107,12 @@ function calculateActualSeconds(): number {
   return Math.max(1, elapsedSeconds.value);
 }
 
-// 是否处于 30 秒后悔药保护期内
+// 是否处于 30 秒后悔药保护期内 (P1-LOG-01: 基于真实物理时钟差值计算，杜绝息屏和切后台导致定时器节流产生保护期漂移)
 const isInsideRegretWindow = computed(() => {
+  if (sessionStartTime.value) {
+    const physicalElapsed = Math.floor((Date.now() - sessionStartTime.value.getTime()) / 1000);
+    return physicalElapsed < store.config.regretWindowSeconds;
+  }
   return elapsedSeconds.value < store.config.regretWindowSeconds;
 });
 
@@ -146,11 +150,23 @@ function startFocus(minutes?: number) {
   store.enterFullscreen();
 
   timerInterval = window.setInterval(() => {
-    elapsedSeconds.value += 1;
-    if (remainingSeconds.value > 0) {
-      remainingSeconds.value -= 1;
-      if (remainingSeconds.value === 0) {
+    if (sessionStartTime.value) {
+      const actualElapsed = Math.floor((Date.now() - sessionStartTime.value.getTime()) / 1000);
+      elapsedSeconds.value = actualElapsed;
+      const targetSec = targetDurationSeconds.value;
+      if (actualElapsed >= targetSec) {
+        remainingSeconds.value = 0;
         enterOverFocus();
+      } else {
+        remainingSeconds.value = targetSec - actualElapsed;
+      }
+    } else {
+      elapsedSeconds.value += 1;
+      if (remainingSeconds.value > 0) {
+        remainingSeconds.value -= 1;
+        if (remainingSeconds.value === 0) {
+          enterOverFocus();
+        }
       }
     }
   }, 1000);
@@ -163,8 +179,14 @@ function enterOverFocus() {
   overFocusSeconds.value = 0;
 
   timerInterval = window.setInterval(() => {
-    elapsedSeconds.value += 1;
-    overFocusSeconds.value += 1;
+    if (sessionStartTime.value) {
+      const actualElapsed = Math.floor((Date.now() - sessionStartTime.value.getTime()) / 1000);
+      elapsedSeconds.value = actualElapsed;
+      overFocusSeconds.value = Math.max(0, actualElapsed - targetDurationSeconds.value);
+    } else {
+      elapsedSeconds.value += 1;
+      overFocusSeconds.value += 1;
+    }
   }, 1000);
 
   // 延迟监听用户退出心流后的首次点击/触控
