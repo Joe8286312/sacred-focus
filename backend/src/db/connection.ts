@@ -12,3 +12,4 @@ export const db: DatabaseType = new Database(config.dbPath);
 // 开启高性能 WAL 模式与外键约束
 db.pragma('journal_mode = WAL');
 db.pragma('foreign_keys = ON');
+db.pragma('busy_timeout = 5000');

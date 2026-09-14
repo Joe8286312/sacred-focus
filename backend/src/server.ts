@@ -6,11 +6,12 @@ import cookieParser from 'cookie-parser';
 import path from 'path';
 import fs from 'fs';
 import { config } from './config.js';
-import { initDatabase } from './db.js';
+import { db, initDatabase } from './db.js';
 
 import { securityFilter } from './middleware/security.js';
 import { apiGeneralLimiter } from './middleware/rateLimiter.js';
 import { authMiddleware, purgeExpiredRevokedJtis } from './middleware/auth.js';
+import { maintenanceGuard } from './middleware/maintenance.js';
 
 import authRouter from './routes/auth.js';
 import syncRouter from './routes/sync.js';
@@ -70,6 +71,9 @@ app.use(securityFilter);
 
 // 2. 全局统一身份鉴权中间件 (前置解析身份以向后继限流器提供 req.user 判定依据)
 app.use('/api', authMiddleware);
+
+// 整机恢复持有维护租约时，统一冻结所有外部写请求。
+app.use('/api', maintenanceGuard);
 
 // 3. 通用 API 请求限流器 (已认证 1000次/分，未认证 60次/分，本机豁免)
 app.use('/api', apiGeneralLimiter);

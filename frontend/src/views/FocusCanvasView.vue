@@ -46,6 +46,8 @@ watch(isEditMode, (val) => {
 }, { immediate: true });
 
 onUnmounted(() => {
+  // 卸载时视为放弃未保存草稿，避免遗留过期的草稿 CAS 基线。
+  store.endTreeDraft();
   store.setIsEditing(false);
 });
 
@@ -92,13 +94,16 @@ const redoStack = ref<CanvasSnapshot[]>([]);
 const maxHistoryLength = 50;
 let dragStartSnapshot: CanvasSnapshot | null = null;
 const forceResetPositions = ref(false);
+const isNodeDragging = ref(false);
 
 function takeSnapshot(): CanvasSnapshot {
+  // Vue 会将草稿数组及其元素包装为 Proxy；structuredClone 不能克隆 Proxy。
+  // 画布 DTO 仅包含 JSON 数据，序列化深拷贝可同时隔离撤销历史与响应式对象。
   return {
-    nodes: structuredClone(draftNodes.value),
-    groups: structuredClone(draftGroups.value),
-    edges: structuredClone(draftEdges.value),
-    labels: structuredClone(draftLabels.value)
+    nodes: JSON.parse(JSON.stringify(draftNodes.value)),
+    groups: JSON.parse(JSON.stringify(draftGroups.value)),
+    edges: JSON.parse(JSON.stringify(draftEdges.value)),
+    labels: JSON.parse(JSON.stringify(draftLabels.value))
   };
 }
 
@@ -140,6 +145,7 @@ function applySnapshot(snapshot: CanvasSnapshot) {
 
 function onNodeDragStart() {
   if (!isEditMode.value) return;
+  isNodeDragging.value = true;
   dragStartSnapshot = takeSnapshot();
 }
 
@@ -171,6 +177,9 @@ const flowNodes = ref<any[]>([]);
 const flowEdges = ref<any[]>([]);
 
 function syncToFlow() {
+  // 拖动手势未结束前绝不重建 v-model:nodes，避免将初始坐标回灌给 Vue Flow。
+  if (isNodeDragging.value && !forceResetPositions.value) return;
+
   const currentPosMap = new Map<string, { x: number; y: number }>();
   if (!forceResetPositions.value) {
     for (const fn of flowNodes.value) {
@@ -284,6 +293,8 @@ watch(
     draftLabels
   ], 
   () => {
+    // 拖动期间 Vue Flow 是坐标的唯一写入者；禁止监听器用旧草稿重建节点。
+    if (isNodeDragging.value) return;
     syncToFlow();
   }, 
   { deep: true, flush: 'post' }
@@ -304,10 +315,7 @@ function onNodeClick({ node }: NodeMouseEvent) {
   }
 }
 
-// 拖拽停止后同步草稿内存坐标并存入历史栈
-function onNodeDragStop({ node, nodes }: NodeDragEvent) {
-  if (!isEditMode.value) return;
-  const targetNodes = nodes && nodes.length > 0 ? nodes : (node ? [node] : []);
+function syncDraggedPositions(targetNodes: NodeDragEvent['nodes']): boolean {
   let hasMoved = false;
 
   for (const n of targetNodes) {
@@ -347,6 +355,22 @@ function onNodeDragStop({ node, nodes }: NodeDragEvent) {
     }
   }
 
+  return hasMoved;
+}
+
+// 拖动过程中持续写入草稿，确保首次拖动也有可供提交的最终坐标。
+function onNodeDrag({ nodes }: NodeDragEvent) {
+  if (!isEditMode.value) return;
+  syncDraggedPositions(nodes);
+}
+
+// 拖拽停止后将草稿坐标一次性提交给 Vue Flow，并存入撤销历史。
+function onNodeDragStop({ node, nodes }: NodeDragEvent) {
+  if (!isEditMode.value) return;
+  const targetNodes = nodes && nodes.length > 0 ? nodes : (node ? [node] : []);
+  const hasMoved = syncDraggedPositions(targetNodes);
+  isNodeDragging.value = false;
+
   if (hasMoved && dragStartSnapshot) {
     historyStack.value.push(dragStartSnapshot);
     if (historyStack.value.length > maxHistoryLength) {
@@ -355,6 +379,11 @@ function onNodeDragStop({ node, nodes }: NodeDragEvent) {
     redoStack.value = [];
   }
   dragStartSnapshot = null;
+
+  // 停止时以已更新的草稿作为唯一坐标来源，杜绝首拖时旧坐标回灌。
+  forceResetPositions.value = true;
+  syncToFlow();
+  forceResetPositions.value = false;
 }
 
 // 双击节点
@@ -515,6 +544,8 @@ function enterEditMode() {
   draftGroups.value = JSON.parse(JSON.stringify(store.groups));
   draftEdges.value = JSON.parse(JSON.stringify(store.edges));
   draftLabels.value = JSON.parse(JSON.stringify(store.labels || []));
+  // 草稿已从持久态完整复制：此刻冻结唯一允许用于保存的 CAS 基线。
+  store.beginTreeDraft();
   isEditMode.value = true;
   activeConnectingHandle.value = null;
   forceResetPositions.value = true;
@@ -532,6 +563,7 @@ function cancelLayoutChanges() {
   draftGroups.value = [];
   draftEdges.value = [];
   draftLabels.value = [];
+  store.endTreeDraft();
   isEditMode.value = false;
   activeConnectingHandle.value = null;
   selectedNodeId.value = null;
@@ -626,6 +658,7 @@ async function executeSaveLayout() {
     draftGroups.value = [];
     draftEdges.value = [];
     draftLabels.value = [];
+    store.endTreeDraft();
     isEditMode.value = false;
     activeConnectingHandle.value = null;
     syncToFlow();
@@ -1043,6 +1076,7 @@ onUnmounted(() => {
         @node-click="onNodeClick"
         @node-double-click="onNodeDoubleClick"
         @node-drag-start="onNodeDragStart"
+        @node-drag="onNodeDrag"
         @node-drag-stop="onNodeDragStop"
         @node-mouse-enter="isHoveringNode = true"
         @node-mouse-leave="isHoveringNode = false"

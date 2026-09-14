@@ -13,6 +13,7 @@ export * from './connection.js';
 export * from './schema.js';
 export * from './migrations.js';
 export * from './revision.js';
+export * from './maintenance.js';
 export * from './dateUtils.js';
 export * from './queries/focusTree.js';
 export * from './queries/settlement.js';

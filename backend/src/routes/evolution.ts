@@ -1,9 +1,36 @@
 import { Router, Request, Response } from 'express';
-import { db, getFullFocusTreeData, incrementSystemRevision, upsertFocusNode } from '../db.js';
+import { assertForeignKeyIntegrity, db, getFullFocusTreeData, getSystemRevision, incrementSystemRevision, RevisionPreconditionError, upsertFocusNode } from '../db.js';
 import type { EvolutionSnapshot, EvolutionState, FocusTreeData, EvolutionSnapshotRow, EvolutionStateRow } from '../types.js';
 import { validateFullBackupPayload } from '../utils/validators.js';
 
 const router = Router();
+
+function requireExpectedRevision(req: Request, res: Response): number | null {
+  const expectedRevision = req.body?.expectedRevision;
+  if (typeof expectedRevision !== 'number' || !Number.isInteger(expectedRevision) || expectedRevision < 1) {
+    res.status(400).json({
+      error: 'EXPECTED_REVISION_REQUIRED',
+      message: '演化写操作必须携带有效的 expectedRevision'
+    });
+    return null;
+  }
+  return expectedRevision;
+}
+
+function assertExpectedRevision(expectedRevision: number) {
+  const currentRevision = getSystemRevision();
+  if (expectedRevision !== currentRevision) {
+    throw new RevisionPreconditionError(currentRevision);
+  }
+}
+
+function sendVersionConflict(res: Response, currentRevision: number) {
+  return res.status(409).json({
+    error: 'VERSION_CONFLICT',
+    message: '系统已被其他终端修改，请同步最新状态后再执行演化操作',
+    currentRevision
+  });
+}
 
 // 获取演化状态（活跃指针与全部 5 槽位快照）
 router.get('/', (_req: Request, res: Response) => {
@@ -31,7 +58,7 @@ router.get('/', (_req: Request, res: Response) => {
     snapshots
   };
 
-  res.json(state);
+  res.json({ ...state, revision: getSystemRevision() });
 });
 
 // 归档保存新版本快照（5 槽位防震荡环形缓存）
@@ -44,10 +71,12 @@ router.post('/snapshot', (req: Request, res: Response) => {
   if (!changelogNotes) {
     return res.status(400).json({ error: 'changelogNotes is required' });
   }
-
-  const liveTree = getFullFocusTreeData();
+  const expectedRevision = requireExpectedRevision(req, res);
+  if (expectedRevision === null) return;
 
   const snapshotTx = db.transaction(() => {
+    assertExpectedRevision(expectedRevision);
+    const liveTree = getFullFocusTreeData();
     // 1. 获取当前指针与现有快照
     const stateRow = db.prepare('SELECT activePointerIndex FROM evolution_state WHERE id = 1').get() as Pick<EvolutionStateRow, 'activePointerIndex'> | undefined;
     const currentPointer = stateRow ? stateRow.activePointerIndex : 0;
@@ -107,19 +136,27 @@ router.post('/snapshot', (req: Request, res: Response) => {
 
     // 5. 更新活跃指针并原子推进系统版本号
     db.prepare('UPDATE evolution_state SET activePointerIndex = ? WHERE id = 1').run(targetSlotIndex);
-    incrementSystemRevision();
+    const revision = incrementSystemRevision();
 
     return {
       version: nextVersion,
       nextVersion,
       slotIndex: targetSlotIndex,
       targetSlotIndex,
-      activePointerIndex: targetSlotIndex
+      activePointerIndex: targetSlotIndex,
+      revision
     };
   });
 
-  const result = snapshotTx();
-  res.status(201).json({ message: 'Snapshot created', ...result });
+  try {
+    const result = snapshotTx();
+    res.status(201).json({ message: 'Snapshot created', ...result });
+  } catch (e: any) {
+    if (e instanceof RevisionPreconditionError) {
+      return sendVersionConflict(res, e.currentRevision);
+    }
+    throw e;
+  }
 });
 
 // 版本指针安全回滚 (Rollback)
@@ -129,6 +166,8 @@ router.post('/rollback', (req: Request, res: Response) => {
   if (typeof targetSlotIndex !== 'number' || targetSlotIndex < 0 || targetSlotIndex > 4) {
     return res.status(400).json({ error: 'targetSlotIndex must be between 0 and 4' });
   }
+  const expectedRevision = requireExpectedRevision(req, res);
+  if (expectedRevision === null) return;
 
   const snapshotRow = db.prepare('SELECT * FROM evolution_snapshots WHERE slotIndex = ?').get(targetSlotIndex) as EvolutionSnapshotRow | undefined;
   if (!snapshotRow) {
@@ -136,16 +175,18 @@ router.post('/rollback', (req: Request, res: Response) => {
   }
 
   const rollbackTx = db.transaction(() => {
+    assertExpectedRevision(expectedRevision);
     // 1. 仅移动活跃指针
     db.prepare('UPDATE evolution_state SET activePointerIndex = ? WHERE id = 1').run(targetSlotIndex);
 
     // 2. 将快照中的国策树全量还原回当前活跃树中
     const snapshotData = JSON.parse(snapshotRow.dataJson) as FocusTreeData;
 
-    // 清理现有数据
+    // 外键始终开启：先清理依赖表，再清理被引用实体，所有操作同一事务回滚。
     db.prepare('DELETE FROM focus_edges').run();
     db.prepare('DELETE FROM focus_nodes').run();
     db.prepare('DELETE FROM focus_groups').run();
+    db.prepare('DELETE FROM focus_labels').run();
 
     // 恢复分组
     const insertGroup = db.prepare(`
@@ -179,7 +220,6 @@ router.post('/rollback', (req: Request, res: Response) => {
     }
 
     // 恢复说明标签
-    db.prepare('DELETE FROM focus_labels').run();
     if (snapshotData.labels) {
       const insertLabel = db.prepare(`
         INSERT INTO focus_labels (id, text, positionX, positionY)
@@ -195,20 +235,29 @@ router.post('/rollback', (req: Request, res: Response) => {
       }
     }
 
-    incrementSystemRevision();
+    assertForeignKeyIntegrity();
+    const revision = incrementSystemRevision();
 
-    return snapshotRow.version;
+    return { version: snapshotRow.version, revision };
   });
 
-  const restoredVersion = rollbackTx();
-  res.json({
-    message: `Successfully rolled back to slot ${targetSlotIndex} (${restoredVersion})`,
-    activePointerIndex: targetSlotIndex,
-    restoredSlotIndex: targetSlotIndex,
-    restoredVersion,
-    version: restoredVersion,
-    liveTree: getFullFocusTreeData()
-  });
+  try {
+    const restored = rollbackTx();
+    res.json({
+      message: `Successfully rolled back to slot ${targetSlotIndex} (${restored.version})`,
+      activePointerIndex: targetSlotIndex,
+      restoredSlotIndex: targetSlotIndex,
+      restoredVersion: restored.version,
+      version: restored.version,
+      revision: restored.revision,
+      liveTree: getFullFocusTreeData()
+    });
+  } catch (e: any) {
+    if (e instanceof RevisionPreconditionError) {
+      return sendVersionConflict(res, e.currentRevision);
+    }
+    throw e;
+  }
 });
 
 // 仅导出国策架构数据（节点、分组、连线、演化快照）
@@ -247,11 +296,14 @@ router.post('/import', (req: Request, res: Response) => {
       details: validation.details
     });
   }
+  const expectedRevision = requireExpectedRevision(req, res);
+  if (expectedRevision === null) return;
 
   const { tree, evolution } = validation.data;
 
   try {
     const importTx = db.transaction(() => {
+      assertExpectedRevision(expectedRevision);
       // 1. 恢复国策树 (groups, nodes, edges, labels)
       const groups = tree.groups || [];
       const nodes = tree.nodes || [];
@@ -329,12 +381,16 @@ router.post('/import', (req: Request, res: Response) => {
           }
         }
       }
+      assertForeignKeyIntegrity();
+      return incrementSystemRevision();
     });
 
-    importTx();
-    incrementSystemRevision();
-    res.json({ message: 'Focus tree architecture successfully imported and restored' });
+    const revision = importTx();
+    res.json({ message: 'Focus tree architecture successfully imported and restored', revision });
   } catch (e: any) {
+    if (e instanceof RevisionPreconditionError) {
+      return sendVersionConflict(res, e.currentRevision);
+    }
     console.error('Failed to import focus tree backup', e);
     res.status(500).json({ error: 'Failed to import focus tree backup', details: e.message });
   }

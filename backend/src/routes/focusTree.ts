@@ -13,6 +13,13 @@ import type { FocusNode, FocusEdge, FocusGroup, FocusLabel, FocusNodeRow, FocusG
 
 const router = Router();
 
+class VersionConflictError extends Error {
+  constructor(public readonly currentRevision: number) {
+    super('VERSION_CONFLICT');
+    this.name = 'VersionConflictError';
+  }
+}
+
 // 获取当前完整国策树（节点、连线、分组），并在每日首次上线时执行自控跨天结算审计
 router.get('/', (_req: Request, res: Response) => {
   const settlement = settleFocusTreeDailyState();
@@ -20,7 +27,7 @@ router.get('/', (_req: Request, res: Response) => {
   if (settlement && settlement.resetNodes.length > 0) {
     data.resetSummary = settlement;
   }
-  res.json(data);
+  res.json({ ...data, revision: getSystemRevision() });
 });
 
 // 重置每日跨天审计结算标记（便于随时进行联调与测试）
@@ -40,82 +47,90 @@ router.put('/', (req: Request, res: Response) => {
     expectedRevision?: number;
   };
 
-  if (typeof expectedRevision === 'number') {
-    const currentRev = getSystemRevision();
-    if (expectedRevision !== currentRev) {
-      return res.status(409).json({
-        error: 'VERSION_CONFLICT',
-        message: '检测到其他设备已提交新版本，请先同步最新状态后再保存',
-        currentRevision: currentRev
-      });
-    }
+  if (typeof expectedRevision !== 'number' || !Number.isInteger(expectedRevision) || expectedRevision < 1) {
+    return res.status(400).json({
+      error: 'EXPECTED_REVISION_REQUIRED',
+      message: '全量保存国策树必须携带有效的 expectedRevision'
+    });
   }
 
+  if (!Array.isArray(nodes) || !Array.isArray(edges) || !Array.isArray(groups) || !Array.isArray(labels)) {
+    return res.status(400).json({
+      error: 'INCOMPLETE_TREE_SNAPSHOT',
+      message: '全量保存必须同时携带 nodes、edges、groups、labels 四个数组'
+    });
+  }
+  const requestedRevision = expectedRevision;
+
   const syncTx = db.transaction(() => {
-    // 1. 同步分组
-    if (groups) {
-      db.prepare('DELETE FROM focus_groups').run();
-      const insertGroup = db.prepare(`
-        INSERT INTO focus_groups (id, name, themeColor, positionX, positionY, width, height)
-        VALUES (@id, @name, @themeColor, @positionX, @positionY, @width, @height)
-      `);
-      for (const g of groups) {
-        insertGroup.run({
-          id: g.id,
-          name: g.name,
-          themeColor: g.themeColor,
-          positionX: g.position.x,
-          positionY: g.position.y,
-          width: g.size.width,
-          height: g.size.height
-        });
-      }
+    // 校验与破坏性覆写处于同一个事务，消除 TOCTOU 窗口。
+    const currentRevision = getSystemRevision();
+    if (requestedRevision !== currentRevision) {
+      throw new VersionConflictError(currentRevision);
     }
 
-    // 2. 同步节点 (使用共享 upsertFocusNode 治理重复 SQL)
-    if (nodes) {
-      db.prepare('DELETE FROM focus_nodes').run();
-      for (let i = 0; i < nodes.length; i++) {
-        upsertFocusNode(nodes[i], i);
-      }
+    // 先删依赖表，再删节点/分组，避免 group 外键触发隐式 SET NULL。
+    db.prepare('DELETE FROM focus_edges').run();
+    db.prepare('DELETE FROM focus_nodes').run();
+    db.prepare('DELETE FROM focus_groups').run();
+    db.prepare('DELETE FROM focus_labels').run();
+
+    const insertGroup = db.prepare(`
+      INSERT INTO focus_groups (id, name, themeColor, positionX, positionY, width, height)
+      VALUES (@id, @name, @themeColor, @positionX, @positionY, @width, @height)
+    `);
+    for (const g of groups) {
+      insertGroup.run({
+        id: g.id,
+        name: g.name,
+        themeColor: g.themeColor,
+        positionX: g.position.x,
+        positionY: g.position.y,
+        width: g.size.width,
+        height: g.size.height
+      });
     }
 
-    // 3. 同步连线
-    if (edges) {
-      db.prepare('DELETE FROM focus_edges').run();
-      const insertEdge = db.prepare(`
-        INSERT INTO focus_edges (id, sourceId, sourceType, targetId, targetType, sourceAnchor, targetAnchor, style)
-        VALUES (@id, @sourceId, @sourceType, @targetId, @targetType, @sourceAnchor, @targetAnchor, @style)
-      `);
-      for (const e of edges) {
-        insertEdge.run(e);
-      }
+    for (let i = 0; i < nodes.length; i++) {
+      upsertFocusNode(nodes[i], i);
     }
 
-    // 4. 同步纯文本说明标签
-    if (labels) {
-      db.prepare('DELETE FROM focus_labels').run();
-      const insertLabel = db.prepare(`
-        INSERT INTO focus_labels (id, text, positionX, positionY)
-        VALUES (@id, @text, @positionX, @positionY)
-      `);
-      for (const l of labels) {
-        insertLabel.run({
-          id: l.id,
-          text: l.text,
-          positionX: l.position?.x ?? 0,
-          positionY: l.position?.y ?? 0
-        });
-      }
+    const insertEdge = db.prepare(`
+      INSERT INTO focus_edges (id, sourceId, sourceType, targetId, targetType, sourceAnchor, targetAnchor, style)
+      VALUES (@id, @sourceId, @sourceType, @targetId, @targetType, @sourceAnchor, @targetAnchor, @style)
+    `);
+    for (const e of edges) {
+      insertEdge.run(e);
+    }
+
+    const insertLabel = db.prepare(`
+      INSERT INTO focus_labels (id, text, positionX, positionY)
+      VALUES (@id, @text, @positionX, @positionY)
+    `);
+    for (const l of labels) {
+      insertLabel.run({
+        id: l.id,
+        text: l.text,
+        positionX: l.position?.x ?? 0,
+        positionY: l.position?.y ?? 0
+      });
     }
 
     incrementSystemRevision();
+    return getSystemRevision();
   });
 
   try {
-    syncTx();
-    res.json({ message: 'Focus tree synchronized successfully', revision: getSystemRevision(), data: getFullFocusTreeData() });
+    const revision = syncTx();
+    res.json({ message: 'Focus tree synchronized successfully', revision, data: getFullFocusTreeData() });
   } catch (err: any) {
+    if (err instanceof VersionConflictError) {
+      return res.status(409).json({
+        error: 'VERSION_CONFLICT',
+        message: '检测到其他设备已提交新版本，请先同步最新状态后再保存',
+        currentRevision: err.currentRevision
+      });
+    }
     console.error('Focus tree sync error:', err);
     res.status(500).json({
       error: 'SYNC_TRANSACTION_FAILED',

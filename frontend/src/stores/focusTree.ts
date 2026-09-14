@@ -2,7 +2,6 @@ import { defineStore } from 'pinia';
 import { ref } from 'vue';
 import type { FocusNode, FocusEdge, FocusGroup, FocusLabel, EvolutionState } from '../types';
 import { apiFetch } from '../utils/api';
-import { getCurrentRevision, setCurrentRevision } from '../utils/syncManager';
 
 export const useFocusTreeStore = defineStore('focusTree', () => {
   const nodes = ref<FocusNode[]>([]);
@@ -15,6 +14,10 @@ export const useFocusTreeStore = defineStore('focusTree', () => {
   });
   const loading = ref(false);
   const isEditing = ref(false);
+  // 三版本分离：只有已同步版本可作为全量覆写的 CAS 基线。
+  const syncedRevision = ref(0);
+  const remoteRevision = ref(0);
+  const draftBaseRevision = ref<number | null>(null);
   const lastCreatedNodeId = ref<string | null>(null);
   const lastCreatedGroupId = ref<string | null>(null);
   const lastCreatedLabelId = ref<string | null>(null);
@@ -24,6 +27,41 @@ export const useFocusTreeStore = defineStore('focusTree', () => {
 
   function setIsEditing(val: boolean) {
     isEditing.value = val;
+  }
+
+  function markSyncedRevision(revision: number) {
+    if (!Number.isInteger(revision) || revision < 1) return;
+    syncedRevision.value = revision;
+    remoteRevision.value = Math.max(remoteRevision.value, revision);
+  }
+
+  function observeRemoteRevision(revision: number) {
+    if (!Number.isInteger(revision) || revision < 1) return;
+    remoteRevision.value = Math.max(remoteRevision.value, revision);
+
+    if (
+      isEditing.value &&
+      draftBaseRevision.value !== null &&
+      remoteRevision.value > draftBaseRevision.value
+    ) {
+      versionConflictWarning.value = true;
+      lastErrorMessage.value = '【远端更新提示】其他终端已提交新版本；当前草稿已挂起同步，保存时将进行冲突校验。';
+    }
+  }
+
+  // 必须在草稿从持久态数据复制完成后、用户开始编辑前调用。
+  function beginTreeDraft() {
+    draftBaseRevision.value = syncedRevision.value;
+    versionConflictWarning.value = false;
+  }
+
+  // 成功保存或明确放弃草稿时调用；不会把 remoteRevision 伪装成已同步版本。
+  function endTreeDraft() {
+    draftBaseRevision.value = null;
+  }
+
+  function getExpectedRevision(): number {
+    return draftBaseRevision.value ?? syncedRevision.value;
   }
 
   function dismissConflictWarning() {
@@ -98,6 +136,9 @@ export const useFocusTreeStore = defineStore('focusTree', () => {
       edges.value = data.edges || [];
       groups.value = data.groups || [];
       labels.value = data.labels || [];
+      if (typeof data.revision === 'number') {
+        markSyncedRevision(data.revision);
+      }
       if (data.resetSummary && data.resetSummary.resetNodes && data.resetSummary.resetNodes.length > 0) {
         const dismissed = sessionStorage.getItem('dismissedResetAlertDate');
         if (dismissed !== data.resetSummary.settlementDate) {
@@ -113,7 +154,7 @@ export const useFocusTreeStore = defineStore('focusTree', () => {
 
   async function syncTree() {
     try {
-      const currentRev = getCurrentRevision();
+      const currentRev = getExpectedRevision();
       const res = await apiFetch('/api/focus-tree', {
         method: 'PUT',
         body: JSON.stringify({
@@ -121,11 +162,11 @@ export const useFocusTreeStore = defineStore('focusTree', () => {
           edges: edges.value,
           groups: groups.value,
           labels: labels.value,
-          expectedRevision: currentRev > 0 ? currentRev : undefined
+          expectedRevision: currentRev
         })
       });
       if (res && res.revision) {
-        setCurrentRevision(res.revision);
+        markSyncedRevision(res.revision);
       }
       return true;
     } catch (e: any) {
@@ -141,7 +182,7 @@ export const useFocusTreeStore = defineStore('focusTree', () => {
   // 全量覆盖持久化树数据（事务性提交画布草稿，带 expectedRevision 乐观锁）
   async function saveWholeTree(tree: { nodes: FocusNode[]; groups: FocusGroup[]; edges: FocusEdge[]; labels?: FocusLabel[] }) {
     try {
-      const currentRev = getCurrentRevision();
+      const currentRev = getExpectedRevision();
       const res = await apiFetch('/api/focus-tree', {
         method: 'PUT',
         body: JSON.stringify({
@@ -149,11 +190,11 @@ export const useFocusTreeStore = defineStore('focusTree', () => {
           edges: tree.edges,
           groups: tree.groups,
           labels: tree.labels || [],
-          expectedRevision: currentRev > 0 ? currentRev : undefined
+          expectedRevision: currentRev
         })
       });
       if (res && res.revision) {
-        setCurrentRevision(res.revision);
+        markSyncedRevision(res.revision);
       }
       nodes.value = JSON.parse(JSON.stringify(tree.nodes));
       groups.value = JSON.parse(JSON.stringify(tree.groups));
@@ -209,7 +250,11 @@ export const useFocusTreeStore = defineStore('focusTree', () => {
 
   async function fetchEvolution() {
     try {
-      evolution.value = await apiFetch('/api/evolution');
+      const data = await apiFetch('/api/evolution');
+      evolution.value = data;
+      if (typeof data.revision === 'number') {
+        markSyncedRevision(data.revision);
+      }
     } catch (e) {
       console.error('Failed to fetch evolution state', e);
     }
@@ -219,7 +264,11 @@ export const useFocusTreeStore = defineStore('focusTree', () => {
     try {
       await apiFetch('/api/evolution/snapshot', {
         method: 'POST',
-        body: JSON.stringify({ changelogNotes, isMajor })
+        body: JSON.stringify({
+          changelogNotes,
+          isMajor,
+          expectedRevision: getExpectedRevision()
+        })
       });
       await fetchEvolution();
       return true;
@@ -233,12 +282,18 @@ export const useFocusTreeStore = defineStore('focusTree', () => {
     try {
       const data = await apiFetch('/api/evolution/rollback', {
         method: 'POST',
-        body: JSON.stringify({ targetSlotIndex })
+        body: JSON.stringify({
+          targetSlotIndex,
+          expectedRevision: getExpectedRevision()
+        })
       });
       nodes.value = data.liveTree.nodes;
       edges.value = data.liveTree.edges;
       groups.value = data.liveTree.groups;
       labels.value = data.liveTree.labels || [];
+      if (typeof data.revision === 'number') {
+        markSyncedRevision(data.revision);
+      }
       await fetchEvolution();
       return true;
     } catch (e) {
@@ -275,7 +330,10 @@ export const useFocusTreeStore = defineStore('focusTree', () => {
     try {
       await apiFetch('/api/evolution/import', {
         method: 'POST',
-        body: JSON.stringify(backupData)
+        body: JSON.stringify({
+          ...backupData,
+          expectedRevision: getExpectedRevision()
+        })
       });
       await fetchTree();
       await fetchEvolution();
@@ -314,7 +372,10 @@ export const useFocusTreeStore = defineStore('focusTree', () => {
     try {
       const data = await apiFetch('/api/system/import', {
         method: 'POST',
-        body: JSON.stringify(backupData)
+        body: JSON.stringify({
+          ...backupData,
+          expectedRevision: getExpectedRevision()
+        })
       });
       await Promise.all([
         fetchTree(),
@@ -527,7 +588,15 @@ export const useFocusTreeStore = defineStore('focusTree', () => {
     evolution,
     loading,
     isEditing,
+    syncedRevision,
+    remoteRevision,
+    draftBaseRevision,
     setIsEditing,
+    markSyncedRevision,
+    observeRemoteRevision,
+    beginTreeDraft,
+    endTreeDraft,
+    getExpectedRevision,
     lastCreatedNodeId,
     lastCreatedGroupId,
     lastCreatedLabelId,

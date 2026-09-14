@@ -3,18 +3,7 @@ import { useFocusTreeStore } from '../stores/focusTree';
 import { useSacredSeatStore } from '../stores/sacredSeat';
 import { useAuthStore } from '../stores/auth';
 
-let currentKnownRevision = 0;
 let isProbing = false;
-
-export function getCurrentRevision(): number {
-  return currentKnownRevision;
-}
-
-export function setCurrentRevision(rev: number) {
-  if (typeof rev === 'number' && rev > currentKnownRevision) {
-    currentKnownRevision = rev;
-  }
-}
 
 export function initSyncManager(): () => void {
   async function probeAndSync() {
@@ -27,27 +16,34 @@ export function initSyncManager(): () => void {
       if (!authStore.isAuthenticated) return;
 
       const data = await apiFetch<{ revision: number; evolutionVersion: string; updatedAt: string }>('/api/sync/status');
+      const focusTreeStore = useFocusTreeStore();
+      const sacredSeatStore = useSacredSeatStore();
 
-      if (currentKnownRevision === 0) {
-        currentKnownRevision = data.revision;
+      // 仅记录远端观测值；绝不把它当作本地已同步的写入基线。
+      focusTreeStore.observeRemoteRevision(data.revision);
+
+      if (data.revision <= focusTreeStore.syncedRevision) {
         return;
       }
 
-      if (data.revision > currentKnownRevision) {
-        console.log(`[Sacred Focus Sync] 云端检测到更新: rev ${currentKnownRevision} -> ${data.revision}`);
-        currentKnownRevision = data.revision;
+      console.log(`[Sacred Focus Sync] 云端检测到更新: rev ${focusTreeStore.syncedRevision} -> ${data.revision}`);
 
-        const focusTreeStore = useFocusTreeStore();
-        const sacredSeatStore = useSacredSeatStore();
+      // 草稿存在且远端领先时，挂起拉取；保留草稿基线让后端 CAS 返回 409。
+      if (
+        focusTreeStore.isEditing &&
+        focusTreeStore.draftBaseRevision !== null &&
+        data.revision > focusTreeStore.draftBaseRevision
+      ) {
+        return;
+      }
 
-        // 仅在当前未处于加载中且未处于画布草稿编辑排版态时，执行无感静默热刷新 (P2-LOG-02)
-        if (!focusTreeStore.loading && !focusTreeStore.isEditing) {
-          await Promise.allSettled([
-            focusTreeStore.fetchTreeData(),
-            sacredSeatStore.fetchConfig(),
-            sacredSeatStore.fetchLogs()
-          ]);
-        }
+      // 非编辑态才允许刷新。fetchTreeData 成功后会依据响应中的 revision 推进 syncedRevision。
+      if (!focusTreeStore.loading && !focusTreeStore.isEditing) {
+        await focusTreeStore.fetchTreeData();
+        await Promise.allSettled([
+          sacredSeatStore.fetchConfig(),
+          sacredSeatStore.fetchLogs()
+        ]);
       }
     } catch (e) {
       // 探针静默失败不中断用户当前操作
@@ -89,4 +85,3 @@ export function initSyncManager(): () => void {
     }
   };
 }
-
