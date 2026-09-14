@@ -10,7 +10,7 @@ import { initDatabase } from './db.js';
 
 import { securityFilter } from './middleware/security.js';
 import { apiGeneralLimiter } from './middleware/rateLimiter.js';
-import { authMiddleware } from './middleware/auth.js';
+import { authMiddleware, purgeExpiredRevokedJtis } from './middleware/auth.js';
 
 import authRouter from './routes/auth.js';
 import syncRouter from './routes/sync.js';
@@ -22,6 +22,8 @@ import systemRouter from './routes/system.js';
 
 // 初始化数据库表与种子数据
 initDatabase();
+// 启动时清理已过期的历史 JWT 吊销黑名单 (P2-SEC-03)
+purgeExpiredRevokedJtis();
 
 const app = express();
 
@@ -119,8 +121,45 @@ app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
 const PORT = config.port;
 const HOST = config.host;
 
-app.listen(PORT, HOST, () => {
+const server = app.listen(PORT, HOST, () => {
   console.log(`[Sacred Focus API] Server running at http://${HOST}:${PORT}`);
   console.log(`[Sacred Focus API] Mode: ${config.isProduction ? 'Production' : 'Development'}`);
   console.log(`[Sacred Focus API] Database path: ${config.dbPath}`);
 });
+
+// P3-PERF-02 空闲定时 WAL Checkpoint (每 30 分钟执行一次 PASSIVE 检查点，防范 WAL 文件长周期膨胀)
+const walCheckpointTimer = setInterval(() => {
+  try {
+    db.pragma('wal_checkpoint(PASSIVE)');
+    purgeExpiredRevokedJtis();
+  } catch (err) {
+    console.warn('[Sacred Focus API] 定时 WAL Checkpoint 出现偶发异常:', err);
+  }
+}, 30 * 60 * 1000);
+walCheckpointTimer.unref();
+
+// P2-OPS-01 优雅关机 (Graceful Shutdown) 与 SQLite WAL 归档释放
+function gracefulShutdown(signal: string) {
+  console.log(`[Sacred Focus API] 接收到 ${signal} 信号，正在平滑关闭 HTTP 服务与归档 SQLite WAL...`);
+  clearInterval(walCheckpointTimer);
+  server.close(() => {
+    try {
+      db.pragma('wal_checkpoint(TRUNCATE)');
+      db.close();
+      console.log('[Sacred Focus API] SQLite 数据库已安全 Checkpoint 截断并关闭，进程正常退出');
+      process.exit(0);
+    } catch (err) {
+      console.error('[Sacred Focus API] 优雅关机过程中关闭数据库异常:', err);
+      process.exit(1);
+    }
+  });
+
+  // 超时 10 秒兜底，防范极端情况下挂起长连接导致容器无法停止
+  setTimeout(() => {
+    console.warn('[Sacred Focus API] 优雅关机等待超时，强制终止进程');
+    process.exit(1);
+  }, 10000).unref();
+}
+
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+process.on('SIGINT', () => gracefulShutdown('SIGINT'));
