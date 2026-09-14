@@ -77,6 +77,36 @@ router.post('/import', importLimiter, async (req: Request, res: Response) => {
   }
 
   try {
+    const insertGroup = db.prepare(`
+      INSERT INTO focus_groups (id, name, themeColor, positionX, positionY, width, height)
+      VALUES (@id, @name, @themeColor, @positionX, @positionY, @width, @height)
+    `);
+    const insertEdge = db.prepare(`
+      INSERT INTO focus_edges (id, sourceId, sourceType, targetId, targetType, sourceAnchor, targetAnchor, style)
+      VALUES (@id, @sourceId, @sourceType, @targetId, @targetType, @sourceAnchor, @targetAnchor, @style)
+    `);
+    const insertLabel = db.prepare(`
+      INSERT INTO focus_labels (id, text, positionX, positionY)
+      VALUES (@id, @text, @positionX, @positionY)
+    `);
+    const insertCase = db.prepare(`
+      INSERT INTO precedent_cases (id, date, behavior, verdict, boundaryCondition, createdAt)
+      VALUES (@id, @date, @behavior, @verdict, @boundaryCondition, @createdAt)
+    `);
+    const insertSnap = db.prepare(`
+      INSERT INTO evolution_snapshots (slotIndex, id, version, timestamp, changelogNotes, isMajor, dataJson)
+      VALUES (@slotIndex, @id, @version, @timestamp, @changelogNotes, @isMajor, @dataJson)
+    `);
+    const insertLog = db.prepare(`
+      INSERT INTO focus_session_logs (id, type, startTime, endTime, targetDurationMinutes, actualDurationSeconds, status, focusContent, failureReason, note)
+      VALUES (@id, @type, @startTime, @endTime, @targetDurationMinutes, @actualDurationSeconds, @status, @focusContent, @failureReason, @note)
+    `);
+    const upsertSeatConfig = db.prepare(`
+      INSERT OR REPLACE INTO sacred_seat_config (id, sacredToken, reservationSignal, defaultFocusDuration, regretWindowSeconds, currentStreak, maxStreak, updatedAt)
+      VALUES (1, @sacredToken, @reservationSignal, @defaultFocusDuration, @regretWindowSeconds, @currentStreak, @maxStreak, @updatedAt)
+    `);
+    const updateEvolutionPointer = db.prepare('UPDATE evolution_state SET activePointerIndex = ? WHERE id = 1');
+
     const importTx = db.transaction(() => {
       // 1. 恢复国策树 (groups, nodes, edges, labels)
       const groups = tree.groups || [];
@@ -89,10 +119,6 @@ router.post('/import', importLimiter, async (req: Request, res: Response) => {
       db.prepare('DELETE FROM focus_groups').run();
       db.prepare('DELETE FROM focus_labels').run();
 
-      const insertGroup = db.prepare(`
-        INSERT INTO focus_groups (id, name, themeColor, positionX, positionY, width, height)
-        VALUES (@id, @name, @themeColor, @positionX, @positionY, @width, @height)
-      `);
       for (const g of groups) {
         insertGroup.run({
           id: g.id,
@@ -110,18 +136,10 @@ router.post('/import', importLimiter, async (req: Request, res: Response) => {
         upsertFocusNode(nodes[i], i);
       }
 
-      const insertEdge = db.prepare(`
-        INSERT INTO focus_edges (id, sourceId, sourceType, targetId, targetType, sourceAnchor, targetAnchor, style)
-        VALUES (@id, @sourceId, @sourceType, @targetId, @targetType, @sourceAnchor, @targetAnchor, @style)
-      `);
       for (const e of edges) {
         insertEdge.run(e);
       }
 
-      const insertLabel = db.prepare(`
-        INSERT INTO focus_labels (id, text, positionX, positionY)
-        VALUES (@id, @text, @positionX, @positionY)
-      `);
       for (const l of labels) {
         insertLabel.run({
           id: l.id,
@@ -133,19 +151,12 @@ router.post('/import', importLimiter, async (req: Request, res: Response) => {
 
       // 2. 恢复神圣座位配置
       if (sacredSeatConfig) {
-        db.prepare(`
-          INSERT OR REPLACE INTO sacred_seat_config (id, sacredToken, reservationSignal, defaultFocusDuration, regretWindowSeconds, currentStreak, maxStreak, updatedAt)
-          VALUES (1, @sacredToken, @reservationSignal, @defaultFocusDuration, @regretWindowSeconds, @currentStreak, @maxStreak, @updatedAt)
-        `).run(sacredSeatConfig);
+        upsertSeatConfig.run(sacredSeatConfig);
       }
 
       // 3. 恢复判例法典
       if (precedentCases) {
         db.prepare('DELETE FROM precedent_cases').run();
-        const insertCase = db.prepare(`
-          INSERT INTO precedent_cases (id, date, behavior, verdict, boundaryCondition, createdAt)
-          VALUES (@id, @date, @behavior, @verdict, @boundaryCondition, @createdAt)
-        `);
         for (const c of precedentCases) {
           insertCase.run(c);
         }
@@ -154,14 +165,10 @@ router.post('/import', importLimiter, async (req: Request, res: Response) => {
       // 4. 恢复演化状态与快照
       if (evolution) {
         if (evolution.state) {
-          db.prepare('UPDATE evolution_state SET activePointerIndex = ? WHERE id = 1').run(evolution.state.activePointerIndex ?? 0);
+          updateEvolutionPointer.run(evolution.state.activePointerIndex ?? 0);
         }
         if (evolution.snapshots) {
           db.prepare('DELETE FROM evolution_snapshots').run();
-          const insertSnap = db.prepare(`
-            INSERT INTO evolution_snapshots (slotIndex, id, version, timestamp, changelogNotes, isMajor, dataJson)
-            VALUES (@slotIndex, @id, @version, @timestamp, @changelogNotes, @isMajor, @dataJson)
-          `);
           for (const s of evolution.snapshots) {
             insertSnap.run({
               slotIndex: s.slotIndex,
@@ -179,10 +186,6 @@ router.post('/import', importLimiter, async (req: Request, res: Response) => {
       // 5. 恢复流水日志
       if (sessionLogs) {
         db.prepare('DELETE FROM focus_session_logs').run();
-        const insertLog = db.prepare(`
-          INSERT INTO focus_session_logs (id, type, startTime, endTime, targetDurationMinutes, actualDurationSeconds, status, focusContent, failureReason, note)
-          VALUES (@id, @type, @startTime, @endTime, @targetDurationMinutes, @actualDurationSeconds, @status, @focusContent, @failureReason, @note)
-        `);
         for (const l of sessionLogs) {
           insertLog.run({
             ...l,
