@@ -40,8 +40,8 @@ export function initSyncManager(): () => void {
         const focusTreeStore = useFocusTreeStore();
         const sacredSeatStore = useSacredSeatStore();
 
-        // 仅在当前未处于画布草稿编辑态时，执行无感静默热刷新
-        if (!focusTreeStore.loading) {
+        // 仅在当前未处于加载中且未处于画布草稿编辑排版态时，执行无感静默热刷新 (P2-LOG-02)
+        if (!focusTreeStore.loading && !focusTreeStore.isEditing) {
           await Promise.allSettled([
             focusTreeStore.fetchTreeData(),
             sacredSeatStore.fetchConfig(),

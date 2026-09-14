@@ -14,12 +14,17 @@ export const useFocusTreeStore = defineStore('focusTree', () => {
     snapshots: []
   });
   const loading = ref(false);
+  const isEditing = ref(false);
   const lastCreatedNodeId = ref<string | null>(null);
   const lastCreatedGroupId = ref<string | null>(null);
   const lastCreatedLabelId = ref<string | null>(null);
   const pendingResetSummary = ref<{ resetNodes: any[]; settlementDate: string } | null>(null);
   const versionConflictWarning = ref(false);
   const lastErrorMessage = ref<string | null>(null);
+
+  function setIsEditing(val: boolean) {
+    isEditing.value = val;
+  }
 
   function dismissConflictWarning() {
     versionConflictWarning.value = false;
@@ -521,6 +526,8 @@ export const useFocusTreeStore = defineStore('focusTree', () => {
     labels,
     evolution,
     loading,
+    isEditing,
+    setIsEditing,
     lastCreatedNodeId,
     lastCreatedGroupId,
     lastCreatedLabelId,

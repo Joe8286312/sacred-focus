@@ -40,6 +40,15 @@ const isHoveringNode = ref(false);
 // 交互模式：展示模式 (View Mode, 默认) vs 编辑模式 (Edit Mode)
 const isEditMode = ref(false);
 
+// 将画布编辑状态与 Pinia store 同步，避免后台多端探针在排版时误刷新草稿 (P2-LOG-02)
+watch(isEditMode, (val) => {
+  store.setIsEditing(val);
+}, { immediate: true });
+
+onUnmounted(() => {
+  store.setIsEditing(false);
+});
+
 // 两步点击连接桩状态 (Click-to-Connect)
 const activeConnectingHandle = ref<{ nodeId: string; anchor: 'TOP' | 'BOTTOM' | 'LEFT' | 'RIGHT' } | null>(null);
 
