@@ -59,6 +59,11 @@ export function authMiddleware(req: Request, res: Response, next: NextFunction) 
             error: 'TOKEN_REVOKED',
             message: '该登录凭证已被安全注销，请重新登录'
           });
+        } else {
+          // 该 token 自然过期时间已过，自动物理淘汰该吊销记录 (P2-SEC-03)
+          try {
+            db.prepare("DELETE FROM system_meta WHERE key = ?").run(`revoked_jti:${decoded.jti}`);
+          } catch (_) {}
         }
       }
     }
@@ -72,6 +77,35 @@ export function authMiddleware(req: Request, res: Response, next: NextFunction) 
       error: 'TOKEN_EXPIRED_OR_INVALID',
       message: '登录凭证已过期或无效，请重新登录'
     });
+  }
+}
+
+/**
+ * 自动清理并淘汰已超期的 JWT 吊销黑名单记录，防范 system_meta 表无限膨胀 (P2-SEC-03)
+ */
+export function purgeExpiredRevokedJtis(): number {
+  try {
+    const rows = db.prepare("SELECT key, value FROM system_meta WHERE key LIKE 'revoked_jti:%'").all() as Array<{ key: string; value: string }>;
+    const now = Date.now();
+    let purgedCount = 0;
+    const deleteStmt = db.prepare("DELETE FROM system_meta WHERE key = ?");
+    const purgeTx = db.transaction(() => {
+      for (const r of rows) {
+        const exp = parseInt(r.value, 10);
+        if (!isNaN(exp) && now >= exp) {
+          deleteStmt.run(r.key);
+          purgedCount++;
+        }
+      }
+    });
+    purgeTx();
+    if (purgedCount > 0) {
+      console.log(`[Sacred Focus Auth] 已清理 ${purgedCount} 条过期 JWT 吊销记录`);
+    }
+    return purgedCount;
+  } catch (err) {
+    console.error('[Sacred Focus Auth] 清理过期 JTI 黑名单失败:', err);
+    return 0;
   }
 }
 
