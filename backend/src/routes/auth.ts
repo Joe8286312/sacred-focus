@@ -60,11 +60,13 @@ router.post('/login', loginLimiter, async (req: Request, res: Response) => {
     { expiresIn: '30d' }
   );
 
-  // 写入安全 HttpOnly Cookie
+  // 写入安全 HttpOnly Cookie (动态检测请求协议，消除生产环境明文 HTTP 下 secure: true 导致的登录死循环 P1-SEC-02)
+  const isSecure = req.secure || req.headers['x-forwarded-proto'] === 'https';
+
   res.cookie('sf_token', token, {
     httpOnly: true,
-    secure: config.isProduction,
-    sameSite: config.isProduction ? 'strict' : 'lax',
+    secure: isSecure,
+    sameSite: isSecure ? 'strict' : 'lax',
     maxAge: 30 * 24 * 60 * 60 * 1000
   });
 
@@ -129,7 +131,12 @@ router.post('/logout', (req: Request, res: Response) => {
     }
   }
 
-  res.clearCookie('sf_token');
+  const isSecure = req.secure || req.headers['x-forwarded-proto'] === 'https';
+  res.clearCookie('sf_token', {
+    httpOnly: true,
+    secure: isSecure,
+    sameSite: isSecure ? 'strict' : 'lax'
+  });
   res.json({ success: true, message: '已安全登出自控中枢' });
 });
 
