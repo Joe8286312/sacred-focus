@@ -36,19 +36,19 @@ async function runAllTests() {
   console.log('[Suite 1] 04:00 业务日计算算法 (dateUtils.ts)');
 
   test('凌晨 03:59:59 点亮，严格归属于前一个业务日', () => {
-    const d = new Date(2026, 8, 9, 3, 59, 59); // 2026-09-09 03:59:59
+    const d = new Date('2026-09-09T03:59:59+08:00');
     const bDay = getBusinessDay(d);
     assert.equal(bDay, '2026-09-08');
   });
 
   test('凌晨 04:00:00 点亮，正式进入当天自控业务日', () => {
-    const d = new Date(2026, 8, 9, 4, 0, 0); // 2026-09-09 04:00:00
+    const d = new Date('2026-09-09T04:00:00+08:00');
     const bDay = getBusinessDay(d);
     assert.equal(bDay, '2026-09-09');
   });
 
   test('深夜 23:59:59 点亮，稳态保持在当天自控业务日', () => {
-    const d = new Date(2026, 8, 9, 23, 59, 59); // 2026-09-09 23:59:59
+    const d = new Date('2026-09-09T23:59:59+08:00');
     const bDay = getBusinessDay(d);
     assert.equal(bDay, '2026-09-09');
   });
