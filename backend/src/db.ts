@@ -5,7 +5,7 @@
  *  - db/schema.ts       : 9 大核心数据表 DDL 定义
  *  - db/migrations.ts   : 字段平滑升级与数据对齐迁移
  *  - db/seed.ts         : 种子国策节点与初始快照配置
- *  - db/dateUtils.ts    : 04:00 业务日计算算法
+ *  - domain/calendar/businessDay.ts : 04:00 业务日计算算法（db/dateUtils.ts 保留兼容转出）
  *  - db/revision.ts     : 全局系统原子版本号与时间戳
  *  - db/queries/focusTree.ts  : 国策树查询与 upsertFocusNode
  *  - db/queries/settlement.ts : 每日首次上线结算引擎

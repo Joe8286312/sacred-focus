@@ -4,7 +4,11 @@ import path from 'node:path';
 import { execSync } from 'node:child_process';
 import Database from 'better-sqlite3';
 import { validateFullBackupPayload } from '../src/utils/validators.js';
-import { getBusinessDay, getPreviousBusinessDay } from '../src/db/dateUtils.js';
+import { getBusinessDay, getPreviousBusinessDay } from '../src/domain/calendar/businessDay.js';
+import {
+  getBusinessDay as getBusinessDayFromLegacyPath,
+  getPreviousBusinessDay as getPreviousBusinessDayFromLegacyPath
+} from '../src/db/dateUtils.js';
 import { safeCompare } from '../src/middleware/auth.js';
 import { createTables } from '../src/db/schema.js';
 // 此文件由 tsx 直接执行，因此显式引用 TypeScript 源文件。
@@ -36,7 +40,12 @@ async function runAllTests() {
   // -----------------------------------------------------------
   // 1. 业务日分界线算法测试 (04:00 业务日分水岭)
   // -----------------------------------------------------------
-  console.log('[Suite 1] 04:00 业务日计算算法 (dateUtils.ts)');
+  console.log('[Suite 1] 04:00 业务日计算算法 (domain/calendar/businessDay.ts)');
+
+  test('旧 db/dateUtils 入口仍以同一实现保持兼容', () => {
+    assert.equal(getBusinessDayFromLegacyPath, getBusinessDay);
+    assert.equal(getPreviousBusinessDayFromLegacyPath, getPreviousBusinessDay);
+  });
 
   test('凌晨 03:59:59 点亮，严格归属于前一个业务日', () => {
     const d = new Date('2026-09-09T03:59:59+08:00');
@@ -60,6 +69,34 @@ async function runAllTests() {
     assert.equal(getPreviousBusinessDay('2026-09-09'), '2026-09-08');
     assert.equal(getPreviousBusinessDay('2026-09-01'), '2026-08-31'); // 跨月边界
     assert.equal(getPreviousBusinessDay('2026-01-01'), '2025-12-31'); // 跨年边界
+  });
+
+  test('业务日偏移量按传入时区计算，默认值保持东八区', () => {
+    const instant = new Date('2026-09-09T00:00:00.000Z');
+    assert.equal(getBusinessDay(instant), '2026-09-09');
+    assert.equal(getBusinessDay(instant, 8), '2026-09-09');
+    assert.equal(getBusinessDay(instant, 0), '2026-09-08');
+  });
+
+  test('前一业务日正确处理闰年与非闰年二月边界', () => {
+    assert.equal(getPreviousBusinessDay('2024-03-01'), '2024-02-29');
+    assert.equal(getPreviousBusinessDay('2025-03-01'), '2025-02-28');
+  });
+
+  test('非补零或溢出的日期字符串保留当前 JavaScript Date 宽松归一化行为', () => {
+    assert.equal(getPreviousBusinessDay('2026-1-1'), '2025-12-31');
+    assert.equal(getPreviousBusinessDay('2026-02-30'), '2026-03-01');
+  });
+
+  test('无效 Date、无效日期文本和 Infinity 偏移量当前均格式化为 NaN 日期', () => {
+    assert.equal(getBusinessDay(new Date('not-a-date')), 'NaN-NaN-NaN');
+    assert.equal(getBusinessDay(new Date('2026-09-09T00:00:00.000Z'), Infinity), 'NaN-NaN-NaN');
+    assert.equal(getPreviousBusinessDay('not-a-date'), 'NaN-NaN-NaN');
+  });
+
+  test('运行时传入 null 时保留原生 TypeError，而不静默容错', () => {
+    assert.throws(() => getBusinessDay(null as unknown as Date), TypeError);
+    assert.throws(() => getPreviousBusinessDay(null as unknown as string), TypeError);
   });
 
   // -----------------------------------------------------------

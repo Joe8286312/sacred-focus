@@ -2,13 +2,12 @@ import { Router, Request, Response } from 'express';
 import {
   db,
   getFullFocusTreeData,
-  getBusinessDay,
-  getPreviousBusinessDay,
   settleFocusTreeDailyState,
   getSystemRevision,
   incrementSystemRevision,
   upsertFocusNode
 } from '../db.js';
+import { getBusinessDay, getPreviousBusinessDay } from '../domain/calendar/businessDay.js';
 import type { FocusNode, FocusEdge, FocusGroup, FocusLabel, FocusNodeRow, FocusGroupRow } from '../types.js';
 
 const router = Router();

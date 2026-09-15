@@ -1,5 +1,5 @@
 import { db } from '../connection.js';
-import { getBusinessDay, getPreviousBusinessDay } from '../dateUtils.js';
+import { getBusinessDay, getPreviousBusinessDay } from '../../domain/calendar/businessDay.js';
 import { incrementSystemRevision } from '../revision.js';
 import type { ResetNodeItem, FocusNodeRow } from '../../types.js';
 
