@@ -27,9 +27,12 @@ COPY frontend/package.json frontend/package-lock.json ./frontend/
 # 执行依赖安装 (包含 devDependencies 用于构建)
 RUN npm ci
 
-# 复制工程源代码
+# 复制工程源代码与构建验证所依赖的脚本资源
 COPY backend/ ./backend/
 COPY frontend/ ./frontend/
+COPY scripts/ ./scripts/
+# 自动化验证会检查证书生成脚本；私钥与证书已由 .dockerignore 排除。
+COPY nginx/ssl/ ./nginx/ssl/
 
 # 执行全量构建 (tsc + vue-tsc + vite build)
 RUN npm run build

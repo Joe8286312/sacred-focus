@@ -7,7 +7,8 @@ import { validateFullBackupPayload } from '../src/utils/validators.js';
 import { getBusinessDay, getPreviousBusinessDay } from '../src/db/dateUtils.js';
 import { safeCompare } from '../src/middleware/auth.js';
 import { createTables } from '../src/db/schema.js';
-import { writeAllAssets } from '../../scripts/generate-icons.js';
+// 此文件由 tsx 直接执行，因此显式引用 TypeScript 源文件。
+import { writeAllAssets } from '../../scripts/generate-icons.ts';
 
 // 简易单元测试运行器
 let passedCount = 0;
