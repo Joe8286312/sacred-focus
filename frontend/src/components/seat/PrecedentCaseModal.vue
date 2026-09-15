@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue';
-import { formatCompactDuration } from '../../utils/time';
+import { formatCompactDuration } from '../../shared/formatters/duration';
 import type { PrecedentCase } from '../../types';
 import { apiFetch } from '../../utils/api';
 

@@ -7,7 +7,7 @@ import PrecedentCaseModal from '../components/seat/PrecedentCaseModal.vue';
 import SeatSettingsModal from '../components/seat/SeatSettingsModal.vue';
 import FocusHistoryModal from '../components/seat/FocusHistoryModal.vue';
 import { playChimeSound } from '../utils/audio';
-import { formatCompactDuration } from '../utils/time';
+import { formatCompactDuration } from '../shared/formatters/duration';
 import type { FocusSessionLog } from '../types';
 
 const store = useSacredSeatStore();

@@ -9,7 +9,8 @@ import { safeCompare } from '../src/middleware/auth.js';
 import { createTables } from '../src/db/schema.js';
 // 此文件由 tsx 直接执行，因此显式引用 TypeScript 源文件。
 import { writeAllAssets } from '../../scripts/generate-icons.ts';
-import { formatCompactDuration } from '../../frontend/src/utils/time.ts';
+import { formatCompactDuration } from '../../frontend/src/shared/formatters/duration.ts';
+import { formatCompactDuration as formatCompactDurationFromLegacyPath } from '../../frontend/src/utils/time.ts';
 
 // 简易单元测试运行器
 let passedCount = 0;
@@ -65,6 +66,10 @@ async function runAllTests() {
   // 2. 前端紧凑时长格式化现状锁定（time.ts）
   // -----------------------------------------------------------
   console.log('\n[Suite 2] 紧凑时长格式化现状锁定 (frontend/utils/time.ts)');
+
+  test('旧 utils/time 入口仍以同一实现保持兼容', () => {
+    assert.equal(formatCompactDurationFromLegacyPath, formatCompactDuration);
+  });
 
   test('秒、分钟、小时及混合单位按当前紧凑规则格式化', () => {
     const cases: Array<[number, string]> = [

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { formatCompactDuration } from '../../utils/time';
+import { formatCompactDuration } from '../../shared/formatters/duration';
 import type { FocusSessionLog } from '../../types';
 
 defineProps<{
