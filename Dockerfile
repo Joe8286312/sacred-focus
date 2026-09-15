@@ -42,7 +42,7 @@ RUN npm run build
 # --------------------------------------------------------
 FROM node:22-bookworm-slim AS prod-deps
 
-WORKDIR /app/backend
+WORKDIR /app
 
 # 安装编译工具用于编译生产版 better-sqlite3
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -51,8 +51,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     g++ \
     && rm -rf /var/lib/apt/lists/*
 
-COPY backend/package.json backend/package-lock.json ./
-RUN npm ci --omit=dev
+# 生产依赖必须使用根工作区锁文件。backend/package-lock.json 是历史独立锁文件，
+# 不能代表当前 backend/package.json 的完整依赖集。
+COPY package.json package-lock.json ./
+COPY backend/package.json ./backend/
+COPY frontend/package.json ./frontend/
+RUN npm ci --omit=dev --workspace=backend
 
 # --------------------------------------------------------
 # 阶段 3：轻量生产运行时镜像 (Minimal Production Runner)
@@ -75,8 +79,9 @@ ENV NODE_ENV=production \
     DATA_DIR=/app/data \
     FRONTEND_DIST=/app/frontend/dist
 
-# 拷贝后端生产依赖与编译产物
-COPY --from=prod-deps /app/backend/node_modules ./backend/node_modules
+# 拷贝工作区根目录中由 npm 安装的后端生产依赖与编译产物。
+# Node 会从 /app/backend 向上解析至 /app/node_modules。
+COPY --from=prod-deps /app/node_modules ./node_modules
 COPY --from=builder /app/backend/dist ./backend/dist
 COPY --from=builder /app/backend/package.json ./backend/package.json
 
