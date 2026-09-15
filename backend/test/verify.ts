@@ -9,6 +9,7 @@ import { safeCompare } from '../src/middleware/auth.js';
 import { createTables } from '../src/db/schema.js';
 // 此文件由 tsx 直接执行，因此显式引用 TypeScript 源文件。
 import { writeAllAssets } from '../../scripts/generate-icons.ts';
+import { formatCompactDuration } from '../../frontend/src/utils/time.ts';
 
 // 简易单元测试运行器
 let passedCount = 0;
@@ -61,9 +62,67 @@ async function runAllTests() {
   });
 
   // -----------------------------------------------------------
-  // 2. 静态令牌恒定时间安全比对测试 (crypto.timingSafeEqual via auth.ts)
+  // 2. 前端紧凑时长格式化现状锁定（time.ts）
   // -----------------------------------------------------------
-  console.log('\n[Suite 2] 安全防御：常量时间比对防御时序嗅探 (auth.ts safeCompare)');
+  console.log('\n[Suite 2] 紧凑时长格式化现状锁定 (frontend/utils/time.ts)');
+
+  test('秒、分钟、小时及混合单位按当前紧凑规则格式化', () => {
+    const cases: Array<[number, string]> = [
+      [1, '1s'],
+      [59, '59s'],
+      [60, '1m'],
+      [65, '1m5s'],
+      [3599, '59m59s'],
+      [3600, '1h'],
+      [3602, '1h2s'],
+      [3665, '1h1m5s']
+    ];
+
+    for (const [seconds, expected] of cases) {
+      assert.equal(formatCompactDuration(seconds), expected, `${seconds} 秒应格式化为 ${expected}`);
+    }
+  });
+
+  test('零、负数与不足一秒的小数均被向下归零为空字符串', () => {
+    for (const seconds of [0, -1, -Infinity, -0.1, 0.999]) {
+      assert.equal(formatCompactDuration(seconds), '', `${seconds} 应返回空字符串`);
+    }
+  });
+
+  test('正小数向下取整，而非四舍五入', () => {
+    assert.equal(formatCompactDuration(59.999), '59s');
+    assert.equal(formatCompactDuration(60.999), '1m');
+  });
+
+  test('运行时 null、空字符串、空白字符串、undefined 与 NaN 均容错为空字符串', () => {
+    const invalidButTolerated: unknown[] = [null, '', '   ', undefined, NaN];
+
+    for (const value of invalidButTolerated) {
+      assert.doesNotThrow(() => formatCompactDuration(value as number));
+      assert.equal(formatCompactDuration(value as number), '', `${String(value)} 应容错为空字符串`);
+    }
+  });
+
+  test('运行时数字字符串会被 JavaScript 隐式转换后参与格式化', () => {
+    assert.equal(formatCompactDuration('65' as unknown as number), '1m5s');
+  });
+
+  test('Infinity 与最大安全整数保留当前极端值行为', () => {
+    assert.equal(formatCompactDuration(Infinity), 'Infinityh');
+    assert.equal(formatCompactDuration(Number.MAX_SAFE_INTEGER), '2501999792983h36m31s');
+  });
+
+  test('无法转换为数字的 Symbol 仍向调用方抛出 TypeError', () => {
+    assert.throws(
+      () => formatCompactDuration(Symbol('duration') as unknown as number),
+      TypeError
+    );
+  });
+
+  // -----------------------------------------------------------
+  // 3. 静态令牌恒定时间安全比对测试 (crypto.timingSafeEqual via auth.ts)
+  // -----------------------------------------------------------
+  console.log('\n[Suite 3] 安全防御：常量时间比对防御时序嗅探 (auth.ts safeCompare)');
 
   test('正确令牌比对成功', () => {
     const secret = 'super_secret_token_1234567890_abcdef';
