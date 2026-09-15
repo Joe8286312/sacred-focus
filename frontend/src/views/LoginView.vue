@@ -2,6 +2,7 @@
 import { ref, onMounted } from 'vue';
 import { useRouter, useRoute } from 'vue-router';
 import { useAuthStore } from '../stores/auth';
+import { getTheme, toggleTheme as toggleGlobalTheme, type Theme } from '../utils/theme';
 
 const router = useRouter();
 const route = useRoute();
@@ -12,6 +13,11 @@ const loading = ref(false);
 const isErrorShake = ref(false);
 const showPassword = ref(false);
 const passwordInputRef = ref<HTMLInputElement | null>(null);
+const currentTheme = ref<Theme>(getTheme());
+
+function toggleTheme() {
+  currentTheme.value = toggleGlobalTheme(currentTheme.value);
+}
 
 onMounted(() => {
   // 自动聚焦密码框
@@ -46,6 +52,22 @@ async function handleLogin() {
   <div class="login-container">
     <!-- 背景极简光晕 -->
     <div class="glow-orb" />
+
+    <button
+      class="login-theme-toggle"
+      type="button"
+      :title="currentTheme === 'dark' ? '切换为浅色模式' : '切换为深色模式'"
+      :aria-label="currentTheme === 'dark' ? '切换为浅色模式' : '切换为深色模式'"
+      @click="toggleTheme"
+    >
+      <svg v-if="currentTheme === 'dark'" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <circle cx="12" cy="12" r="5" />
+        <path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42" />
+      </svg>
+      <svg v-else viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
+      </svg>
+    </button>
 
     <div class="login-card" :class="{ 'shake-animation': isErrorShake }">
       <!-- 极简几何 SVG 矢量锁徽标 -->
@@ -134,6 +156,38 @@ async function handleLogin() {
   filter: blur(50px);
   pointer-events: none;
   opacity: 0.6;
+}
+
+.login-theme-toggle {
+  position: absolute;
+  top: 1.25rem;
+  right: 1.25rem;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  min-height: 38px;
+  padding: 0;
+  color: var(--text-secondary);
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-sm);
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+
+.login-theme-toggle:hover,
+.login-theme-toggle:focus-visible {
+  color: var(--text-primary);
+  border-color: var(--color-lit);
+  box-shadow: 0 0 0 3px var(--color-lit-glow);
+}
+
+.login-theme-toggle svg {
+  width: 16px;
+  height: 16px;
 }
 
 .login-card {
@@ -327,5 +381,12 @@ async function handleLogin() {
 
 .shake-animation {
   animation: shake 0.5s cubic-bezier(0.36, 0.07, 0.19, 0.97) both;
+}
+
+@media (max-width: 480px) {
+  .login-theme-toggle {
+    top: 0.75rem;
+    right: 0.75rem;
+  }
 }
 </style>

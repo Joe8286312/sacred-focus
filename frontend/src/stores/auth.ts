@@ -2,6 +2,23 @@ import { defineStore } from 'pinia';
 import { ref } from 'vue';
 import { router } from '../router';
 
+async function readAuthResponse(res: Response): Promise<Record<string, any>> {
+  const rawText = await res.text();
+  if (!rawText.trim()) {
+    return {
+      message: `登录服务返回空响应（HTTP ${res.status}）。请确认本机后端正在运行。`
+    };
+  }
+
+  try {
+    return JSON.parse(rawText) as Record<string, any>;
+  } catch {
+    return {
+      message: `登录服务返回了无法识别的响应（HTTP ${res.status}）。请检查后端终端日志。`
+    };
+  }
+}
+
 export const useAuthStore = defineStore('auth', () => {
   // 清理历史版本遗留在 localStorage 中的敏感 token（纯 HttpOnly Cookie 模式）
   if (typeof localStorage !== 'undefined' && localStorage.getItem('sf_token')) {
@@ -23,7 +40,7 @@ export const useAuthStore = defineStore('auth', () => {
         credentials: 'include'
       });
 
-      const data = await res.json();
+      const data = await readAuthResponse(res);
 
       if (!res.ok) {
         authError.value = data.message || data.error || '密码核验失败';
@@ -86,4 +103,3 @@ export const useAuthStore = defineStore('auth', () => {
     checkAuthStatus
   };
 });
-

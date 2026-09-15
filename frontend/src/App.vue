@@ -8,10 +8,11 @@ import { useSacredSeatStore } from './stores/sacredSeat';
 import { useAuthStore } from './stores/auth';
 import { initSyncManager } from './utils/syncManager';
 import { apiFetch } from './utils/api';
+import { getTheme, toggleTheme as toggleGlobalTheme, type Theme } from './utils/theme';
 
 const router = useRouter();
 const route = useRoute();
-const currentTheme = ref<'dark' | 'light'>('dark');
+const currentTheme = ref<Theme>(getTheme());
 const isMigrationModalOpen = ref(false);
 const focusStore = useFocusTreeStore();
 const seatStore = useSacredSeatStore();
@@ -19,20 +20,12 @@ const authStore = useAuthStore();
 const cleanupSync = ref<(() => void) | null>(null);
 
 function toggleTheme() {
-  currentTheme.value = currentTheme.value === 'dark' ? 'light' : 'dark';
-  document.documentElement.setAttribute('data-theme', currentTheme.value);
-  localStorage.setItem('sacred-focus-theme', currentTheme.value);
+  currentTheme.value = toggleGlobalTheme(currentTheme.value);
 }
 
 onMounted(() => {
   // 启动多端唤醒静默自动同步管理器
   cleanupSync.value = initSyncManager();
-
-  const saved = localStorage.getItem('sacred-focus-theme') as 'dark' | 'light' | null;
-  if (saved) {
-    currentTheme.value = saved;
-    document.documentElement.setAttribute('data-theme', saved);
-  }
 
   // 仅在开发模式下暴露调试辅助函数，生产环境坚决不挂载全局危险方法
   if (import.meta.env.DEV) {
