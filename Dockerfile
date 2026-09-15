@@ -24,8 +24,11 @@ COPY package.json package-lock.json ./
 COPY backend/package.json backend/package-lock.json ./backend/
 COPY frontend/package.json frontend/package-lock.json ./frontend/
 
-# 执行依赖安装 (包含 devDependencies 用于构建)
-RUN npm ci
+# 执行依赖安装 (包含 devDependencies 用于构建)。
+# npm 在 Windows 生成的 workspace lockfile 可能遗漏 Rollup 的 Linux 原生可选包；
+# 在 Linux 构建器中显式补齐当前 x64 GNU 运行时所需二进制，避免 Vite 构建失败。
+RUN npm ci \
+    && npm install --no-save --no-package-lock --ignore-scripts @rollup/rollup-linux-x64-gnu@4.63.1
 
 # 复制工程源代码与构建验证所依赖的脚本资源
 COPY backend/ ./backend/
