@@ -82,9 +82,9 @@ ENV NODE_ENV=production \
     DATA_DIR=/app/data \
     FRONTEND_DIST=/app/frontend/dist
 
-# 拷贝工作区根目录中由 npm 安装的后端生产依赖与编译产物。
-# Node 会从 /app/backend 向上解析至 /app/node_modules。
-COPY --from=prod-deps /app/node_modules ./node_modules
+# npm workspace 将目标工作区依赖安装在 backend/node_modules；
+# 必须将该目录原样带入运行时镜像，供 backend/dist/server.js 解析。
+COPY --from=prod-deps /app/backend/node_modules ./backend/node_modules
 COPY --from=builder /app/backend/dist ./backend/dist
 COPY --from=builder /app/backend/package.json ./backend/package.json
 
