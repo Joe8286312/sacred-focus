@@ -28,7 +28,7 @@ export function getAdminPasswordHash(): string {
   const initialPassword = config.initialAdminPassword || 'admin123456';
   const newHash = bcrypt.hashSync(initialPassword, 12);
   db.prepare("INSERT OR REPLACE INTO system_meta (key, value) VALUES ('admin_password_hash', ?)").run(newHash);
-  console.log(`[Sacred Focus Auth] 初始密码已生成并持久化。默认密码: ${initialPassword}`);
+  console.info('[Sacred Focus Auth] 初始管理员密码哈希已生成并持久化');
   return newHash;
 }
 
@@ -60,8 +60,8 @@ router.post('/login', loginLimiter, async (req: Request, res: Response) => {
     { expiresIn: '30d' }
   );
 
-  // 写入安全 HttpOnly Cookie (动态检测请求协议，消除生产环境明文 HTTP 下 secure: true 导致的登录死循环 P1-SEC-02)
-  const isSecure = req.secure || req.headers['x-forwarded-proto'] === 'https';
+  // 生产环境只接受 HTTPS 会话；本地开发仍可通过 HTTP 使用 Lax Cookie。
+  const isSecure = config.isProduction || req.secure || req.headers['x-forwarded-proto'] === 'https';
 
   res.cookie('sf_token', token, {
     httpOnly: true,
@@ -72,7 +72,6 @@ router.post('/login', loginLimiter, async (req: Request, res: Response) => {
 
   return res.json({
     success: true,
-    token,
     expiresInDays: 30,
     message: '契约核验通过，欢迎进入 Sacred Focus'
   });

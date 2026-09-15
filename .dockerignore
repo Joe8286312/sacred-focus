@@ -26,6 +26,13 @@ app_pre_import_*.db
 backend/.env
 frontend/.env
 
+# TLS assets are mounted into Nginx at runtime; never include them in an image build context.
+nginx/ssl/*.key
+nginx/ssl/*.crt
+nginx/ssl/*.pem
+nginx/ssl/*.p12
+nginx/ssl/*.pfx
+
 # Editor & IDE files
 .vscode
 .idea

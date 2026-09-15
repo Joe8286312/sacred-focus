@@ -28,8 +28,8 @@ purgeExpiredRevokedJtis();
 
 const app = express();
 
-// 信任第一层反向代理 (Nginx)，以准确提取 X-Forwarded-For 真实客户端 IP
-app.set('trust proxy', 1);
+// 仅在 Nginx 组合编排中信任一层代理；直连应用端口绝不采信客户端可伪造的转发头。
+app.set('trust proxy', config.trustProxy ? 1 : false);
 
 // HTTP 安全头加固 (防御点击劫持、MIME嗅探、XSS注入并移除指纹)
 app.use(helmet({

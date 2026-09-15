@@ -13,6 +13,13 @@ build/
 .env.local
 .env.*.local
 
+# TLS private keys and certificates must be provisioned outside the repository.
+nginx/ssl/*.key
+nginx/ssl/*.crt
+nginx/ssl/*.pem
+nginx/ssl/*.p12
+nginx/ssl/*.pfx
+
 # Database & SQLite files
 *.db
 *.db-wal

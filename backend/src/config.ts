@@ -5,6 +5,7 @@ dotenv.config();
 
 const rawJwtSecret = process.env.JWT_SECRET;
 const isProduction = process.env.NODE_ENV === 'production';
+const trustProxy = process.env.TRUST_PROXY === '1';
 
 const BANNED_SECRETS = [
   'sacred_focus_super_secret_jwt_key_32chars_2026',
@@ -77,9 +78,10 @@ export const config = {
     .split(',')
     .map(s => s.trim())
     .filter(Boolean),
+  // 仅在 Nginx 组合编排中显式开启，避免直接访问应用端口时伪造 X-Forwarded-For。
+  trustProxy,
   isProduction,
   get dbPath() {
     return path.join(this.dataDir, 'app.db');
   }
 };
-

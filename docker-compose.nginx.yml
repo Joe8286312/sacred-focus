@@ -7,6 +7,9 @@ services:
   sacred-focus:
     # 隐藏直接暴露的 3000 端口，由内部网络流通
     ports: !override []
+    environment:
+      # 应用容器仅由本 Compose 文件定义的单层 Nginx 代理访问。
+      TRUST_PROXY: "1"
     networks:
       - sacred-network
 
@@ -19,7 +22,8 @@ services:
       - "443:443"
     volumes:
       - ./nginx/conf.d:/etc/nginx/conf.d:ro
-      - ./nginx/ssl:/etc/nginx/ssl:ro
+      # 证书目录必须位于仓库外，通过 .env 中的 NGINX_SSL_DIR 指定。
+      - ${NGINX_SSL_DIR:?Set NGINX_SSL_DIR to the directory containing server.crt and server.key}:/etc/nginx/ssl:ro
     depends_on:
       sacred-focus:
         condition: service_healthy
