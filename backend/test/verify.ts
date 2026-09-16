@@ -24,6 +24,12 @@ import {
 import { safeCompare } from '../src/middleware/auth.js';
 import { createTables } from '../src/db/schema.js';
 import { createSystemMetaRepository } from '../src/repositories/systemMetaRepository.js';
+import { createFocusTreeRepository } from '../src/repositories/focusTreeRepository.js';
+import {
+  createMaintenanceRepository,
+  MaintenanceInProgressError,
+  RevisionPreconditionError
+} from '../src/repositories/maintenanceRepository.js';
 // 此文件由 tsx 直接执行，因此显式引用 TypeScript 源文件。
 import { writeAllAssets } from '../../scripts/generate-icons.ts';
 import { formatCompactDuration } from '../../frontend/src/shared/formatters/duration.ts';
@@ -703,6 +709,86 @@ async function runAllTests() {
     assert.equal(repository.incrementSystemRevision(timestamp), 2);
     assert.equal(repository.getSystemRevision(), 2);
     assert.equal(repository.getValue('last_sync_timestamp'), timestamp);
+  });
+
+  test('focusTree repository 保留节点时间规范化、预编译落库和 sortOrder 读取顺序', () => {
+    const repository = createFocusTreeRepository(testDb);
+    const laterNode = makeNode({
+      id: 'repo-later',
+      code: 'R2',
+      name: '晚序节点',
+      triggerTime: '9：05',
+      triggerScene: '   ',
+      hasExactTime: false,
+      timeValueMinutes: null
+    });
+    const earlierNode = makeNode({
+      id: 'repo-earlier',
+      code: 'R1',
+      name: '早序节点',
+      triggerTime: null,
+      triggerScene: '',
+      hasExactTime: true,
+      timeValueMinutes: 480
+    });
+
+    assert.deepEqual(repository.upsertFocusNode(laterNode, 2), {
+      ...laterNode,
+      triggerTime: '09:05',
+      triggerScene: '09:05',
+      hasExactTime: true,
+      timeValueMinutes: 545,
+      previousLastLitDate: null
+    });
+    repository.upsertFocusNode(earlierNode, 1);
+
+    const tree = repository.getFullFocusTreeData();
+    assert.deepEqual(tree.nodes.map(node => node.id), ['repo-earlier', 'repo-later']);
+    assert.equal(tree.nodes[0].triggerTime, null);
+    assert.equal(tree.nodes[0].hasExactTime, false);
+    assert.equal(tree.nodes[0].triggerScene, '全天候');
+    assert.equal(tree.nodes[1].triggerTime, '09:05');
+    assert.equal(tree.nodes[1].timeValueMinutes, 545);
+  });
+
+  test('maintenance repository 锁定租约冲突、revision 前置条件、过期容错与精确释放', () => {
+    let currentTime = 1_000;
+    const metadata = createSystemMetaRepository(testDb);
+    const repository = createMaintenanceRepository(testDb, {
+      now: () => currentTime,
+      createOwnerId: () => 'lease-owner'
+    });
+    const expectedRevision = metadata.getSystemRevision();
+
+    const lease = repository.acquireMaintenanceLease('full-system-import', expectedRevision);
+    assert.deepEqual(lease, {
+      ownerId: 'lease-owner',
+      operation: 'full-system-import',
+      expectedRevision,
+      expiresAt: 901_000
+    });
+    assert.deepEqual(repository.getActiveMaintenanceLease(), lease);
+    assert.throws(
+      () => repository.acquireMaintenanceLease('second-import', expectedRevision),
+      MaintenanceInProgressError
+    );
+
+    metadata.setValue('system_revision', String(expectedRevision + 1));
+    assert.throws(() => repository.assertMaintenanceLease(lease), RevisionPreconditionError);
+    repository.releaseMaintenanceLease({ ...lease, ownerId: 'other-owner' });
+    assert.deepEqual(repository.getActiveMaintenanceLease(), lease);
+    repository.releaseMaintenanceLease(lease);
+    assert.equal(repository.getActiveMaintenanceLease(), null);
+
+    metadata.setValue('maintenance_lock', '{not-json');
+    assert.equal(repository.getActiveMaintenanceLease(), null);
+    metadata.setValue('maintenance_lock', JSON.stringify({ ...lease, expiresAt: currentTime }));
+    assert.equal(repository.getActiveMaintenanceLease(), null);
+    assert.throws(
+      () => repository.acquireMaintenanceLease('stale-revision', expectedRevision),
+      RevisionPreconditionError
+    );
+    repository.assertForeignKeyIntegrity();
   });
 
   test('upsertFocusNode 正确清洗、补全并写入真实结构数据库', () => {
