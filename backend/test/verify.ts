@@ -37,6 +37,8 @@ import { getNextTheme, getThemeFromStoredValue } from '../../frontend/src/shared
 import { playChimeSound } from '../../frontend/src/utils/audio.ts';
 import { playChimeSound as playChimeSoundFromBrowserAdapter } from '../../frontend/src/platform/browser/audio.ts';
 import { useListSort } from '../../frontend/src/composables/useListSort.ts';
+import { useListSort as useListSortFromComposables } from '../../frontend/src/composables/listSort/useListSort.ts';
+import { applyCompoundFocusNodeSort } from '../../frontend/src/shared/sorting/focusNodeSort.ts';
 import type { FocusNode } from '../../frontend/src/types/index.ts';
 
 // 简易单元测试运行器
@@ -397,6 +399,16 @@ async function runAllTests() {
     assert.deepEqual(result.map(item => item.id), ['second', 'first', 'third']);
     assert.deepEqual(source.map(item => item.id), ['first', 'second', 'third']);
     assert.deepEqual(useListSort().applyCompoundSort([first, first], () => ''), [first, first]);
+  });
+
+  test('旧排序入口保持为组合式实现的同一导出，纯排序器不依赖 Vue 状态', () => {
+    const low = makeNode({ id: 'low', level: 1 });
+    const high = makeNode({ id: 'high', level: 2 });
+    assert.equal(useListSort, useListSortFromComposables);
+    assert.deepEqual(
+      applyCompoundFocusNodeSort([high, low], [{ key: 'level', dir: 'asc' }], () => ''),
+      [low, high]
+    );
   });
 
   test('时间排序把无精确时间项置底；无时间项以触发场景排序且 direction 同步生效', () => {

@@ -5,7 +5,7 @@ import NodeSpecModal from '../components/canvas/NodeSpecModal.vue';
 import NodeEditModal from '../components/canvas/NodeEditModal.vue';
 import type { FocusNode } from '../types';
 
-import { useListSort } from '../composables/useListSort';
+import { useListSort } from '../composables/listSort/useListSort';
 
 const store = useFocusTreeStore();
 
