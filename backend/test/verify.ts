@@ -27,6 +27,7 @@ import { createSystemMetaRepository } from '../src/repositories/systemMetaReposi
 import { createFocusTreeRepository } from '../src/repositories/focusTreeRepository.js';
 import { createSacredSeatRepository } from '../src/repositories/sacredSeatRepository.js';
 import { createPrecedentCaseRepository } from '../src/repositories/precedentCaseRepository.js';
+import { createEvolutionRepository } from '../src/repositories/evolutionRepository.js';
 import {
   createMaintenanceRepository,
   MaintenanceInProgressError,
@@ -862,6 +863,21 @@ async function runAllTests() {
     assert.equal(repository.update('not-found', { behavior: 'x', verdict: 'ALLOW', boundaryCondition: 'x' }), false);
     assert.equal(repository.delete('not-found'), false);
     assert.equal(repository.delete('case-old'), true);
+  });
+
+  test('evolution repository 锁定五槽快照版本递进、指针推进与 revision 前置条件', () => {
+    testDb.prepare('INSERT INTO evolution_state (id, activePointerIndex) VALUES (1, 0)').run();
+    const repository = createEvolutionRepository(testDb);
+    const meta = createSystemMetaRepository(testDb);
+    const revision = meta.getSystemRevision();
+    assert.deepEqual(repository.getState().snapshots, []);
+    const first = repository.createSnapshot({ expectedRevision: revision, changelogNotes: '首次', isMajor: false });
+    assert.equal(first.version, 'v1.1');
+    assert.equal(first.targetSlotIndex, 0);
+    const second = repository.createSnapshot({ expectedRevision: first.revision, changelogNotes: '主版本', isMajor: true });
+    assert.equal(second.version, 'v2.0');
+    assert.equal(repository.getState().activePointerIndex, 1);
+    assert.throws(() => repository.createSnapshot({ expectedRevision: revision, changelogNotes: '过期', isMajor: false }), RevisionPreconditionError);
   });
 
   test('upsertFocusNode 正确清洗、补全并写入真实结构数据库', () => {

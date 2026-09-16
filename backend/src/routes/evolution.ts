@@ -2,8 +2,10 @@ import { Router, Request, Response } from 'express';
 import { assertForeignKeyIntegrity, db, getFullFocusTreeData, getSystemRevision, incrementSystemRevision, RevisionPreconditionError, upsertFocusNode } from '../db.js';
 import type { EvolutionSnapshot, EvolutionState, FocusTreeData, EvolutionSnapshotRow, EvolutionStateRow } from '../types.js';
 import { validateFullBackupPayload } from '../utils/validators.js';
+import { createEvolutionRepository } from '../repositories/evolutionRepository.js';
 
 const router = Router();
+const repository = createEvolutionRepository(db);
 
 function requireExpectedRevision(req: Request, res: Response): number | null {
   const expectedRevision = req.body?.expectedRevision;
@@ -34,31 +36,7 @@ function sendVersionConflict(res: Response, currentRevision: number) {
 
 // 获取演化状态（活跃指针与全部 5 槽位快照）
 router.get('/', (_req: Request, res: Response) => {
-  const stateRow = db.prepare('SELECT activePointerIndex FROM evolution_state WHERE id = 1').get() as Pick<EvolutionStateRow, 'activePointerIndex'> | undefined;
-  const activePointerIndex = stateRow?.activePointerIndex ?? 0;
-
-  const rows = db.prepare('SELECT * FROM evolution_snapshots ORDER BY slotIndex ASC').all() as EvolutionSnapshotRow[];
-  const snapshots: EvolutionSnapshot[] = rows.map(r => {
-    const parsed = JSON.parse(r.dataJson);
-    return {
-      id: r.id,
-      slotIndex: r.slotIndex,
-      version: r.version,
-      timestamp: r.timestamp,
-      changelogNotes: r.changelogNotes,
-      isMajor: Boolean(r.isMajor),
-      nodes: parsed.nodes,
-      edges: parsed.edges,
-      groups: parsed.groups
-    };
-  });
-
-  const state: EvolutionState = {
-    activePointerIndex,
-    snapshots
-  };
-
-  res.json({ ...state, revision: getSystemRevision() });
+  res.json({ ...repository.getState(), revision: getSystemRevision() });
 });
 
 // 归档保存新版本快照（5 槽位防震荡环形缓存）
@@ -74,91 +52,14 @@ router.post('/snapshot', (req: Request, res: Response) => {
   const expectedRevision = requireExpectedRevision(req, res);
   if (expectedRevision === null) return;
 
-  const snapshotTx = db.transaction(() => {
-    assertExpectedRevision(expectedRevision);
-    const liveTree = getFullFocusTreeData();
-    // 1. 获取当前指针与现有快照
-    const stateRow = db.prepare('SELECT activePointerIndex FROM evolution_state WHERE id = 1').get() as Pick<EvolutionStateRow, 'activePointerIndex'> | undefined;
-    const currentPointer = stateRow ? stateRow.activePointerIndex : 0;
-    const existingSnapshots = db.prepare('SELECT * FROM evolution_snapshots ORDER BY slotIndex ASC').all() as EvolutionSnapshotRow[];
-
-    // 2. 计算新版本号
-    const currentSnapshotRow = existingSnapshots.find(s => s.slotIndex === currentPointer);
-    let currentVersion = currentSnapshotRow ? currentSnapshotRow.version : 'v1.0';
-    let nextVersion = 'v1.1';
-
-    const match = currentVersion.match(/^v(\d+)\.(\d+)$/);
-    if (match) {
-      let major = parseInt(match[1], 10);
-      let minor = parseInt(match[2], 10);
-      if (isMajor) {
-        major += 1;
-        minor = 0;
-      } else {
-        minor += 1;
-      }
-      nextVersion = `v${major}.${minor}`;
-    }
-
-    // 3. 计算目标槽位（最多保留 5 个快照）
-    let targetSlotIndex = 0;
-    if (existingSnapshots.length < 5) {
-      targetSlotIndex = existingSnapshots.length;
-    } else {
-      // 5 槽位满，淘汰当前指针之后的旧未来，或者向后环移
-      targetSlotIndex = (currentPointer + 1) % 5;
-    }
-
-    const newSnapshot: EvolutionSnapshot = {
-      version: nextVersion,
-      timestamp: new Date().toISOString(),
-      changelogNotes,
-      isMajor: Boolean(isMajor),
-      nodes: liveTree.nodes,
-      edges: liveTree.edges,
-      groups: liveTree.groups,
-      labels: liveTree.labels || []
-    };
-
-    // 4. 写入槽位
-    db.prepare(`
-      INSERT OR REPLACE INTO evolution_snapshots (slotIndex, id, version, timestamp, changelogNotes, isMajor, dataJson)
-      VALUES (@slotIndex, @id, @version, @timestamp, @changelogNotes, @isMajor, @dataJson)
-    `).run({
-      slotIndex: targetSlotIndex,
-      id: `snap-${Date.now()}`,
-      version: newSnapshot.version,
-      timestamp: newSnapshot.timestamp,
-      changelogNotes: newSnapshot.changelogNotes,
-      isMajor: newSnapshot.isMajor ? 1 : 0,
-      dataJson: JSON.stringify(newSnapshot)
-    });
-
-    // 5. 更新活跃指针并原子推进系统版本号
-    db.prepare('UPDATE evolution_state SET activePointerIndex = ? WHERE id = 1').run(targetSlotIndex);
-    const revision = incrementSystemRevision();
-
-    return {
-      version: nextVersion,
-      nextVersion,
-      slotIndex: targetSlotIndex,
-      targetSlotIndex,
-      activePointerIndex: targetSlotIndex,
-      revision
-    };
-  });
-
   try {
-    const result = snapshotTx();
+    const result = repository.createSnapshot({ expectedRevision, changelogNotes, isMajor });
     res.status(201).json({ message: 'Snapshot created', ...result });
   } catch (e: any) {
-    if (e instanceof RevisionPreconditionError) {
-      return sendVersionConflict(res, e.currentRevision);
-    }
+    if (e instanceof RevisionPreconditionError) return sendVersionConflict(res, e.currentRevision);
     throw e;
   }
 });
-
 // 版本指针安全回滚 (Rollback)
 router.post('/rollback', (req: Request, res: Response) => {
   const { targetSlotIndex } = req.body as { targetSlotIndex: number };
