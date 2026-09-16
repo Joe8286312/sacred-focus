@@ -881,6 +881,53 @@ async function runAllTests() {
     assert.throws(() => repository.createSnapshot({ expectedRevision: revision, changelogNotes: '过期', isMajor: false }), RevisionPreconditionError);
   });
 
+  test('evolution repository 锁定回滚和架构导入事务、404 优先级与版本冲突', () => {
+    const evolutionDb = new Database(':memory:');
+    evolutionDb.pragma('foreign_keys = ON');
+    createTables(evolutionDb);
+    try {
+      const snapshotTree = {
+        groups: [{ id: 'snapshot-group', name: '快照分组', themeColor: '#123456', position: { x: 10, y: 20 }, size: { width: 300, height: 200 } }],
+        nodes: [{ id: 'snapshot-node', code: 'SNAP', name: '快照节点', groupId: 'snapshot-group', triggerTime: null, triggerScene: '快照场景', hasExactTime: false, timeValueMinutes: null, level: 1, maxLevel: 3, isLit: true, isFrozen: false, position: { x: 30, y: 40 }, specCard: { instruction: '执行', failCondition: '失败', benefitMechanism: '收益' } }],
+        edges: [],
+        labels: [{ id: 'snapshot-label', text: '快照标签', position: { x: 5, y: 6 } }]
+      };
+      evolutionDb.prepare("INSERT INTO evolution_state (id, activePointerIndex) VALUES (1, 1)").run();
+      evolutionDb.prepare("INSERT INTO focus_groups (id,name,themeColor,positionX,positionY,width,height) VALUES ('current-group','当前分组','#000',0,0,100,100)").run();
+      evolutionDb.prepare("INSERT INTO evolution_snapshots (slotIndex,id,version,timestamp,changelogNotes,isMajor,dataJson) VALUES (0,'snapshot-0','v1.0','2026-09-16T00:00:00.000Z','基线',0,?)").run(JSON.stringify(snapshotTree));
+
+      const repository = createEvolutionRepository(evolutionDb);
+      const meta = createSystemMetaRepository(evolutionDb);
+      const revision = meta.getSystemRevision();
+      assert.equal(repository.rollback({ expectedRevision: revision, targetSlotIndex: 4 }), undefined);
+
+      const restored = repository.rollback({ expectedRevision: revision, targetSlotIndex: 0 });
+      assert.equal(restored?.version, 'v1.0');
+      assert.equal(restored?.liveTree.nodes[0].name, '快照节点');
+      assert.equal(restored?.liveTree.labels[0].text, '快照标签');
+      assert.equal(restored?.revision, revision + 1);
+
+      const importedTree = {
+        ...snapshotTree,
+        groups: [{ ...snapshotTree.groups[0], id: 'imported-group', name: '导入分组' }],
+        nodes: [{ ...snapshotTree.nodes[0], id: 'imported-node', groupId: 'imported-group', name: '导入节点' }]
+      };
+      const importedRevision = repository.importArchitecture({
+        expectedRevision: restored!.revision,
+        tree: importedTree,
+        evolution: { state: { activePointerIndex: 0 }, snapshots: [] }
+      });
+      assert.equal(importedRevision, revision + 2);
+      assert.equal(repository.getState().snapshots.length, 0);
+      const importedNode = evolutionDb.prepare("SELECT name FROM focus_nodes WHERE id = 'imported-node'").get() as { name: string } | undefined;
+      assert.equal(importedNode?.name, '导入节点');
+      assert.throws(() => repository.importArchitecture({ expectedRevision: revision, tree: importedTree }), RevisionPreconditionError);
+      assert.equal((evolutionDb.prepare("SELECT name FROM focus_nodes WHERE id = 'imported-node'").get() as { name: string }).name, '导入节点');
+    } finally {
+      evolutionDb.close();
+    }
+  });
+
   test('systemBackup repository 锁定全量镜像集合、汇总计数与 liveTree 兼容别名', () => {
     const backup = createSystemBackupRepository(testDb).exportFullBackup();
     assert.equal(backup.version, 1);

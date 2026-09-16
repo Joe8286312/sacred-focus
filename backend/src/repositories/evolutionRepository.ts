@@ -1,14 +1,16 @@
 import type { SqliteDatabasePort } from './databasePort.js';
 import { createFocusTreeRepository } from './focusTreeRepository.js';
 import { createSystemMetaRepository } from './systemMetaRepository.js';
-import { RevisionPreconditionError } from './maintenanceRepository.js';
-import type { EvolutionSnapshot, EvolutionSnapshotRow, EvolutionState, EvolutionStateRow } from '../types.js';
+import { createMaintenanceRepository, RevisionPreconditionError } from './maintenanceRepository.js';
+import type { EvolutionSnapshot, EvolutionSnapshotRow, EvolutionState, EvolutionStateRow, FocusTreeData } from '../types.js';
 
 export interface EvolutionRepository {
   getState(): EvolutionState;
   createSnapshot(input: { expectedRevision: number; changelogNotes: string; isMajor: boolean }): {
     version: string; nextVersion: string; slotIndex: number; targetSlotIndex: number; activePointerIndex: number; revision: number;
   };
+  rollback(input: { expectedRevision: number; targetSlotIndex: number }): { version: string; revision: number; liveTree: FocusTreeData } | undefined;
+  importArchitecture(input: { expectedRevision: number; tree: FocusTreeData; evolution?: any }): number;
 }
 
 function toSnapshot(row: EvolutionSnapshotRow): EvolutionSnapshot {
@@ -17,10 +19,43 @@ function toSnapshot(row: EvolutionSnapshotRow): EvolutionSnapshot {
     isMajor: Boolean(row.isMajor), nodes: parsed.nodes, edges: parsed.edges, groups: parsed.groups };
 }
 
-/** 演化状态读取与五槽快照写入的 SQLite 边界。 */
+/** 演化状态、快照、回滚恢复与架构导入的 SQLite 事务边界。 */
 export function createEvolutionRepository(db: SqliteDatabasePort): EvolutionRepository {
   const focusTree = createFocusTreeRepository(db);
   const systemMeta = createSystemMetaRepository(db);
+  const maintenance = createMaintenanceRepository(db);
+  function restoreTree(tree: FocusTreeData, useImportDefaults: boolean) {
+    // 外键始终开启：先清理依赖表，再清理被引用实体；调用方的事务负责完整回滚。
+    db.prepare('DELETE FROM focus_edges').run();
+    db.prepare('DELETE FROM focus_nodes').run();
+    db.prepare('DELETE FROM focus_groups').run();
+    db.prepare('DELETE FROM focus_labels').run();
+
+    const groups = db.prepare('INSERT INTO focus_groups (id,name,themeColor,positionX,positionY,width,height) VALUES (@id,@name,@themeColor,@positionX,@positionY,@width,@height)');
+    for (const group of useImportDefaults ? tree.groups || [] : tree.groups) {
+      groups.run({
+        id: group.id,
+        name: group.name,
+        themeColor: group.themeColor,
+        positionX: useImportDefaults ? group.position?.x ?? 0 : group.position.x,
+        positionY: useImportDefaults ? group.position?.y ?? 0 : group.position.y,
+        width: useImportDefaults ? group.size?.width ?? 480 : group.size.width,
+        height: useImportDefaults ? group.size?.height ?? 360 : group.size.height
+      });
+    }
+    for (const [index, node] of (useImportDefaults ? tree.nodes || [] : tree.nodes).entries()) {
+      focusTree.upsertFocusNode(node, index);
+    }
+    const edges = db.prepare('INSERT INTO focus_edges (id,sourceId,sourceType,targetId,targetType,sourceAnchor,targetAnchor,style) VALUES (@id,@sourceId,@sourceType,@targetId,@targetType,@sourceAnchor,@targetAnchor,@style)');
+    for (const edge of useImportDefaults ? tree.edges || [] : tree.edges) edges.run(edge);
+    const labels = db.prepare('INSERT INTO focus_labels (id,text,positionX,positionY) VALUES (@id,@text,@positionX,@positionY)');
+    const treeLabels = useImportDefaults ? tree.labels || [] : tree.labels;
+    if (treeLabels) {
+      for (const label of treeLabels) {
+        labels.run({ id: label.id, text: label.text, positionX: label.position?.x ?? 0, positionY: label.position?.y ?? 0 });
+      }
+    }
+  }
   function getState(): EvolutionState {
     const state = db.prepare('SELECT activePointerIndex FROM evolution_state WHERE id = 1').get() as Pick<EvolutionStateRow, 'activePointerIndex'> | undefined;
     const rows = db.prepare('SELECT * FROM evolution_snapshots ORDER BY slotIndex ASC').all() as EvolutionSnapshotRow[];
@@ -48,5 +83,29 @@ export function createEvolutionRepository(db: SqliteDatabasePort): EvolutionRepo
       return { version: nextVersion, nextVersion, slotIndex: targetSlotIndex, targetSlotIndex, activePointerIndex: targetSlotIndex, revision };
     })();
   }
-  return { getState, createSnapshot };
+  function rollback({ expectedRevision, targetSlotIndex }: { expectedRevision: number; targetSlotIndex: number }) {
+    const snapshot = db.prepare('SELECT * FROM evolution_snapshots WHERE slotIndex = ?').get(targetSlotIndex) as EvolutionSnapshotRow | undefined;
+    if (!snapshot) return undefined;
+    return db.transaction(() => {
+      const revision = systemMeta.getSystemRevision(); if (revision !== expectedRevision) throw new RevisionPreconditionError(revision);
+      db.prepare('UPDATE evolution_state SET activePointerIndex = ? WHERE id = 1').run(targetSlotIndex);
+      restoreTree(JSON.parse(snapshot.dataJson) as FocusTreeData, false);
+      maintenance.assertForeignKeyIntegrity();
+      return { version: snapshot.version, revision: systemMeta.incrementSystemRevision(new Date().toISOString()), liveTree: focusTree.getFullFocusTreeData() };
+    })();
+  }
+  function importArchitecture({ expectedRevision, tree, evolution }: { expectedRevision: number; tree: FocusTreeData; evolution?: any }) {
+    return db.transaction(() => {
+      const revision = systemMeta.getSystemRevision(); if (revision !== expectedRevision) throw new RevisionPreconditionError(revision);
+      restoreTree(tree, true);
+      if (evolution?.state) db.prepare('UPDATE evolution_state SET activePointerIndex = ? WHERE id = 1').run(evolution.state.activePointerIndex ?? 0);
+      if (Array.isArray(evolution?.snapshots)) {
+        db.prepare('DELETE FROM evolution_snapshots').run();
+        const snapshots = db.prepare('INSERT INTO evolution_snapshots (slotIndex,id,version,timestamp,changelogNotes,isMajor,dataJson) VALUES (@slotIndex,@id,@version,@timestamp,@changelogNotes,@isMajor,@dataJson)');
+        for (const item of evolution.snapshots) snapshots.run({ slotIndex: item.slotIndex, id: item.id, version: item.version, timestamp: item.timestamp, changelogNotes: item.changelogNotes, isMajor: item.isMajor ? 1 : 0, dataJson: typeof item.dataJson === 'string' ? item.dataJson : JSON.stringify(item) });
+      }
+      maintenance.assertForeignKeyIntegrity(); return systemMeta.incrementSystemRevision(new Date().toISOString());
+    })();
+  }
+  return { getState, createSnapshot, rollback, importArchitecture };
 }
