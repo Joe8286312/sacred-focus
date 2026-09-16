@@ -35,6 +35,7 @@ import {
 } from '../../frontend/src/platform/browser/theme.ts';
 import { getNextTheme, getThemeFromStoredValue } from '../../frontend/src/shared/theme/theme.ts';
 import { playChimeSound } from '../../frontend/src/utils/audio.ts';
+import { playChimeSound as playChimeSoundFromBrowserAdapter } from '../../frontend/src/platform/browser/audio.ts';
 import { useListSort } from '../../frontend/src/composables/useListSort.ts';
 import type { FocusNode } from '../../frontend/src/types/index.ts';
 
@@ -307,6 +308,10 @@ async function runAllTests() {
       restoreNavigator();
       restoreWindow();
     }
+  });
+
+  test('旧音频入口保持为浏览器音频适配器的同一导出', () => {
+    assert.equal(playChimeSound, playChimeSoundFromBrowserAdapter);
   });
 
   test('提示音按当前三音、增益包络和触觉节奏创建 Web Audio 图', () => {

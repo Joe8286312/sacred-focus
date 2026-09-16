@@ -6,7 +6,7 @@ import StreakWarningModal from '../components/seat/StreakWarningModal.vue';
 import PrecedentCaseModal from '../components/seat/PrecedentCaseModal.vue';
 import SeatSettingsModal from '../components/seat/SeatSettingsModal.vue';
 import FocusHistoryModal from '../components/seat/FocusHistoryModal.vue';
-import { playChimeSound } from '../utils/audio';
+import { playChimeSound } from '../platform/browser/audio';
 import { formatCompactDuration } from '../shared/formatters/duration';
 import type { FocusSessionLog } from '../types';
 
