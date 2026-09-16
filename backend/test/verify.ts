@@ -952,6 +952,56 @@ async function runAllTests() {
     assert.equal(settlementExecutionCount, 1); // 保证当天仅结算一次！
   });
 
+  test('恢复事务在破坏性删除后失败时，所有既有业务表数据完整回滚', () => {
+    const recoveryDb = new Database(':memory:');
+    recoveryDb.pragma('foreign_keys = ON');
+    createTables(recoveryDb);
+    try {
+      recoveryDb.prepare("INSERT INTO sacred_seat_config (id,sacredToken,reservationSignal,defaultFocusDuration,regretWindowSeconds,currentStreak,maxStreak,updatedAt) VALUES (1,'token','signal',25,30,2,3,'before')").run();
+      recoveryDb.prepare("INSERT INTO precedent_cases (id,date,behavior,verdict,boundaryCondition,createdAt) VALUES ('C1','2026-09-01','行为','ALLOW','边界','before')").run();
+      recoveryDb.prepare("INSERT INTO focus_groups (id,name,themeColor,positionX,positionY,width,height) VALUES ('G1','组','#000',1,2,300,200)").run();
+      recoveryDb.prepare("INSERT INTO focus_nodes (id,code,name,triggerScene,triggerTime,hasExactTime,timeValueMinutes,isLit,level,maxLevel,sortOrder,lastLitDate) VALUES ('N1','N1','节点','全天候','',0,NULL,0,1,1,0,NULL)").run();
+      recoveryDb.prepare("INSERT INTO focus_edges (id,sourceId,sourceType,targetId,targetType,sourceAnchor,targetAnchor,style) VALUES ('E1','N1','NODE','G1','GROUP','BOTTOM','TOP','SOLID')").run();
+      recoveryDb.prepare("INSERT INTO evolution_state (id,activePointerIndex) VALUES (1,0)").run();
+      recoveryDb.prepare("INSERT INTO evolution_snapshots (slotIndex,id,version,timestamp,changelogNotes,isMajor,dataJson) VALUES (0,'S1','v1.0','before','基线',0,'{}')").run();
+      recoveryDb.prepare("INSERT INTO focus_session_logs (id,type,startTime,endTime,targetDurationMinutes,actualDurationSeconds,status) VALUES ('L1','FOCUS','before','before',25,60,'SUCCESS')").run();
+      const before = recoveryDb.prepare(`SELECT
+        (SELECT COUNT(*) FROM focus_groups) AS groupsCount,
+        (SELECT COUNT(*) FROM focus_nodes) AS nodesCount,
+        (SELECT COUNT(*) FROM focus_edges) AS edgesCount,
+        (SELECT COUNT(*) FROM sacred_seat_config) AS configCount,
+        (SELECT COUNT(*) FROM precedent_cases) AS casesCount,
+        (SELECT COUNT(*) FROM evolution_snapshots) AS snapshotsCount,
+        (SELECT COUNT(*) FROM focus_session_logs) AS logsCount,
+        (SELECT value FROM system_meta WHERE key = 'system_revision') AS revision`).get();
+
+      const failingRestore = recoveryDb.transaction(() => {
+        recoveryDb.prepare('DELETE FROM focus_edges').run();
+        recoveryDb.prepare('DELETE FROM focus_nodes').run();
+        recoveryDb.prepare('DELETE FROM focus_groups').run();
+        recoveryDb.prepare('DELETE FROM precedent_cases').run();
+        recoveryDb.prepare('DELETE FROM evolution_snapshots').run();
+        recoveryDb.prepare('DELETE FROM focus_session_logs').run();
+        throw new Error('INJECTED_RECOVERY_FAILURE');
+      });
+
+      assert.throws(() => failingRestore(), /INJECTED_RECOVERY_FAILURE/);
+      const after = recoveryDb.prepare(`SELECT
+        (SELECT COUNT(*) FROM focus_groups) AS groupsCount,
+        (SELECT COUNT(*) FROM focus_nodes) AS nodesCount,
+        (SELECT COUNT(*) FROM focus_edges) AS edgesCount,
+        (SELECT COUNT(*) FROM sacred_seat_config) AS configCount,
+        (SELECT COUNT(*) FROM precedent_cases) AS casesCount,
+        (SELECT COUNT(*) FROM evolution_snapshots) AS snapshotsCount,
+        (SELECT COUNT(*) FROM focus_session_logs) AS logsCount,
+        (SELECT value FROM system_meta WHERE key = 'system_revision') AS revision`).get();
+      assert.deepEqual(after, before);
+      assert.equal((recoveryDb.prepare("SELECT name FROM focus_nodes WHERE id = 'N1'").get() as { name: string }).name, '节点');
+    } finally {
+      recoveryDb.close();
+    }
+  });
+
   testDb.close();
 
   // -----------------------------------------------------------
