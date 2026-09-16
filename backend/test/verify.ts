@@ -3,7 +3,19 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { execSync } from 'node:child_process';
 import Database from 'better-sqlite3';
-import { validateFullBackupPayload } from '../src/utils/validators.js';
+import {
+  validateEdgeItem,
+  validateFullBackupPayload,
+  validateGroupItem,
+  validateLabelItem,
+  validateNodeItem
+} from '../src/utils/validators.js';
+import {
+  validateEdgeItem as validateEdgeItemFromDomain,
+  validateGroupItem as validateGroupItemFromDomain,
+  validateLabelItem as validateLabelItemFromDomain,
+  validateNodeItem as validateNodeItemFromDomain
+} from '../src/domain/backupValidation/treeItems.js';
 import { getBusinessDay, getPreviousBusinessDay } from '../src/domain/calendar/businessDay.js';
 import {
   getBusinessDay as getBusinessDayFromLegacyPath,
@@ -189,6 +201,13 @@ async function runAllTests() {
   // -----------------------------------------------------------
   console.log('\n[Suite 3] 备份与镜像导入 Schema 校验门禁 (validators.ts)');
 
+  test('旧 validators 入口仍转出同一组树元素校验器', () => {
+    assert.equal(validateNodeItem, validateNodeItemFromDomain);
+    assert.equal(validateGroupItem, validateGroupItemFromDomain);
+    assert.equal(validateEdgeItem, validateEdgeItemFromDomain);
+    assert.equal(validateLabelItem, validateLabelItemFromDomain);
+  });
+
   test('合法整机镜像数据顺利通过校验与清洗', () => {
     const validData = {
       focusTree: {
@@ -279,6 +298,88 @@ async function runAllTests() {
     };
     const result = validateFullBackupPayload(invalidLogData);
     assert.equal(result.success, true);
+    assert.equal(result.data?.sessionLogs?.[0]?.type, 'FOCUS');
+    assert.equal(result.data?.sessionLogs?.[0]?.status, 'SUCCESS');
+  });
+
+  test('liveTree 是 focusTree 的兼容别名，非对象 body 则被拒绝', () => {
+    const aliased = validateFullBackupPayload({
+      liveTree: { nodes: [], groups: [], edges: [], labels: [] }
+    });
+    assert.equal(aliased.success, true);
+    assert.deepEqual(aliased.data?.tree, { nodes: [], groups: [], edges: [], labels: [] });
+
+    for (const body of [null, [], '', 0]) {
+      const result = validateFullBackupPayload(body);
+      assert.equal(result.success, false);
+      assert.match(result.error || '', /必须为 JSON 对象/);
+    }
+  });
+
+  test('公开树元素校验器保留当前裁剪、默认值和错误明细', () => {
+    const errors: string[] = [];
+    const node = validateNodeItem({
+      id: ' N1 ', code: ' C1 ', name: ' 名称 ', groupId: 'G1',
+      position: { x: Infinity, y: 12 }, level: 1000, maxLevel: -2,
+      triggerScene: '', specCard: { instruction: '执行' }
+    }, 0, errors);
+    assert.deepEqual(node, {
+      id: 'N1', code: 'C1', name: '名称', groupId: 'G1', triggerTime: null,
+      triggerScene: '全天候', hasExactTime: false, timeValueMinutes: null,
+      level: 999, maxLevel: 0, isLit: false, isFrozen: false,
+      lastLitDate: null, previousLevel: 0, position: { x: 0, y: 12 },
+      specCard: { instruction: '执行', failCondition: '', benefitMechanism: '', notes: null }
+    });
+
+    const group = validateGroupItem({ id: ' G1 ', name: ' 分组 ', themeColor: ' #abc ', size: { width: -1, height: 20000 } }, 0, errors);
+    assert.deepEqual(group, {
+      id: 'G1', name: '分组', themeColor: '#abc', position: { x: 0, y: 0 }, size: { width: 480, height: 10000 }
+    });
+
+    const edge = validateEdgeItem({ id: ' E1 ', sourceId: ' N1 ', targetId: ' G1 ', sourceType: 'INVALID', targetType: 'GROUP', sourceAnchor: 'X', targetAnchor: 'LEFT', style: 'DOTTED' }, 0, errors);
+    assert.deepEqual(edge, {
+      id: 'E1', sourceId: 'N1', sourceType: 'NODE', targetId: 'G1', targetType: 'GROUP', sourceAnchor: 'BOTTOM', targetAnchor: 'LEFT', style: 'SOLID'
+    });
+
+    assert.deepEqual(validateLabelItem({ id: ' L1 ', text: '', position: { x: NaN, y: 4 } }, 0, errors), {
+      id: 'L1', text: '', position: { x: 0, y: 4 }
+    });
+    assert.equal(validateNodeItem(null, 2, errors), null);
+    assert.deepEqual(errors, ['nodes[2] 不是有效对象']);
+  });
+
+  test('可选领域数据保留当前跳过、钳制和默认值策略', () => {
+    const result = validateFullBackupPayload({
+      focusTree: { nodes: [], groups: [], edges: [], labels: [] },
+      sacredSeatConfig: {
+        sacredToken: 'x'.repeat(200), reservationSignal: '', defaultFocusDuration: 9999,
+        regretWindowSeconds: 1, currentStreak: -2, maxStreak: -3
+      },
+      precedentCases: [null, { id: ' C1 ', behavior: 'b'.repeat(600), verdict: 'INVALID' }],
+      evolution: {
+        state: { activePointerIndex: 99 },
+        snapshots: Array.from({ length: 11 }, (_, slotIndex) => ({ slotIndex, id: `S${slotIndex}`, version: '', timestamp: '', changelogNotes: '', isMajor: slotIndex }))
+      },
+      sessionLogs: [null, { id: ' L1 ', startTime: 'start', targetDurationMinutes: -5, actualDurationSeconds: 99999, type: 'INVALID', status: 'INVALID' }]
+    });
+
+    assert.equal(result.success, true);
+    assert.equal(result.data?.sacredSeatConfig?.sacredToken.length, 128);
+    assert.equal(result.data?.sacredSeatConfig?.reservationSignal, '反手拍手轻声说换人');
+    assert.equal(result.data?.sacredSeatConfig?.defaultFocusDuration, 1440);
+    assert.equal(result.data?.sacredSeatConfig?.regretWindowSeconds, 5);
+    assert.equal(result.data?.sacredSeatConfig?.currentStreak, 0);
+    assert.equal(result.data?.precedentCases?.length, 1);
+    assert.equal(result.data?.precedentCases?.[0]?.id, ' C1 ');
+    assert.equal(result.data?.precedentCases?.[0]?.behavior.length, 512);
+    assert.equal(result.data?.precedentCases?.[0]?.verdict, 'ALLOW');
+    assert.equal(result.data?.evolution?.state?.activePointerIndex, 4);
+    assert.equal(result.data?.evolution?.snapshots?.length, 10);
+    assert.equal(result.data?.evolution?.snapshots?.[9]?.slotIndex, 4);
+    assert.equal(result.data?.sessionLogs?.length, 1);
+    assert.equal(result.data?.sessionLogs?.[0]?.id, ' L1 ');
+    assert.equal(result.data?.sessionLogs?.[0]?.targetDurationMinutes, 0);
+    assert.equal(result.data?.sessionLogs?.[0]?.actualDurationSeconds, 86400);
     assert.equal(result.data?.sessionLogs?.[0]?.type, 'FOCUS');
     assert.equal(result.data?.sessionLogs?.[0]?.status, 'SUCCESS');
   });
