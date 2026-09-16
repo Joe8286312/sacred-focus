@@ -2,7 +2,7 @@
 import { ref, onMounted } from 'vue';
 import { useRouter, useRoute } from 'vue-router';
 import { useAuthStore } from '../stores/auth';
-import { getTheme, toggleTheme as toggleGlobalTheme, type Theme } from '../utils/theme';
+import { getTheme, toggleTheme as toggleGlobalTheme, type Theme } from '../platform/browser/theme';
 
 const router = useRouter();
 const route = useRoute();

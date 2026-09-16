@@ -28,6 +28,12 @@ import { writeAllAssets } from '../../scripts/generate-icons.ts';
 import { formatCompactDuration } from '../../frontend/src/shared/formatters/duration.ts';
 import { formatCompactDuration as formatCompactDurationFromLegacyPath } from '../../frontend/src/utils/time.ts';
 import { getTheme, setTheme, toggleTheme } from '../../frontend/src/utils/theme.ts';
+import {
+  getTheme as getThemeFromBrowserAdapter,
+  setTheme as setThemeFromBrowserAdapter,
+  toggleTheme as toggleThemeFromBrowserAdapter
+} from '../../frontend/src/platform/browser/theme.ts';
+import { getNextTheme, getThemeFromStoredValue } from '../../frontend/src/shared/theme/theme.ts';
 import { playChimeSound } from '../../frontend/src/utils/audio.ts';
 import { useListSort } from '../../frontend/src/composables/useListSort.ts';
 import type { FocusNode } from '../../frontend/src/types/index.ts';
@@ -214,6 +220,16 @@ async function runAllTests() {
   // 3. 前端叶子模块现状锁定（theme / audio / useListSort）
   // -----------------------------------------------------------
   console.log('\n[Suite 3] 前端叶子模块现状锁定 (theme / audio / useListSort)');
+
+  test('旧主题入口保持为浏览器适配器的同一导出；纯规则无需浏览器全局对象', () => {
+    assert.equal(getTheme, getThemeFromBrowserAdapter);
+    assert.equal(setTheme, setThemeFromBrowserAdapter);
+    assert.equal(toggleTheme, toggleThemeFromBrowserAdapter);
+    assert.equal(getThemeFromStoredValue('dark'), 'dark');
+    assert.equal(getThemeFromStoredValue('unexpected'), 'light');
+    assert.equal(getNextTheme('dark'), 'light');
+    assert.equal(getNextTheme('light'), 'dark');
+  });
 
   test('主题读取仅接受 dark/light，缺失、空值与未知值均回退 light', () => {
     let savedTheme: string | null = 'dark';

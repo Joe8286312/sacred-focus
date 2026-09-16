@@ -8,7 +8,7 @@ import { useSacredSeatStore } from './stores/sacredSeat';
 import { useAuthStore } from './stores/auth';
 import { initSyncManager } from './utils/syncManager';
 import { apiFetch } from './utils/api';
-import { getTheme, toggleTheme as toggleGlobalTheme, type Theme } from './utils/theme';
+import { getTheme, toggleTheme as toggleGlobalTheme, type Theme } from './platform/browser/theme';
 
 const router = useRouter();
 const route = useRoute();
