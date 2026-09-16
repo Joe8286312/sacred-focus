@@ -26,6 +26,7 @@ import { createTables } from '../src/db/schema.js';
 import { createSystemMetaRepository } from '../src/repositories/systemMetaRepository.js';
 import { createFocusTreeRepository } from '../src/repositories/focusTreeRepository.js';
 import { createSacredSeatRepository } from '../src/repositories/sacredSeatRepository.js';
+import { createPrecedentCaseRepository } from '../src/repositories/precedentCaseRepository.js';
 import {
   createMaintenanceRepository,
   MaintenanceInProgressError,
@@ -838,6 +839,29 @@ async function runAllTests() {
       targetDurationMinutes: 1, actualDurationSeconds: 600, status: 'REGRET'
     }), { currentStreak: 0, maxStreak: 4 });
     assert.equal(repository.getLogById('success-60')?.status, 'SUCCESS');
+  });
+
+  test('precedentCase repository 锁定排序、过滤、容错导入、覆盖与未找到语义', () => {
+    const repository = createPrecedentCaseRepository(testDb, { now: () => new Date('2026-09-16T12:00:00.000Z') });
+    repository.create({
+      id: 'case-old', date: '2026-01-01', behavior: '旧行为', verdict: 'ALLOW',
+      boundaryCondition: '旧边界', createdAt: '2026-01-01T00:00:00.000Z'
+    });
+    const imported = repository.importCases([
+      { id: 'case-old', date: '2026-01-01', behavior: '覆盖行为', verdict: 'FORBID', boundaryCondition: '覆盖边界', createdAt: '2026-01-02T00:00:00.000Z' },
+      { id: 'case-fallback', behavior: '缺省日期', verdict: 'ALLOW', boundaryCondition: '边界' },
+      { id: 'case-invalid', behavior: '非法裁定', verdict: 'MAYBE', boundaryCondition: '边界' },
+      { id: 'case-missing', verdict: 'ALLOW', boundaryCondition: '边界' }
+    ]);
+    assert.deepEqual(imported, { importedCount: 2, totalCases: 2 });
+    assert.deepEqual(repository.list().map(item => item.id), ['case-fallback', 'case-old']);
+    assert.equal(repository.list('ALLOW')[0].date, '2026-09-16');
+    assert.equal(repository.list('FORBID')[0].behavior, '覆盖行为');
+    assert.equal(repository.update('case-old', { behavior: '更新行为', verdict: 'FORBID', boundaryCondition: '更新边界' }), true);
+    assert.equal(repository.list('FORBID')[0].date, '2026-01-01');
+    assert.equal(repository.update('not-found', { behavior: 'x', verdict: 'ALLOW', boundaryCondition: 'x' }), false);
+    assert.equal(repository.delete('not-found'), false);
+    assert.equal(repository.delete('case-old'), true);
   });
 
   test('upsertFocusNode 正确清洗、补全并写入真实结构数据库', () => {
