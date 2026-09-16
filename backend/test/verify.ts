@@ -28,6 +28,7 @@ import { createFocusTreeRepository } from '../src/repositories/focusTreeReposito
 import { createSacredSeatRepository } from '../src/repositories/sacredSeatRepository.js';
 import { createPrecedentCaseRepository } from '../src/repositories/precedentCaseRepository.js';
 import { createEvolutionRepository } from '../src/repositories/evolutionRepository.js';
+import { createSystemBackupRepository } from '../src/repositories/systemBackupRepository.js';
 import {
   createMaintenanceRepository,
   MaintenanceInProgressError,
@@ -878,6 +879,17 @@ async function runAllTests() {
     assert.equal(second.version, 'v2.0');
     assert.equal(repository.getState().activePointerIndex, 1);
     assert.throws(() => repository.createSnapshot({ expectedRevision: revision, changelogNotes: '过期', isMajor: false }), RevisionPreconditionError);
+  });
+
+  test('systemBackup repository 锁定全量镜像集合、汇总计数与 liveTree 兼容别名', () => {
+    const backup = createSystemBackupRepository(testDb).exportFullBackup();
+    assert.equal(backup.version, 1);
+    assert.equal(backup.dataType, 'SACRED_FOCUS_FULL_SYSTEM');
+    assert.equal(backup.focusTree, backup.liveTree);
+    assert.equal(backup.summary.nodeCount, (backup.focusTree as { nodes: unknown[] }).nodes.length);
+    assert.equal(backup.summary.caseCount, backup.precedentCases.length);
+    assert.equal(backup.summary.logCount, backup.sessionLogs.length);
+    assert.equal(backup.summary.snapshotCount, backup.evolution.snapshots.length);
   });
 
   test('upsertFocusNode 正确清洗、补全并写入真实结构数据库', () => {

@@ -16,9 +16,11 @@ import {
 } from '../db.js';
 import { exportLimiter, importLimiter } from '../middleware/rateLimiter.js';
 import { validateFullBackupPayload } from '../utils/validators.js';
+import { createSystemBackupRepository } from '../repositories/systemBackupRepository.js';
 
 const router = Router();
 const PRE_IMPORT_BACKUP_RETENTION = 5;
+const repository = createSystemBackupRepository(db);
 
 async function prunePreImportBackups() {
   const entries = await fs.readdir(config.dataDir, { withFileTypes: true });
@@ -39,38 +41,7 @@ async function prunePreImportBackups() {
 // 全量导出系统整机镜像（跨设备全量迁移与灾难恢复，15次/10分钟限流保护）
 router.get('/export', exportLimiter, (_req: Request, res: Response) => {
   try {
-    const liveTree = getFullFocusTreeData();
-    const sacredSeatConfig = db.prepare('SELECT * FROM sacred_seat_config WHERE id = 1').get();
-    const precedentCases = db.prepare('SELECT * FROM precedent_cases ORDER BY date DESC, createdAt DESC').all();
-    const evolutionState = db.prepare('SELECT * FROM evolution_state WHERE id = 1').get();
-    const evolutionSnapshots = db.prepare('SELECT * FROM evolution_snapshots ORDER BY slotIndex ASC').all();
-    const sessionLogs = db.prepare('SELECT * FROM focus_session_logs ORDER BY startTime DESC').all();
-
-    const fullBackup = {
-      version: 1,
-      dataType: 'SACRED_FOCUS_FULL_SYSTEM',
-      exportedAt: new Date().toISOString(),
-      summary: {
-        groupCount: liveTree.groups.length,
-        nodeCount: liveTree.nodes.length,
-        edgeCount: liveTree.edges.length,
-        labelCount: liveTree.labels ? liveTree.labels.length : 0,
-        snapshotCount: evolutionSnapshots.length,
-        logCount: sessionLogs.length,
-        caseCount: precedentCases.length
-      },
-      focusTree: liveTree,
-      liveTree: liveTree, // 保持向下兼容性
-      sacredSeatConfig,
-      precedentCases,
-      evolution: {
-        state: evolutionState,
-        snapshots: evolutionSnapshots
-      },
-      sessionLogs
-    };
-
-    res.json(fullBackup);
+    res.json(repository.exportFullBackup());
   } catch (e: any) {
     console.error('Failed to export full system backup', e);
     res.status(500).json({ error: 'Failed to export full system backup', details: e.message });
