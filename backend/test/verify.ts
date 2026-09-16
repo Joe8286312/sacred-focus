@@ -25,6 +25,7 @@ import { safeCompare } from '../src/middleware/auth.js';
 import { createTables } from '../src/db/schema.js';
 import { createSystemMetaRepository } from '../src/repositories/systemMetaRepository.js';
 import { createFocusTreeRepository } from '../src/repositories/focusTreeRepository.js';
+import { createSacredSeatRepository } from '../src/repositories/sacredSeatRepository.js';
 import {
   createMaintenanceRepository,
   MaintenanceInProgressError,
@@ -789,6 +790,54 @@ async function runAllTests() {
       RevisionPreconditionError
     );
     repository.assertForeignKeyIntegrity();
+  });
+
+  test('sacredSeat repository 锁定配置、日志导入、热力图和连胜原子结算', () => {
+    testDb.prepare(`INSERT INTO sacred_seat_config
+      (id, sacredToken, reservationSignal, defaultFocusDuration, regretWindowSeconds, currentStreak, maxStreak, updatedAt)
+      VALUES (1, '令牌', '暗号', 25, 30, 1, 3, '2026-09-16T00:00:00.000Z')`).run();
+    const repository = createSacredSeatRepository(testDb);
+    const meta = createSystemMetaRepository(testDb);
+
+    assert.deepEqual(repository.getConfig(), {
+      sacredToken: '令牌', reservationSignal: '暗号', defaultFocusDuration: 25,
+      regretWindowSeconds: 30, currentStreak: 1, maxStreak: 3
+    });
+    assert.deepEqual(repository.updateConfig({
+      sacredToken: '新令牌', reservationSignal: '新暗号', defaultFocusDuration: 60,
+      regretWindowSeconds: 45, currentStreak: 2, maxStreak: 4
+    }), {
+      sacredToken: '新令牌', reservationSignal: '新暗号', defaultFocusDuration: 60,
+      regretWindowSeconds: 45, currentStreak: 2, maxStreak: 4
+    });
+    assert.deepEqual(repository.resetStreak(), { currentStreak: 0, maxStreak: 4 });
+
+    const imported = repository.importLogs([
+      { id: 'import-a', type: 'FOCUS', startTime: '2026-09-01T08:00:00Z', status: 'SUCCESS', actualDurationSeconds: 75 },
+      { id: 'ignored', type: 'FOCUS', status: 'SUCCESS' },
+      { id: 'import-b', type: 'RESERVATION', startTime: '2026-09-02T08:00:00Z', status: 'FAIL', note: '' }
+    ]);
+    assert.deepEqual(imported, { importedCount: 2, totalLogs: 2 });
+    assert.deepEqual(repository.listLogs().map(log => log.id), ['import-b', 'import-a']);
+    assert.deepEqual(repository.getHeatmap(0), [{
+      date: '2026-09-01', totalSessions: 1, successCount: 1, regretCount: 0, failCount: 0, totalSeconds: 75
+    }]);
+
+    const revisionBefore = meta.getSystemRevision();
+    assert.deepEqual(repository.createLogWithStreakSettlement({
+      id: 'success-60', type: 'FOCUS', startTime: '2026-09-03T08:00:00Z', endTime: '2026-09-03T08:01:00Z',
+      targetDurationMinutes: 1, actualDurationSeconds: 60, status: 'SUCCESS'
+    }), { currentStreak: 1, maxStreak: 4 });
+    assert.equal(meta.getSystemRevision(), revisionBefore + 1);
+    assert.deepEqual(repository.createLogWithStreakSettlement({
+      id: 'fail', type: 'FOCUS', startTime: '2026-09-03T09:00:00Z', endTime: '2026-09-03T09:01:00Z',
+      targetDurationMinutes: 1, actualDurationSeconds: 1, status: 'FAIL'
+    }), { currentStreak: 0, maxStreak: 4 });
+    assert.deepEqual(repository.createLogWithStreakSettlement({
+      id: 'regret', type: 'FOCUS', startTime: '2026-09-03T10:00:00Z', endTime: '2026-09-03T10:01:00Z',
+      targetDurationMinutes: 1, actualDurationSeconds: 600, status: 'REGRET'
+    }), { currentStreak: 0, maxStreak: 4 });
+    assert.equal(repository.getLogById('success-60')?.status, 'SUCCESS');
   });
 
   test('upsertFocusNode 正确清洗、补全并写入真实结构数据库', () => {

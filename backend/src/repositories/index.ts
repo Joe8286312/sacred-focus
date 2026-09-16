@@ -4,6 +4,7 @@
  */
 export type { SqliteDatabasePort } from './databasePort.js';
 export { createFocusTreeRepository, type FocusTreeRepository } from './focusTreeRepository.js';
+export { createSacredSeatRepository, type SacredSeatRepository } from './sacredSeatRepository.js';
 export {
   createMaintenanceRepository,
   MaintenanceInProgressError,
