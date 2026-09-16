@@ -16,7 +16,8 @@
     "noFallthroughCasesInSwitch": true,
     "baseUrl": ".",
     "paths": {
-      "@/*": ["src/*"]
+      "@/*": ["src/*"],
+      "@sacred-focus/contracts": ["../contracts/domain.d.ts"]
     }
   },
   "include": [
