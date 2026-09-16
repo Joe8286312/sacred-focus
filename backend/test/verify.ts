@@ -23,6 +23,7 @@ import {
 } from '../src/db/dateUtils.js';
 import { safeCompare } from '../src/middleware/auth.js';
 import { createTables } from '../src/db/schema.js';
+import { createSystemMetaRepository } from '../src/repositories/systemMetaRepository.js';
 // 此文件由 tsx 直接执行，因此显式引用 TypeScript 源文件。
 import { writeAllAssets } from '../../scripts/generate-icons.ts';
 import { formatCompactDuration } from '../../frontend/src/shared/formatters/duration.ts';
@@ -686,6 +687,22 @@ async function runAllTests() {
     assert.ok(idxNames.includes('idx_nodes_group'));
     assert.ok(idxNames.includes('idx_edges_source'));
     assert.ok(idxNames.includes('idx_edges_target'));
+  });
+
+  test('system_meta repository 仅依赖注入的 SQLite 端口，并锁定 revision 与同步时间原子更新', () => {
+    const repository = createSystemMetaRepository(testDb);
+    const timestamp = '2026-09-16T00:00:00.000Z';
+
+    assert.equal(repository.getValue('missing'), undefined);
+    assert.equal(repository.getSystemRevision(), 1);
+    repository.setValue('feature_flag', 'enabled');
+    assert.equal(repository.getValue('feature_flag'), 'enabled');
+    assert.equal(repository.deleteValue('feature_flag'), true);
+    assert.equal(repository.deleteValue('feature_flag'), false);
+
+    assert.equal(repository.incrementSystemRevision(timestamp), 2);
+    assert.equal(repository.getSystemRevision(), 2);
+    assert.equal(repository.getValue('last_sync_timestamp'), timestamp);
   });
 
   test('upsertFocusNode 正确清洗、补全并写入真实结构数据库', () => {
