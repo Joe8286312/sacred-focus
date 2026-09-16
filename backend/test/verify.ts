@@ -27,6 +27,10 @@ import { createTables } from '../src/db/schema.js';
 import { writeAllAssets } from '../../scripts/generate-icons.ts';
 import { formatCompactDuration } from '../../frontend/src/shared/formatters/duration.ts';
 import { formatCompactDuration as formatCompactDurationFromLegacyPath } from '../../frontend/src/utils/time.ts';
+import { getTheme, setTheme, toggleTheme } from '../../frontend/src/utils/theme.ts';
+import { playChimeSound } from '../../frontend/src/utils/audio.ts';
+import { useListSort } from '../../frontend/src/composables/useListSort.ts';
+import type { FocusNode } from '../../frontend/src/types/index.ts';
 
 // 简易单元测试运行器
 let passedCount = 0;
@@ -42,6 +46,39 @@ function test(name: string, fn: () => void | Promise<void>) {
     console.error(`         ${err?.message || err}`);
     failedCount++;
   }
+}
+
+function replaceGlobal(name: string, value: unknown): () => void {
+  const descriptor = Object.getOwnPropertyDescriptor(globalThis, name);
+  Object.defineProperty(globalThis, name, { configurable: true, writable: true, value });
+
+  return () => {
+    if (descriptor) {
+      Object.defineProperty(globalThis, name, descriptor);
+    } else {
+      delete (globalThis as Record<string, unknown>)[name];
+    }
+  };
+}
+
+function makeNode(overrides: Partial<FocusNode>): FocusNode {
+  return {
+    id: 'node',
+    code: 'N1',
+    name: '默认节点',
+    groupId: null,
+    triggerTime: null,
+    triggerScene: '',
+    hasExactTime: false,
+    timeValueMinutes: null,
+    level: 0,
+    maxLevel: 5,
+    isLit: false,
+    isFrozen: false,
+    position: { x: 0, y: 0 },
+    specCard: { instruction: '', failCondition: '', benefitMechanism: '' },
+    ...overrides
+  };
 }
 
 async function runAllTests() {
@@ -174,7 +211,211 @@ async function runAllTests() {
   });
 
   // -----------------------------------------------------------
-  // 3. 静态令牌恒定时间安全比对测试 (crypto.timingSafeEqual via auth.ts)
+  // 3. 前端叶子模块现状锁定（theme / audio / useListSort）
+  // -----------------------------------------------------------
+  console.log('\n[Suite 3] 前端叶子模块现状锁定 (theme / audio / useListSort)');
+
+  test('主题读取仅接受 dark/light，缺失、空值与未知值均回退 light', () => {
+    let savedTheme: string | null = 'dark';
+    const restoreStorage = replaceGlobal('localStorage', {
+      getItem: () => savedTheme,
+      setItem: () => undefined
+    });
+
+    try {
+      assert.equal(getTheme(), 'dark');
+      for (const invalidTheme of [null, '', 'system', 'DARK']) {
+        savedTheme = invalidTheme;
+        assert.equal(getTheme(), 'light');
+      }
+    } finally {
+      restoreStorage();
+    }
+  });
+
+  test('主题设置先写 data-theme 再持久化；localStorage 失败会继续向调用方抛出', () => {
+    const attributes = new Map<string, string>();
+    const restoreDocument = replaceGlobal('document', {
+      documentElement: { setAttribute: (name: string, value: string) => attributes.set(name, value) }
+    });
+    const restoreStorage = replaceGlobal('localStorage', {
+      getItem: () => null,
+      setItem: () => { throw new Error('storage unavailable'); }
+    });
+
+    try {
+      assert.throws(() => setTheme('dark'), /storage unavailable/);
+      assert.equal(attributes.get('data-theme'), 'dark');
+    } finally {
+      restoreStorage();
+      restoreDocument();
+    }
+  });
+
+  test('主题切换在 light/dark 间往返，运行时非法输入按非 dark 处理为 dark', () => {
+    const attributes = new Map<string, string>();
+    const writes: Array<[string, string]> = [];
+    const restoreDocument = replaceGlobal('document', {
+      documentElement: { setAttribute: (name: string, value: string) => attributes.set(name, value) }
+    });
+    const restoreStorage = replaceGlobal('localStorage', {
+      getItem: () => null,
+      setItem: (key: string, value: string) => writes.push([key, value])
+    });
+
+    try {
+      assert.equal(toggleTheme('light'), 'dark');
+      assert.equal(toggleTheme('dark'), 'light');
+      assert.equal(toggleTheme(null as unknown as 'dark'), 'dark');
+      assert.equal(attributes.get('data-theme'), 'dark');
+      assert.deepEqual(writes, [
+        ['sacred-focus-theme', 'dark'],
+        ['sacred-focus-theme', 'light'],
+        ['sacred-focus-theme', 'dark']
+      ]);
+    } finally {
+      restoreStorage();
+      restoreDocument();
+    }
+  });
+
+  test('没有 AudioContext 时提示音静默退出，不请求触觉反馈', () => {
+    let vibrateCount = 0;
+    const restoreWindow = replaceGlobal('window', {});
+    const restoreNavigator = replaceGlobal('navigator', { vibrate: () => { vibrateCount++; } });
+
+    try {
+      assert.doesNotThrow(() => playChimeSound());
+      assert.equal(vibrateCount, 0);
+    } finally {
+      restoreNavigator();
+      restoreWindow();
+    }
+  });
+
+  test('提示音按当前三音、增益包络和触觉节奏创建 Web Audio 图', () => {
+    const oscillators: Array<{ frequency: number[]; starts: number[]; stops: number[] }> = [];
+    const gainEvents: Array<[string, number, number]> = [];
+    let vibratePattern: number[] | undefined;
+
+    class FakeAudioContext {
+      currentTime = 10;
+      destination = {};
+      createGain() {
+        return {
+          gain: {
+            setValueAtTime: (value: number, time: number) => gainEvents.push(['set', value, time]),
+            exponentialRampToValueAtTime: (value: number, time: number) => gainEvents.push(['ramp', value, time])
+          },
+          connect: () => undefined
+        };
+      }
+      createOscillator() {
+        const oscillator = { frequency: [] as number[], starts: [] as number[], stops: [] as number[] };
+        oscillators.push(oscillator);
+        return {
+          type: 'sine',
+          frequency: { setValueAtTime: (value: number) => oscillator.frequency.push(value) },
+          connect: () => undefined,
+          start: (time: number) => oscillator.starts.push(time),
+          stop: (time: number) => oscillator.stops.push(time)
+        };
+      }
+    }
+
+    const restoreWindow = replaceGlobal('window', { AudioContext: FakeAudioContext });
+    const restoreNavigator = replaceGlobal('navigator', { vibrate: (pattern: number[]) => { vibratePattern = pattern; } });
+    try {
+      playChimeSound();
+      assert.deepEqual(gainEvents, [
+        ['set', 0.01, 10],
+        ['ramp', 0.35, 10.05],
+        ['ramp', 0.0001, 11.8]
+      ]);
+      assert.deepEqual(oscillators.map(item => item.frequency[0]), [587.33, 880, 1174.66]);
+      assert.deepEqual(oscillators.map(item => item.starts[0]), [10, 10.04, 10.08]);
+      assert.deepEqual(oscillators.map(item => item.stops[0]), [12, 12, 12]);
+      assert.deepEqual(vibratePattern, [200, 100, 200]);
+    } finally {
+      restoreNavigator();
+      restoreWindow();
+    }
+  });
+
+  test('AudioContext 构造失败被吞掉并记录警告，不影响调用方', () => {
+    const warnings: unknown[][] = [];
+    class BrokenAudioContext {
+      constructor() { throw new Error('audio blocked'); }
+    }
+    const restoreWindow = replaceGlobal('window', { AudioContext: BrokenAudioContext });
+    const restoreConsole = replaceGlobal('console', { ...console, warn: (...args: unknown[]) => warnings.push(args) });
+
+    try {
+      assert.doesNotThrow(() => playChimeSound());
+      assert.equal(warnings.length, 1);
+      assert.equal(warnings[0][0], '[Audio] Failed to play chime via Web Audio API');
+      assert.match(String(warnings[0][1]), /audio blocked/);
+    } finally {
+      restoreConsole();
+      restoreWindow();
+    }
+  });
+
+  test('复合排序按点击顺序确定优先级，返回新数组且同值元素保持稳定', () => {
+    const { sortStack, toggleColumnSort, applyCompoundSort } = useListSort();
+    const first = makeNode({ id: 'first', code: 'N10', name: '甲', level: 1 });
+    const second = makeNode({ id: 'second', code: 'N2', name: '乙', level: 1 });
+    const third = makeNode({ id: 'third', code: 'N1', name: '丙', level: 2 });
+    const source = [first, second, third];
+
+    toggleColumnSort('level');
+    toggleColumnSort('code');
+    const result = applyCompoundSort(source, () => '');
+
+    assert.deepEqual(sortStack.value, [{ key: 'level', dir: 'asc' }, { key: 'code', dir: 'asc' }]);
+    assert.deepEqual(result.map(item => item.id), ['second', 'first', 'third']);
+    assert.deepEqual(source.map(item => item.id), ['first', 'second', 'third']);
+    assert.deepEqual(useListSort().applyCompoundSort([first, first], () => ''), [first, first]);
+  });
+
+  test('时间排序把无精确时间项置底；无时间项以触发场景排序且 direction 同步生效', () => {
+    const { toggleColumnSort, applyCompoundSort } = useListSort();
+    const preciseLate = makeNode({ id: 'late', hasExactTime: true, timeValueMinutes: 600, triggerScene: '晚' });
+    const sceneB = makeNode({ id: 'scene-b', triggerScene: '乙' });
+    const preciseEarly = makeNode({ id: 'early', hasExactTime: true, timeValueMinutes: 480, triggerScene: '早' });
+    const sceneA = makeNode({ id: 'scene-a', triggerScene: '甲' });
+
+    toggleColumnSort('time');
+    assert.deepEqual(applyCompoundSort([preciseLate, sceneB, preciseEarly, sceneA], () => '').map(item => item.id), [
+      'early', 'late', 'scene-a', 'scene-b'
+    ]);
+    toggleColumnSort('time');
+    assert.deepEqual(applyCompoundSort([preciseLate, sceneB, preciseEarly, sceneA], () => '').map(item => item.id), [
+      'late', 'early', 'scene-b', 'scene-a'
+    ]);
+  });
+
+  test('排序列按 asc → desc → 移除循环，优先级缺席时为 0，清空会恢复原数组引用', () => {
+    const { sortStack, toggleColumnSort, getSortInfo, getSortPriority, clearSort, applyCompoundSort } = useListSort();
+    const source = [makeNode({ id: 'A' }), makeNode({ id: 'B' })];
+
+    assert.equal(getSortPriority('name'), 0);
+    toggleColumnSort('name');
+    assert.deepEqual(getSortInfo('name'), { key: 'name', dir: 'asc' });
+    assert.equal(getSortPriority('name'), 1);
+    toggleColumnSort('name');
+    assert.deepEqual(getSortInfo('name'), { key: 'name', dir: 'desc' });
+    toggleColumnSort('name');
+    assert.equal(getSortInfo('name'), undefined);
+    assert.equal(sortStack.value.length, 0);
+    assert.equal(applyCompoundSort(source, () => ''), source);
+    toggleColumnSort('status');
+    clearSort();
+    assert.deepEqual(sortStack.value, []);
+  });
+
+  // -----------------------------------------------------------
+  // 4. 静态令牌恒定时间安全比对测试 (crypto.timingSafeEqual via auth.ts)
   // -----------------------------------------------------------
   console.log('\n[Suite 3] 安全防御：常量时间比对防御时序嗅探 (auth.ts safeCompare)');
 
