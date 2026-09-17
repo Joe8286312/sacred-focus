@@ -1,6 +1,6 @@
 import type { FocusTreeData, ResetNodeItem } from '../types.js';
 import { getBusinessDay, getPreviousBusinessDay } from '../domain/calendar/businessDay.js';
-import type { FocusTreeRepository, NodeLitState } from '../repositories/focusTreeRepository.js';
+import type { FocusTreeRepository, NodeLitState, NodeUpdateState } from '../repositories/focusTreeRepository.js';
 import type { SystemMetaRepository } from '../repositories/systemMetaRepository.js';
 
 export interface FocusTreeSettlement {
@@ -9,7 +9,7 @@ export interface FocusTreeSettlement {
 }
 
 export interface FocusTreeServiceDependencies {
-  focusTreeRepository: Pick<FocusTreeRepository, 'getFullFocusTreeData' | 'replaceFullFocusTree' | 'getNodeLitState' | 'updateNodeLitState' | 'reorderNodes' | 'createNode' | 'deleteNodeAndEdges' | 'createGroup' | 'getGroup' | 'updateGroup' | 'deleteGroup'>;
+  focusTreeRepository: Pick<FocusTreeRepository, 'getFullFocusTreeData' | 'replaceFullFocusTree' | 'getNodeLitState' | 'updateNodeLitState' | 'reorderNodes' | 'createNode' | 'deleteNodeAndEdges' | 'createGroup' | 'getGroup' | 'updateGroup' | 'deleteGroup' | 'getNodeForUpdate' | 'updateNode'>;
   systemMetaRepository: Pick<SystemMetaRepository, 'deleteValue' | 'getSystemRevision' | 'incrementSystemRevision'>;
   settleDailyState: () => FocusTreeSettlement | null;
   getBusinessDay?: () => string;
@@ -151,5 +151,64 @@ export function createFocusTreeService({
     systemMetaRepository.incrementSystemRevision(now().toISOString());
   }
 
-  return { getFocusTree, resetSettlementAudit, synchronizeFocusTree, toggleNodeLit, reorderNodes, createNode, deleteNode, createGroup, updateGroup, deleteGroup };
+  function updateNode(id: string, updates: Partial<FocusTreeData['nodes'][number]>): boolean {
+    const current = focusTreeRepository.getNodeForUpdate(id);
+    if (!current) return false;
+
+    let triggerTime = current.triggerTime;
+    let hasExactTime = current.hasExactTime;
+    let timeValueMinutes = current.timeValueMinutes;
+    if (updates.triggerTime !== undefined) {
+      if (updates.triggerTime) {
+        const match = updates.triggerTime.match(/^(\d{1,2})[:：](\d{2})$/);
+        if (match) {
+          const hours = parseInt(match[1], 10);
+          const minutes = parseInt(match[2], 10);
+          triggerTime = `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
+          hasExactTime = 1;
+          timeValueMinutes = hours * 60 + minutes;
+        } else {
+          triggerTime = null;
+          hasExactTime = 0;
+          timeValueMinutes = null;
+        }
+      } else {
+        triggerTime = null;
+        hasExactTime = 0;
+        timeValueMinutes = null;
+      }
+    }
+
+    const triggerScene = updates.triggerScene !== undefined
+      ? (updates.triggerScene.trim() || triggerTime || '全天候')
+      : (current.triggerScene || current.triggerTime || '全天候');
+    const nextState: NodeUpdateState = {
+      ...current,
+      id,
+      code: updates.code ?? current.code,
+      name: updates.name ?? current.name,
+      groupId: updates.groupId !== undefined ? updates.groupId : current.groupId,
+      triggerTime: triggerTime || '',
+      triggerScene,
+      hasExactTime,
+      timeValueMinutes,
+      level: updates.level !== undefined ? updates.level : current.level,
+      maxLevel: updates.maxLevel !== undefined ? updates.maxLevel : current.maxLevel,
+      isLit: updates.isLit !== undefined ? (updates.isLit ? 1 : 0) : current.isLit,
+      isFrozen: updates.isFrozen !== undefined ? (updates.isFrozen ? 1 : 0) : current.isFrozen,
+      lastLitDate: updates.lastLitDate !== undefined ? updates.lastLitDate : current.lastLitDate,
+      previousLevel: updates.previousLevel !== undefined ? updates.previousLevel : current.previousLevel,
+      positionX: updates.position?.x ?? current.positionX,
+      positionY: updates.position?.y ?? current.positionY,
+      specInstruction: updates.specCard?.instruction ?? current.specInstruction,
+      specFailCondition: updates.specCard?.failCondition ?? current.specFailCondition,
+      specBenefitMechanism: updates.specCard?.benefitMechanism ?? current.specBenefitMechanism,
+      specNotes: updates.specCard?.notes !== undefined ? updates.specCard.notes : current.specNotes
+    };
+    focusTreeRepository.updateNode(nextState);
+    systemMetaRepository.incrementSystemRevision(now().toISOString());
+    return true;
+  }
+
+  return { getFocusTree, resetSettlementAudit, synchronizeFocusTree, toggleNodeLit, reorderNodes, createNode, deleteNode, createGroup, updateGroup, deleteGroup, updateNode };
 }

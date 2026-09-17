@@ -27,6 +27,8 @@ export interface FocusTreeRepository {
   getGroup(id: string): FocusGroup | undefined;
   updateGroup(group: FocusGroup): void;
   deleteGroup(id: string, options: { deleteChildren: boolean }): void;
+  getNodeForUpdate(id: string): NodeUpdateState | undefined;
+  updateNode(state: NodeUpdateState): void;
 }
 
 export interface FocusTreeRepositoryOptions { now?: () => Date; }
@@ -39,6 +41,30 @@ export interface NodeLitState {
   lastLitDate?: string | null;
   previousLevel?: number;
   previousLastLitDate?: string | null;
+}
+
+export interface NodeUpdateState {
+  id: string;
+  code: string;
+  name: string;
+  groupId: string | null;
+  triggerTime: string | null;
+  triggerScene: string;
+  hasExactTime: number;
+  timeValueMinutes: number | null;
+  level: number;
+  maxLevel: number;
+  isLit: number;
+  isFrozen: number;
+  lastLitDate: string | null;
+  previousLevel: number;
+  previousLastLitDate: string | null;
+  positionX: number;
+  positionY: number;
+  specInstruction: string;
+  specFailCondition: string;
+  specBenefitMechanism: string;
+  specNotes: string | null;
 }
 
 /** 国策树的 SQLite 读写边界；调用方必须显式注入数据库端口。 */
@@ -324,5 +350,35 @@ export function createFocusTreeRepository(
     })();
   }
 
-  return { upsertFocusNode, getFullFocusTreeData, replaceFullFocusTree, getNodeLitState, updateNodeLitState, reorderNodes, createNode, deleteNodeAndEdges, createGroup, getGroup, updateGroup, deleteGroup };
+  function getNodeForUpdate(id: string): NodeUpdateState | undefined {
+    return db.prepare('SELECT * FROM focus_nodes WHERE id = ?').get(id) as NodeUpdateState | undefined;
+  }
+
+  function updateNode(state: NodeUpdateState): void {
+    db.prepare(`
+      UPDATE focus_nodes SET
+        code = @code,
+        name = @name,
+        groupId = @groupId,
+        triggerTime = @triggerTime,
+        triggerScene = @triggerScene,
+        hasExactTime = @hasExactTime,
+        timeValueMinutes = @timeValueMinutes,
+        level = @level,
+        maxLevel = @maxLevel,
+        isLit = @isLit,
+        isFrozen = @isFrozen,
+        lastLitDate = @lastLitDate,
+        previousLevel = @previousLevel,
+        positionX = @positionX,
+        positionY = @positionY,
+        specInstruction = @specInstruction,
+        specFailCondition = @specFailCondition,
+        specBenefitMechanism = @specBenefitMechanism,
+        specNotes = @specNotes
+      WHERE id = @id
+    `).run(state);
+  }
+
+  return { upsertFocusNode, getFullFocusTreeData, replaceFullFocusTree, getNodeLitState, updateNodeLitState, reorderNodes, createNode, deleteNodeAndEdges, createGroup, getGroup, updateGroup, deleteGroup, getNodeForUpdate, updateNode };
 }

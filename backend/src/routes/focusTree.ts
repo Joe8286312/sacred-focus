@@ -1,11 +1,6 @@
 import { Router, Request, Response } from 'express';
-import {
-  db,
-  settleFocusTreeDailyState,
-  incrementSystemRevision,
-  upsertFocusNode
-} from '../db.js';
-import type { FocusNode, FocusEdge, FocusGroup, FocusLabel, FocusNodeRow } from '../types.js';
+import { db, settleFocusTreeDailyState } from '../db.js';
+import type { FocusNode, FocusEdge, FocusGroup, FocusLabel } from '../types.js';
 import { createFocusTreeRepository } from '../repositories/focusTreeRepository.js';
 import { createSystemMetaRepository } from '../repositories/systemMetaRepository.js';
 import { createFocusTreeService } from '../services/focusTreeService.js';
@@ -110,87 +105,9 @@ router.post('/nodes', (req: Request, res: Response) => {
 router.put('/nodes/:id', (req: Request, res: Response) => {
   const { id } = req.params;
   const n = req.body as Partial<FocusNode>;
-
-  const current = db.prepare('SELECT * FROM focus_nodes WHERE id = ?').get(id) as FocusNodeRow | undefined;
-  if (!current) {
+  if (!focusTreeService.updateNode(id as string, n)) {
     return res.status(404).json({ error: 'Node not found' });
   }
-
-  let finalTime = current.triggerTime;
-  let hasExactTime = current.hasExactTime;
-  let timeValueMinutes = current.timeValueMinutes;
-
-  if (n.triggerTime !== undefined) {
-    if (n.triggerTime) {
-      const match = n.triggerTime.match(/^(\d{1,2})[:：](\d{2})$/);
-      if (match) {
-        const h = parseInt(match[1], 10);
-        const m = parseInt(match[2], 10);
-        finalTime = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
-        hasExactTime = 1;
-        timeValueMinutes = h * 60 + m;
-      } else {
-        finalTime = null;
-        hasExactTime = 0;
-        timeValueMinutes = null;
-      }
-    } else {
-      finalTime = null;
-      hasExactTime = 0;
-      timeValueMinutes = null;
-    }
-  }
-
-  const finalScene = n.triggerScene !== undefined
-    ? (n.triggerScene.trim() || finalTime || '全天候')
-    : (current.triggerScene || current.triggerTime || '全天候');
-
-  db.prepare(`
-    UPDATE focus_nodes SET
-      code = @code,
-      name = @name,
-      groupId = @groupId,
-      triggerTime = @triggerTime,
-      triggerScene = @triggerScene,
-      hasExactTime = @hasExactTime,
-      timeValueMinutes = @timeValueMinutes,
-      level = @level,
-      maxLevel = @maxLevel,
-      isLit = @isLit,
-      isFrozen = @isFrozen,
-      lastLitDate = @lastLitDate,
-      previousLevel = @previousLevel,
-      positionX = @positionX,
-      positionY = @positionY,
-      specInstruction = @specInstruction,
-      specFailCondition = @specFailCondition,
-      specBenefitMechanism = @specBenefitMechanism,
-      specNotes = @specNotes
-    WHERE id = @id
-  `).run({
-    id,
-    code: n.code ?? current.code,
-    name: n.name ?? current.name,
-    groupId: n.groupId !== undefined ? n.groupId : current.groupId,
-    triggerTime: finalTime || '',
-    triggerScene: finalScene,
-    hasExactTime,
-    timeValueMinutes,
-    level: n.level !== undefined ? n.level : current.level,
-    maxLevel: n.maxLevel !== undefined ? n.maxLevel : current.maxLevel,
-    isLit: n.isLit !== undefined ? (n.isLit ? 1 : 0) : current.isLit,
-    isFrozen: n.isFrozen !== undefined ? (n.isFrozen ? 1 : 0) : current.isFrozen,
-    lastLitDate: n.lastLitDate !== undefined ? n.lastLitDate : current.lastLitDate,
-    previousLevel: n.previousLevel !== undefined ? n.previousLevel : current.previousLevel,
-    positionX: n.position?.x ?? current.positionX,
-    positionY: n.position?.y ?? current.positionY,
-    specInstruction: n.specCard?.instruction ?? current.specInstruction,
-    specFailCondition: n.specCard?.failCondition ?? current.specFailCondition,
-    specBenefitMechanism: n.specCard?.benefitMechanism ?? current.specBenefitMechanism,
-    specNotes: n.specCard?.notes !== undefined ? n.specCard.notes : current.specNotes
-  });
-
-  incrementSystemRevision();
   res.json({ message: 'Node updated successfully', id });
 });
 
@@ -201,7 +118,6 @@ router.delete('/nodes/:id', (req: Request, res: Response) => {
     return res.status(404).json({ error: 'Node not found' });
   }
 
-  incrementSystemRevision();
   res.json({ message: 'Node deleted successfully', id });
 });
 

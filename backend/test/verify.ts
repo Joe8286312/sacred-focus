@@ -25,7 +25,7 @@ import {
 import { safeCompare } from '../src/middleware/auth.js';
 import { createTables } from '../src/db/schema.js';
 import { createSystemMetaRepository } from '../src/repositories/systemMetaRepository.js';
-import { createFocusTreeRepository, type NodeLitState } from '../src/repositories/focusTreeRepository.js';
+import { createFocusTreeRepository, type NodeLitState, type NodeUpdateState } from '../src/repositories/focusTreeRepository.js';
 import { createSacredSeatRepository } from '../src/repositories/sacredSeatRepository.js';
 import { createPrecedentCaseRepository } from '../src/repositories/precedentCaseRepository.js';
 import { createEvolutionRepository } from '../src/repositories/evolutionRepository.js';
@@ -936,6 +936,33 @@ async function runAllTests() {
     }
   });
 
+  test('focusTree repository 锁定节点更新字段写入且保留 previousLastLitDate', () => {
+    const focusTreeDb = new Database(':memory:');
+    createTables(focusTreeDb);
+    try {
+      const repository = createFocusTreeRepository(focusTreeDb);
+      repository.createNode(makeNode({
+        id: 'editable-node', code: 'OLD', name: '旧节点', triggerTime: '08:00', triggerScene: '旧场景',
+        previousLastLitDate: '2026-09-01', position: { x: 1, y: 2 }, specCard: { instruction: '旧执行', failCondition: '旧失败', benefitMechanism: '旧收益', notes: '旧备注' }
+      }));
+      const current = repository.getNodeForUpdate('editable-node')!;
+      repository.updateNode({
+        ...current,
+        code: 'NEW', name: '新节点', triggerTime: '09:30', triggerScene: '新场景', hasExactTime: 1, timeValueMinutes: 570,
+        level: 2, maxLevel: 3, isLit: 1, isFrozen: 1, lastLitDate: '2026-09-17', previousLevel: 1,
+        positionX: 3, positionY: 4, specInstruction: '新执行', specFailCondition: '新失败', specBenefitMechanism: '新收益', specNotes: '新备注'
+      });
+      const updated = repository.getNodeForUpdate('editable-node')!;
+      assert.equal(updated.code, 'NEW');
+      assert.equal(updated.triggerTime, '09:30');
+      assert.equal(updated.specNotes, '新备注');
+      assert.equal(updated.previousLastLitDate, '2026-09-01');
+      assert.equal(repository.getNodeForUpdate('missing'), undefined);
+    } finally {
+      focusTreeDb.close();
+    }
+  });
+
   test('maintenance repository 锁定租约冲突、revision 前置条件、过期容错与精确释放', () => {
     let currentTime = 1_000;
     const metadata = createSystemMetaRepository(testDb);
@@ -1286,6 +1313,11 @@ async function runAllTests() {
     let editableGroup: FocusTreeData['groups'][number] = {
       id: 'editable-group', name: '旧分组', themeColor: '#111111', position: { x: 1, y: 2 }, size: { width: 300, height: 200 }
     };
+    let editableNode: NodeUpdateState = {
+      id: 'editable-node', code: 'OLD', name: '旧节点', groupId: null, triggerTime: '08:00', triggerScene: '旧场景', hasExactTime: 1, timeValueMinutes: 480,
+      level: 1, maxLevel: 2, isLit: 0, isFrozen: 0, lastLitDate: '2026-09-16', previousLevel: 0, previousLastLitDate: '2026-09-01',
+      positionX: 1, positionY: 2, specInstruction: '旧执行', specFailCondition: '旧失败', specBenefitMechanism: '旧收益', specNotes: '旧备注'
+    };
     const service = createFocusTreeService({
       focusTreeRepository: {
         getFullFocusTreeData: () => tree,
@@ -1301,7 +1333,9 @@ async function runAllTests() {
         createGroup: group => { calls.push(`create-group:${group.id}`); },
         getGroup: id => id === editableGroup.id ? editableGroup : undefined,
         updateGroup: group => { editableGroup = group; calls.push(`update-group:${group.id}`); },
-        deleteGroup: (id, options) => { calls.push(`delete-group:${id}:${options.deleteChildren}`); }
+        deleteGroup: (id, options) => { calls.push(`delete-group:${id}:${options.deleteChildren}`); },
+        getNodeForUpdate: id => id === editableNode.id ? editableNode : undefined,
+        updateNode: node => { editableNode = node; calls.push(`update-node:${node.id}`); }
       },
       systemMetaRepository: {
         getSystemRevision: () => revision,
@@ -1348,6 +1382,30 @@ async function runAllTests() {
       'delete-group:group-by-service:true', 'increment:2026-09-17T12:00:00.000Z',
       'delete-group:missing:false', 'increment:2026-09-17T12:00:00.000Z'
     ]);
+    assert.equal(service.updateNode('editable-node', {
+      code: 'NEW', triggerTime: '7：08', triggerScene: '  ', isLit: true, isFrozen: true,
+      position: { x: 9 } as FocusTreeData['nodes'][number]['position'],
+      specCard: { notes: '新备注' } as FocusTreeData['nodes'][number]['specCard'],
+      previousLastLitDate: '不应覆盖'
+    }), true);
+    assert.deepEqual({
+      code: editableNode.code, triggerTime: editableNode.triggerTime, triggerScene: editableNode.triggerScene,
+      hasExactTime: editableNode.hasExactTime, timeValueMinutes: editableNode.timeValueMinutes,
+      isLit: editableNode.isLit, isFrozen: editableNode.isFrozen, positionX: editableNode.positionX,
+      positionY: editableNode.positionY, specNotes: editableNode.specNotes, previousLastLitDate: editableNode.previousLastLitDate
+    }, {
+      code: 'NEW', triggerTime: '07:08', triggerScene: '07:08', hasExactTime: 1, timeValueMinutes: 428,
+      isLit: 1, isFrozen: 1, positionX: 9, positionY: 2, specNotes: '新备注', previousLastLitDate: '2026-09-01'
+    });
+    assert.equal(service.updateNode('editable-node', { triggerTime: 'invalid', triggerScene: '' }), true);
+    assert.deepEqual({ triggerTime: editableNode.triggerTime, triggerScene: editableNode.triggerScene, hasExactTime: editableNode.hasExactTime, timeValueMinutes: editableNode.timeValueMinutes }, {
+      triggerTime: '', triggerScene: '全天候', hasExactTime: 0, timeValueMinutes: null
+    });
+    assert.equal(service.updateNode('missing', {}), false);
+    assert.deepEqual(calls.slice(18), [
+      'update-node:editable-node', 'increment:2026-09-17T12:00:00.000Z',
+      'update-node:editable-node', 'increment:2026-09-17T12:00:00.000Z'
+    ]);
   });
 
   test('focusTreeService 锁定连续升级、反悔精确回退、当日重试与未找到语义', () => {
@@ -1367,7 +1425,9 @@ async function runAllTests() {
         createGroup: () => undefined,
         getGroup: () => undefined,
         updateGroup: () => undefined,
-        deleteGroup: () => undefined
+        deleteGroup: () => undefined,
+        getNodeForUpdate: () => undefined,
+        updateNode: () => undefined
       },
       systemMetaRepository: {
         getSystemRevision: () => 1,
