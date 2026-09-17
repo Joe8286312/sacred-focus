@@ -92,15 +92,7 @@ router.put('/nodes/reorder', (req: Request, res: Response) => {
     return res.status(400).json({ error: 'nodeIds must be an array of string' });
   }
 
-  const reorderTx = db.transaction(() => {
-    const updateSort = db.prepare('UPDATE focus_nodes SET sortOrder = ? WHERE id = ?');
-    nodeIds.forEach((id, idx) => {
-      updateSort.run(idx, id);
-    });
-  });
-
-  reorderTx();
-  incrementSystemRevision();
+  focusTreeService.reorderNodes(nodeIds);
   res.json({ message: 'Sort order updated successfully' });
 });
 

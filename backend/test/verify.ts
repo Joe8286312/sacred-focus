@@ -825,6 +825,21 @@ async function runAllTests() {
     }
   });
 
+  test('focusTree repository 锁定排序覆盖顺序与未知节点静默忽略', () => {
+    const focusTreeDb = new Database(':memory:');
+    createTables(focusTreeDb);
+    try {
+      const repository = createFocusTreeRepository(focusTreeDb);
+      repository.upsertFocusNode(makeNode({ id: 'first', code: 'F', name: '第一' }), 0);
+      repository.upsertFocusNode(makeNode({ id: 'second', code: 'S', name: '第二' }), 1);
+      repository.upsertFocusNode(makeNode({ id: 'third', code: 'T', name: '第三' }), 2);
+      repository.reorderNodes(['third', 'missing', 'first']);
+      assert.deepEqual(repository.getFullFocusTreeData().nodes.map(node => node.id), ['third', 'second', 'first']);
+    } finally {
+      focusTreeDb.close();
+    }
+  });
+
   test('maintenance repository 锁定租约冲突、revision 前置条件、过期容错与精确释放', () => {
     let currentTime = 1_000;
     const metadata = createSystemMetaRepository(testDb);
@@ -1180,7 +1195,8 @@ async function runAllTests() {
           return 8;
         },
         getNodeLitState: () => undefined,
-        updateNodeLitState: () => undefined
+        updateNodeLitState: () => undefined,
+        reorderNodes: nodeIds => { calls.push(`reorder:${nodeIds.join(',')}`); }
       },
       systemMetaRepository: {
         getSystemRevision: () => revision,
@@ -1204,6 +1220,8 @@ async function runAllTests() {
     ]);
     assert.deepEqual(service.synchronizeFocusTree({ expectedRevision: 7, tree }), { revision: 8, data: tree });
     assert.deepEqual(calls.slice(2), ['replace:7:0']);
+    service.reorderNodes(['node-b', 'node-a']);
+    assert.deepEqual(calls.slice(3), ['reorder:node-b,node-a', 'increment:2026-09-17T12:00:00.000Z']);
   });
 
   test('focusTreeService 锁定连续升级、反悔精确回退、当日重试与未找到语义', () => {
@@ -1216,7 +1234,8 @@ async function runAllTests() {
         getFullFocusTreeData: () => ({ nodes: [], edges: [], groups: [], labels: [] }),
         replaceFullFocusTree: () => 1,
         getNodeLitState: () => state,
-        updateNodeLitState: next => { state = next; }
+        updateNodeLitState: next => { state = next; },
+        reorderNodes: () => undefined
       },
       systemMetaRepository: {
         getSystemRevision: () => 1,

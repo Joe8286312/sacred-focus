@@ -20,6 +20,7 @@ export interface FocusTreeRepository {
   replaceFullFocusTree(input: { expectedRevision: number; tree: FocusTreeData }): number;
   getNodeLitState(id: string): NodeLitState | undefined;
   updateNodeLitState(state: NodeLitState): void;
+  reorderNodes(nodeIds: string[]): void;
 }
 
 export interface FocusTreeRepositoryOptions { now?: () => Date; }
@@ -240,5 +241,13 @@ export function createFocusTreeRepository(
     `).run(state);
   }
 
-  return { upsertFocusNode, getFullFocusTreeData, replaceFullFocusTree, getNodeLitState, updateNodeLitState };
+  function reorderNodes(nodeIds: string[]): void {
+    const reorderTransaction = db.transaction(() => {
+      const updateSort = db.prepare('UPDATE focus_nodes SET sortOrder = ? WHERE id = ?');
+      nodeIds.forEach((id, index) => updateSort.run(index, id));
+    });
+    reorderTransaction();
+  }
+
+  return { upsertFocusNode, getFullFocusTreeData, replaceFullFocusTree, getNodeLitState, updateNodeLitState, reorderNodes };
 }
