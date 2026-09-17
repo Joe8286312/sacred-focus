@@ -51,7 +51,7 @@ router.post('/snapshot', (req: Request, res: Response) => {
   if (expectedRevision === null) return;
 
   try {
-    const result = repository.createSnapshot({ expectedRevision, changelogNotes, isMajor });
+    const result = service.createSnapshot({ expectedRevision, changelogNotes, isMajor });
     res.status(201).json({ message: 'Snapshot created', ...result });
   } catch (e: any) {
     if (e instanceof RevisionPreconditionError) return sendVersionConflict(res, e.currentRevision);

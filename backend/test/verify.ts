@@ -1325,6 +1325,23 @@ async function runAllTests() {
         }],
         revision: 42
       });
+
+      let snapshotInput: { expectedRevision: number; changelogNotes: string; isMajor: boolean } | undefined;
+      const snapshotService = createEvolutionService({
+        evolutionRepository: {
+          getState: () => ({ activePointerIndex: 0, snapshots: [] }),
+          createSnapshot: input => {
+            snapshotInput = input;
+            return { version: 'v1.1', nextVersion: 'v1.1', slotIndex: 0, targetSlotIndex: 0, activePointerIndex: 0, revision: 43 };
+          }
+        },
+        systemMetaRepository: systemMeta
+      });
+      const expectedSnapshotInput = { expectedRevision: 42, changelogNotes: '首次归档', isMajor: false };
+      assert.deepEqual(snapshotService.createSnapshot(expectedSnapshotInput), {
+        version: 'v1.1', nextVersion: 'v1.1', slotIndex: 0, targetSlotIndex: 0, activePointerIndex: 0, revision: 43
+      });
+      assert.deepEqual(snapshotInput, expectedSnapshotInput);
     } finally {
       evolutionDb.close();
     }
