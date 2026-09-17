@@ -775,6 +775,32 @@ async function runAllTests() {
     assert.equal(tree.nodes[1].timeValueMinutes, 545);
   });
 
+  test('focusTree repository 锁定全量替换、节点排序、revision 与冲突回滚', () => {
+    const focusTreeDb = new Database(':memory:');
+    focusTreeDb.pragma('foreign_keys = ON');
+    createTables(focusTreeDb);
+    try {
+      const repository = createFocusTreeRepository(focusTreeDb, { now: () => new Date('2026-09-17T12:00:00.000Z') });
+      const metadata = createSystemMetaRepository(focusTreeDb);
+      focusTreeDb.prepare("INSERT INTO focus_groups (id,name,themeColor,positionX,positionY,width,height) VALUES ('stale','旧分组','#000',0,0,1,1)").run();
+      const tree: FocusTreeData = {
+        groups: [{ id: 'group', name: '新分组', themeColor: '#123456', position: { x: 1, y: 2 }, size: { width: 300, height: 200 } }],
+        nodes: [makeNode({ id: 'node-b', code: 'B', name: '后节点', groupId: 'group', position: { x: 20, y: 30 } }), makeNode({ id: 'node-a', code: 'A', name: '前节点', groupId: 'group', position: { x: 10, y: 15 } })],
+        edges: [{ id: 'edge', sourceId: 'node-a', sourceType: 'NODE', targetId: 'group', targetType: 'GROUP', sourceAnchor: 'BOTTOM', targetAnchor: 'TOP', style: 'SOLID' }],
+        labels: [{ id: 'label', text: '新标签', position: { x: 5, y: 6 } }]
+      };
+      const revision = metadata.getSystemRevision();
+      assert.equal(repository.replaceFullFocusTree({ expectedRevision: revision, tree }), revision + 1);
+      assert.deepEqual(repository.getFullFocusTreeData().nodes.map(node => node.id), ['node-b', 'node-a']);
+      assert.equal(focusTreeDb.prepare("SELECT id FROM focus_groups WHERE id = 'stale'").get(), undefined);
+      assert.equal(metadata.getValue('last_sync_timestamp'), '2026-09-17T12:00:00.000Z');
+      assert.throws(() => repository.replaceFullFocusTree({ expectedRevision: revision, tree }), RevisionPreconditionError);
+      assert.deepEqual(repository.getFullFocusTreeData().nodes.map(node => node.id), ['node-b', 'node-a']);
+    } finally {
+      focusTreeDb.close();
+    }
+  });
+
   test('maintenance repository 锁定租约冲突、revision 前置条件、过期容错与精确释放', () => {
     let currentTime = 1_000;
     const metadata = createSystemMetaRepository(testDb);
@@ -1123,7 +1149,13 @@ async function runAllTests() {
     };
     const calls: string[] = [];
     const service = createFocusTreeService({
-      focusTreeRepository: { getFullFocusTreeData: () => tree },
+      focusTreeRepository: {
+        getFullFocusTreeData: () => tree,
+        replaceFullFocusTree: input => {
+          calls.push(`replace:${input.expectedRevision}:${input.tree.nodes.length}`);
+          return 8;
+        }
+      },
       systemMetaRepository: {
         getSystemRevision: () => revision,
         deleteValue: key => { calls.push(`delete:${key}`); return true; },
@@ -1144,6 +1176,8 @@ async function runAllTests() {
       'delete:lastDailySettlementDate',
       'increment:2026-09-17T12:00:00.000Z'
     ]);
+    assert.deepEqual(service.synchronizeFocusTree({ expectedRevision: 7, tree }), { revision: 8, data: tree });
+    assert.deepEqual(calls.slice(2), ['replace:7:0']);
   });
 
   test('evolution repository 锁定回滚和架构导入事务、404 优先级与版本冲突', () => {

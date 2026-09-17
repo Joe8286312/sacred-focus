@@ -1,9 +1,7 @@
 import { Router, Request, Response } from 'express';
 import {
   db,
-  getFullFocusTreeData,
   settleFocusTreeDailyState,
-  getSystemRevision,
   incrementSystemRevision,
   upsertFocusNode
 } from '../db.js';
@@ -12,6 +10,7 @@ import type { FocusNode, FocusEdge, FocusGroup, FocusLabel, FocusNodeRow, FocusG
 import { createFocusTreeRepository } from '../repositories/focusTreeRepository.js';
 import { createSystemMetaRepository } from '../repositories/systemMetaRepository.js';
 import { createFocusTreeService } from '../services/focusTreeService.js';
+import { RevisionPreconditionError } from '../repositories/maintenanceRepository.js';
 
 const router = Router();
 const focusTreeService = createFocusTreeService({
@@ -19,13 +18,6 @@ const focusTreeService = createFocusTreeService({
   systemMetaRepository: createSystemMetaRepository(db),
   settleDailyState: settleFocusTreeDailyState
 });
-
-class VersionConflictError extends Error {
-  constructor(public readonly currentRevision: number) {
-    super('VERSION_CONFLICT');
-    this.name = 'VersionConflictError';
-  }
-}
 
 // 获取当前完整国策树（节点、连线、分组），并在每日首次上线时执行自控跨天结算审计
 router.get('/', (_req: Request, res: Response) => {
@@ -61,71 +53,14 @@ router.put('/', (req: Request, res: Response) => {
       message: '全量保存必须同时携带 nodes、edges、groups、labels 四个数组'
     });
   }
-  const requestedRevision = expectedRevision;
-
-  const syncTx = db.transaction(() => {
-    // 校验与破坏性覆写处于同一个事务，消除 TOCTOU 窗口。
-    const currentRevision = getSystemRevision();
-    if (requestedRevision !== currentRevision) {
-      throw new VersionConflictError(currentRevision);
-    }
-
-    // 先删依赖表，再删节点/分组，避免 group 外键触发隐式 SET NULL。
-    db.prepare('DELETE FROM focus_edges').run();
-    db.prepare('DELETE FROM focus_nodes').run();
-    db.prepare('DELETE FROM focus_groups').run();
-    db.prepare('DELETE FROM focus_labels').run();
-
-    const insertGroup = db.prepare(`
-      INSERT INTO focus_groups (id, name, themeColor, positionX, positionY, width, height)
-      VALUES (@id, @name, @themeColor, @positionX, @positionY, @width, @height)
-    `);
-    for (const g of groups) {
-      insertGroup.run({
-        id: g.id,
-        name: g.name,
-        themeColor: g.themeColor,
-        positionX: g.position.x,
-        positionY: g.position.y,
-        width: g.size.width,
-        height: g.size.height
-      });
-    }
-
-    for (let i = 0; i < nodes.length; i++) {
-      upsertFocusNode(nodes[i], i);
-    }
-
-    const insertEdge = db.prepare(`
-      INSERT INTO focus_edges (id, sourceId, sourceType, targetId, targetType, sourceAnchor, targetAnchor, style)
-      VALUES (@id, @sourceId, @sourceType, @targetId, @targetType, @sourceAnchor, @targetAnchor, @style)
-    `);
-    for (const e of edges) {
-      insertEdge.run(e);
-    }
-
-    const insertLabel = db.prepare(`
-      INSERT INTO focus_labels (id, text, positionX, positionY)
-      VALUES (@id, @text, @positionX, @positionY)
-    `);
-    for (const l of labels) {
-      insertLabel.run({
-        id: l.id,
-        text: l.text,
-        positionX: l.position?.x ?? 0,
-        positionY: l.position?.y ?? 0
-      });
-    }
-
-    incrementSystemRevision();
-    return getSystemRevision();
-  });
-
   try {
-    const revision = syncTx();
-    res.json({ message: 'Focus tree synchronized successfully', revision, data: getFullFocusTreeData() });
+    const synchronized = focusTreeService.synchronizeFocusTree({
+      expectedRevision,
+      tree: { nodes, edges, groups, labels }
+    });
+    res.json({ message: 'Focus tree synchronized successfully', ...synchronized });
   } catch (err: any) {
-    if (err instanceof VersionConflictError) {
+    if (err instanceof RevisionPreconditionError) {
       return res.status(409).json({
         error: 'VERSION_CONFLICT',
         message: '检测到其他设备已提交新版本，请先同步最新状态后再保存',

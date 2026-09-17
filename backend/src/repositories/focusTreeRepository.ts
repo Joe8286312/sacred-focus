@@ -1,5 +1,7 @@
 import type { Statement } from 'better-sqlite3';
 import type { SqliteDatabasePort } from './databasePort.js';
+import { createSystemMetaRepository } from './systemMetaRepository.js';
+import { RevisionPreconditionError } from './maintenanceRepository.js';
 import type {
   FocusNode,
   FocusEdge,
@@ -15,11 +17,18 @@ import type {
 export interface FocusTreeRepository {
   upsertFocusNode(node: FocusNode, sortOrder?: number): FocusNode;
   getFullFocusTreeData(): FocusTreeData;
+  replaceFullFocusTree(input: { expectedRevision: number; tree: FocusTreeData }): number;
 }
 
+export interface FocusTreeRepositoryOptions { now?: () => Date; }
+
 /** 国策树的 SQLite 读写边界；调用方必须显式注入数据库端口。 */
-export function createFocusTreeRepository(db: SqliteDatabasePort): FocusTreeRepository {
+export function createFocusTreeRepository(
+  db: SqliteDatabasePort,
+  { now = () => new Date() }: FocusTreeRepositoryOptions = {}
+): FocusTreeRepository {
   let upsertFocusNodeStatement: Statement | null = null;
+  const systemMeta = createSystemMetaRepository(db);
 
   function getUpsertFocusNodeStatement(): Statement {
     if (!upsertFocusNodeStatement) {
@@ -150,5 +159,56 @@ export function createFocusTreeRepository(db: SqliteDatabasePort): FocusTreeRepo
     return { nodes, edges, groups, labels };
   }
 
-  return { upsertFocusNode, getFullFocusTreeData };
+  function replaceFullFocusTree({ expectedRevision, tree }: { expectedRevision: number; tree: FocusTreeData }): number {
+    return db.transaction(() => {
+      const currentRevision = systemMeta.getSystemRevision();
+      if (expectedRevision !== currentRevision) {
+        throw new RevisionPreconditionError(currentRevision);
+      }
+
+      // 保持既有删除顺序，避免外键与 groupId 的隐式变更影响快照替换。
+      db.prepare('DELETE FROM focus_edges').run();
+      db.prepare('DELETE FROM focus_nodes').run();
+      db.prepare('DELETE FROM focus_groups').run();
+      db.prepare('DELETE FROM focus_labels').run();
+
+      const insertGroup = db.prepare(`
+        INSERT INTO focus_groups (id, name, themeColor, positionX, positionY, width, height)
+        VALUES (@id, @name, @themeColor, @positionX, @positionY, @width, @height)
+      `);
+      for (const group of tree.groups) {
+        insertGroup.run({
+          id: group.id,
+          name: group.name,
+          themeColor: group.themeColor,
+          positionX: group.position.x,
+          positionY: group.position.y,
+          width: group.size.width,
+          height: group.size.height
+        });
+      }
+
+      for (let index = 0; index < tree.nodes.length; index++) {
+        upsertFocusNode(tree.nodes[index], index);
+      }
+
+      const insertEdge = db.prepare(`
+        INSERT INTO focus_edges (id, sourceId, sourceType, targetId, targetType, sourceAnchor, targetAnchor, style)
+        VALUES (@id, @sourceId, @sourceType, @targetId, @targetType, @sourceAnchor, @targetAnchor, @style)
+      `);
+      for (const edge of tree.edges) insertEdge.run(edge);
+
+      const insertLabel = db.prepare(`
+        INSERT INTO focus_labels (id, text, positionX, positionY)
+        VALUES (@id, @text, @positionX, @positionY)
+      `);
+      for (const label of tree.labels) {
+        insertLabel.run({ id: label.id, text: label.text, positionX: label.position?.x ?? 0, positionY: label.position?.y ?? 0 });
+      }
+
+      return systemMeta.incrementSystemRevision(now().toISOString());
+    })();
+  }
+
+  return { upsertFocusNode, getFullFocusTreeData, replaceFullFocusTree };
 }

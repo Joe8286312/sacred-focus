@@ -8,7 +8,7 @@ export interface FocusTreeSettlement {
 }
 
 export interface FocusTreeServiceDependencies {
-  focusTreeRepository: Pick<FocusTreeRepository, 'getFullFocusTreeData'>;
+  focusTreeRepository: Pick<FocusTreeRepository, 'getFullFocusTreeData' | 'replaceFullFocusTree'>;
   systemMetaRepository: Pick<SystemMetaRepository, 'deleteValue' | 'getSystemRevision' | 'incrementSystemRevision'>;
   settleDailyState: () => FocusTreeSettlement | null;
   now?: () => Date;
@@ -38,5 +38,10 @@ export function createFocusTreeService({
     return systemMetaRepository.incrementSystemRevision(now().toISOString());
   }
 
-  return { getFocusTree, resetSettlementAudit };
+  function synchronizeFocusTree(input: { expectedRevision: number; tree: FocusTreeData }): { revision: number; data: FocusTreeData } {
+    const revision = focusTreeRepository.replaceFullFocusTree(input);
+    return { revision, data: focusTreeRepository.getFullFocusTreeData() };
+  }
+
+  return { getFocusTree, resetSettlementAudit, synchronizeFocusTree };
 }
