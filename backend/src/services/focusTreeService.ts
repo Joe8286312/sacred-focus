@@ -9,7 +9,7 @@ export interface FocusTreeSettlement {
 }
 
 export interface FocusTreeServiceDependencies {
-  focusTreeRepository: Pick<FocusTreeRepository, 'getFullFocusTreeData' | 'replaceFullFocusTree' | 'getNodeLitState' | 'updateNodeLitState' | 'reorderNodes' | 'createNode' | 'deleteNodeAndEdges' | 'createGroup' | 'getGroup' | 'updateGroup'>;
+  focusTreeRepository: Pick<FocusTreeRepository, 'getFullFocusTreeData' | 'replaceFullFocusTree' | 'getNodeLitState' | 'updateNodeLitState' | 'reorderNodes' | 'createNode' | 'deleteNodeAndEdges' | 'createGroup' | 'getGroup' | 'updateGroup' | 'deleteGroup'>;
   systemMetaRepository: Pick<SystemMetaRepository, 'deleteValue' | 'getSystemRevision' | 'incrementSystemRevision'>;
   settleDailyState: () => FocusTreeSettlement | null;
   getBusinessDay?: () => string;
@@ -145,5 +145,11 @@ export function createFocusTreeService({
     return updated;
   }
 
-  return { getFocusTree, resetSettlementAudit, synchronizeFocusTree, toggleNodeLit, reorderNodes, createNode, deleteNode, createGroup, updateGroup };
+  function deleteGroup(id: string, deleteChildren: boolean): void {
+    focusTreeRepository.deleteGroup(id, { deleteChildren });
+    // 保持原路由语义：即使 group 不存在，删除请求仍会推进 revision 并返回成功。
+    systemMetaRepository.incrementSystemRevision(now().toISOString());
+  }
+
+  return { getFocusTree, resetSettlementAudit, synchronizeFocusTree, toggleNodeLit, reorderNodes, createNode, deleteNode, createGroup, updateGroup, deleteGroup };
 }

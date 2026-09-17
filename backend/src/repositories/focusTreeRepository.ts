@@ -26,6 +26,7 @@ export interface FocusTreeRepository {
   createGroup(group: FocusGroup): void;
   getGroup(id: string): FocusGroup | undefined;
   updateGroup(group: FocusGroup): void;
+  deleteGroup(id: string, options: { deleteChildren: boolean }): void;
 }
 
 export interface FocusTreeRepositoryOptions { now?: () => Date; }
@@ -308,5 +309,20 @@ export function createFocusTreeRepository(
     });
   }
 
-  return { upsertFocusNode, getFullFocusTreeData, replaceFullFocusTree, getNodeLitState, updateNodeLitState, reorderNodes, createNode, deleteNodeAndEdges, createGroup, getGroup, updateGroup };
+  function deleteGroup(id: string, { deleteChildren }: { deleteChildren: boolean }): void {
+    db.transaction(() => {
+      if (deleteChildren) {
+        const childNodes = db.prepare('SELECT id FROM focus_nodes WHERE groupId = ?').all(id) as { id: string }[];
+        const deleteNodeEdges = db.prepare("DELETE FROM focus_edges WHERE (sourceId = ? AND sourceType = 'NODE') OR (targetId = ? AND targetType = 'NODE')");
+        for (const node of childNodes) deleteNodeEdges.run(node.id, node.id);
+        db.prepare('DELETE FROM focus_nodes WHERE groupId = ?').run(id);
+      } else {
+        db.prepare('UPDATE focus_nodes SET groupId = NULL WHERE groupId = ?').run(id);
+      }
+      db.prepare("DELETE FROM focus_edges WHERE (sourceId = ? AND sourceType = 'GROUP') OR (targetId = ? AND targetType = 'GROUP')").run(id, id);
+      db.prepare('DELETE FROM focus_groups WHERE id = ?').run(id);
+    })();
+  }
+
+  return { upsertFocusNode, getFullFocusTreeData, replaceFullFocusTree, getNodeLitState, updateNodeLitState, reorderNodes, createNode, deleteNodeAndEdges, createGroup, getGroup, updateGroup, deleteGroup };
 }

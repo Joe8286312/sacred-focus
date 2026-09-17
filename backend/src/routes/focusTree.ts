@@ -229,27 +229,7 @@ router.put('/groups/:id', (req: Request, res: Response) => {
 router.delete('/groups/:id', (req: Request, res: Response) => {
   const { id } = req.params;
   const deleteChildren = req.query.deleteChildren === 'true';
-
-  const deleteGroupTx = db.transaction(() => {
-    if (deleteChildren) {
-      // 连带删除组内节点及其关联线
-      const childNodes = db.prepare('SELECT id FROM focus_nodes WHERE groupId = ?').all(id) as { id: string }[];
-      for (const n of childNodes) {
-        db.prepare("DELETE FROM focus_edges WHERE (sourceId = ? AND sourceType = 'NODE') OR (targetId = ? AND targetType = 'NODE')").run(n.id, n.id);
-      }
-      db.prepare('DELETE FROM focus_nodes WHERE groupId = ?').run(id);
-    } else {
-      // 仅解绑
-      db.prepare('UPDATE focus_nodes SET groupId = NULL WHERE groupId = ?').run(id);
-    }
-
-    // 清除外框自身的关联连线
-    db.prepare("DELETE FROM focus_edges WHERE (sourceId = ? AND sourceType = 'GROUP') OR (targetId = ? AND targetType = 'GROUP')").run(id, id);
-    return db.prepare('DELETE FROM focus_groups WHERE id = ?').run(id);
-  });
-
-  deleteGroupTx();
-  incrementSystemRevision();
+  focusTreeService.deleteGroup(id as string, deleteChildren);
   res.json({ message: 'Group deleted successfully', id });
 });
 

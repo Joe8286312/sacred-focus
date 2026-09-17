@@ -908,6 +908,34 @@ async function runAllTests() {
     }
   });
 
+  test('focusTree repository 锁定分组删除的子节点删除与解绑分支', () => {
+    const focusTreeDb = new Database(':memory:');
+    createTables(focusTreeDb);
+    try {
+      const repository = createFocusTreeRepository(focusTreeDb);
+      repository.createGroup({ id: 'delete-group', name: '删除分组', themeColor: '#111111', position: { x: 0, y: 0 }, size: { width: 1, height: 1 } });
+      repository.createNode(makeNode({ id: 'delete-child', code: 'DC', name: '删除子节点', groupId: 'delete-group' }));
+      repository.createNode(makeNode({ id: 'other-node', code: 'ON', name: '其他节点' }));
+      focusTreeDb.prepare(`INSERT INTO focus_edges (id,sourceId,sourceType,targetId,targetType,sourceAnchor,targetAnchor,style) VALUES
+        ('child-edge','delete-child','NODE','other-node','NODE','BOTTOM','TOP','SOLID'),
+        ('group-edge','delete-group','GROUP','other-node','NODE','BOTTOM','TOP','SOLID'),
+        ('unrelated-edge','other-node','NODE','other-node','NODE','BOTTOM','TOP','SOLID')`).run();
+      repository.deleteGroup('delete-group', { deleteChildren: true });
+      assert.deepEqual(repository.getFullFocusTreeData().nodes.map(node => node.id), ['other-node']);
+      assert.deepEqual(repository.getFullFocusTreeData().edges.map(edge => edge.id), ['unrelated-edge']);
+
+      repository.createGroup({ id: 'unlink-group', name: '解绑分组', themeColor: '#222222', position: { x: 0, y: 0 }, size: { width: 1, height: 1 } });
+      repository.createNode(makeNode({ id: 'unlink-child', code: 'UC', name: '解绑子节点', groupId: 'unlink-group' }));
+      focusTreeDb.prepare("INSERT INTO focus_edges (id,sourceId,sourceType,targetId,targetType,sourceAnchor,targetAnchor,style) VALUES ('unlink-group-edge','unlink-group','GROUP','other-node','NODE','BOTTOM','TOP','SOLID')").run();
+      repository.deleteGroup('unlink-group', { deleteChildren: false });
+      assert.equal(repository.getFullFocusTreeData().nodes.find(node => node.id === 'unlink-child')?.groupId, null);
+      assert.deepEqual(repository.getFullFocusTreeData().edges.map(edge => edge.id), ['unrelated-edge']);
+      repository.deleteGroup('missing', { deleteChildren: false });
+    } finally {
+      focusTreeDb.close();
+    }
+  });
+
   test('maintenance repository 锁定租约冲突、revision 前置条件、过期容错与精确释放', () => {
     let currentTime = 1_000;
     const metadata = createSystemMetaRepository(testDb);
@@ -1272,7 +1300,8 @@ async function runAllTests() {
         deleteNodeAndEdges: id => { calls.push(`delete-node:${id}`); return id !== 'missing'; },
         createGroup: group => { calls.push(`create-group:${group.id}`); },
         getGroup: id => id === editableGroup.id ? editableGroup : undefined,
-        updateGroup: group => { editableGroup = group; calls.push(`update-group:${group.id}`); }
+        updateGroup: group => { editableGroup = group; calls.push(`update-group:${group.id}`); },
+        deleteGroup: (id, options) => { calls.push(`delete-group:${id}:${options.deleteChildren}`); }
       },
       systemMetaRepository: {
         getSystemRevision: () => revision,
@@ -1313,6 +1342,12 @@ async function runAllTests() {
     });
     assert.equal(service.updateGroup('missing', { name: '不存在' }), undefined);
     assert.deepEqual(calls.slice(12), ['update-group:editable-group', 'increment:2026-09-17T12:00:00.000Z']);
+    service.deleteGroup('group-by-service', true);
+    service.deleteGroup('missing', false);
+    assert.deepEqual(calls.slice(14), [
+      'delete-group:group-by-service:true', 'increment:2026-09-17T12:00:00.000Z',
+      'delete-group:missing:false', 'increment:2026-09-17T12:00:00.000Z'
+    ]);
   });
 
   test('focusTreeService 锁定连续升级、反悔精确回退、当日重试与未找到语义', () => {
@@ -1331,7 +1366,8 @@ async function runAllTests() {
         deleteNodeAndEdges: () => false,
         createGroup: () => undefined,
         getGroup: () => undefined,
-        updateGroup: () => undefined
+        updateGroup: () => undefined,
+        deleteGroup: () => undefined
       },
       systemMetaRepository: {
         getSystemRevision: () => 1,
