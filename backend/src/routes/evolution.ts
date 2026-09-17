@@ -1,6 +1,5 @@
 import { Router, Request, Response } from 'express';
-import { db, getFullFocusTreeData, getSystemRevision, RevisionPreconditionError } from '../db.js';
-import type { EvolutionSnapshotRow, EvolutionStateRow } from '../types.js';
+import { db, getSystemRevision, RevisionPreconditionError } from '../db.js';
 import { validateFullBackupPayload } from '../utils/validators.js';
 import { createEvolutionRepository } from '../repositories/evolutionRepository.js';
 
@@ -88,23 +87,7 @@ router.post('/rollback', (req: Request, res: Response) => {
 // 仅导出国策架构数据（节点、分组、连线、演化快照）
 router.get('/export', (_req: Request, res: Response) => {
   try {
-    const liveTree = getFullFocusTreeData();
-    const evolutionState = db.prepare('SELECT * FROM evolution_state WHERE id = 1').get() as EvolutionStateRow | undefined;
-    const evolutionSnapshots = db.prepare('SELECT * FROM evolution_snapshots ORDER BY slotIndex ASC').all() as EvolutionSnapshotRow[];
-
-    const backupData = {
-      schemaVersion: '1.0',
-      dataType: 'FOCUS_TREE_ARCHITECTURE',
-      exportedAt: new Date().toISOString(),
-      focusTree: liveTree,
-      liveTree: liveTree,
-      evolution: {
-        state: evolutionState,
-        snapshots: evolutionSnapshots
-      }
-    };
-
-    res.json(backupData);
+    res.json(repository.exportArchitecture());
   } catch (e: any) {
     console.error('Failed to export focus tree backup', e);
     res.status(500).json({ error: 'Failed to export focus tree backup', details: e.message });

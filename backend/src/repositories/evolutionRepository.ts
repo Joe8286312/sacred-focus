@@ -6,11 +6,37 @@ import type { EvolutionSnapshot, EvolutionSnapshotRow, EvolutionState, Evolution
 
 export interface EvolutionRepository {
   getState(): EvolutionState;
+  exportArchitecture(): FocusTreeArchitectureExport;
   createSnapshot(input: { expectedRevision: number; changelogNotes: string; isMajor: boolean }): {
     version: string; nextVersion: string; slotIndex: number; targetSlotIndex: number; activePointerIndex: number; revision: number;
   };
   rollback(input: { expectedRevision: number; targetSlotIndex: number }): { version: string; revision: number; liveTree: FocusTreeData } | undefined;
-  importArchitecture(input: { expectedRevision: number; tree: FocusTreeData; evolution?: any }): number;
+  importArchitecture(input: { expectedRevision: number; tree: FocusTreeData; evolution?: EvolutionImportData }): number;
+}
+
+export interface FocusTreeArchitectureExport {
+  schemaVersion: '1.0';
+  dataType: 'FOCUS_TREE_ARCHITECTURE';
+  exportedAt: string;
+  focusTree: FocusTreeData;
+  liveTree: FocusTreeData;
+  evolution: {
+    state: EvolutionStateRow | undefined;
+    snapshots: EvolutionSnapshotRow[];
+  };
+}
+
+export interface EvolutionImportData {
+  state?: { activePointerIndex?: number };
+  snapshots?: Array<{
+    slotIndex: number;
+    id: string;
+    version: string;
+    timestamp: string;
+    changelogNotes: string;
+    isMajor: boolean;
+    dataJson?: unknown;
+  }>;
 }
 
 function toSnapshot(row: EvolutionSnapshotRow): EvolutionSnapshot {
@@ -61,6 +87,19 @@ export function createEvolutionRepository(db: SqliteDatabasePort): EvolutionRepo
     const rows = db.prepare('SELECT * FROM evolution_snapshots ORDER BY slotIndex ASC').all() as EvolutionSnapshotRow[];
     return { activePointerIndex: state?.activePointerIndex ?? 0, snapshots: rows.map(toSnapshot) };
   }
+  function exportArchitecture(): FocusTreeArchitectureExport {
+    const liveTree = focusTree.getFullFocusTreeData();
+    const state = db.prepare('SELECT * FROM evolution_state WHERE id = 1').get() as EvolutionStateRow | undefined;
+    const snapshots = db.prepare('SELECT * FROM evolution_snapshots ORDER BY slotIndex ASC').all() as EvolutionSnapshotRow[];
+    return {
+      schemaVersion: '1.0',
+      dataType: 'FOCUS_TREE_ARCHITECTURE',
+      exportedAt: new Date().toISOString(),
+      focusTree: liveTree,
+      liveTree,
+      evolution: { state, snapshots }
+    };
+  }
   function createSnapshot({ expectedRevision, changelogNotes, isMajor }: { expectedRevision: number; changelogNotes: string; isMajor: boolean }) {
     return db.transaction(() => {
       const currentRevision = systemMeta.getSystemRevision();
@@ -94,7 +133,7 @@ export function createEvolutionRepository(db: SqliteDatabasePort): EvolutionRepo
       return { version: snapshot.version, revision: systemMeta.incrementSystemRevision(new Date().toISOString()), liveTree: focusTree.getFullFocusTreeData() };
     })();
   }
-  function importArchitecture({ expectedRevision, tree, evolution }: { expectedRevision: number; tree: FocusTreeData; evolution?: any }) {
+  function importArchitecture({ expectedRevision, tree, evolution }: { expectedRevision: number; tree: FocusTreeData; evolution?: EvolutionImportData }) {
     return db.transaction(() => {
       const revision = systemMeta.getSystemRevision(); if (revision !== expectedRevision) throw new RevisionPreconditionError(revision);
       restoreTree(tree, true);
@@ -107,5 +146,5 @@ export function createEvolutionRepository(db: SqliteDatabasePort): EvolutionRepo
       maintenance.assertForeignKeyIntegrity(); return systemMeta.incrementSystemRevision(new Date().toISOString());
     })();
   }
-  return { getState, createSnapshot, rollback, importArchitecture };
+  return { getState, exportArchitecture, createSnapshot, rollback, importArchitecture };
 }

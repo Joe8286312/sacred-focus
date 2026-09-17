@@ -878,6 +878,13 @@ async function runAllTests() {
     const second = repository.createSnapshot({ expectedRevision: first.revision, changelogNotes: '主版本', isMajor: true });
     assert.equal(second.version, 'v2.0');
     assert.equal(repository.getState().activePointerIndex, 1);
+    const architecture = repository.exportArchitecture();
+    assert.equal(architecture.schemaVersion, '1.0');
+    assert.equal(architecture.dataType, 'FOCUS_TREE_ARCHITECTURE');
+    assert.equal(architecture.focusTree, architecture.liveTree);
+    assert.equal(architecture.evolution.state?.activePointerIndex, 1);
+    assert.equal(architecture.evolution.snapshots.length, 2);
+    assert.equal(typeof architecture.evolution.snapshots[0].dataJson, 'string');
     assert.throws(() => repository.createSnapshot({ expectedRevision: revision, changelogNotes: '过期', isMajor: false }), RevisionPreconditionError);
   });
 
