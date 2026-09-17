@@ -196,15 +196,7 @@ router.put('/nodes/:id', (req: Request, res: Response) => {
 
 router.delete('/nodes/:id', (req: Request, res: Response) => {
   const { id } = req.params;
-
-  const deleteTx = db.transaction(() => {
-    // 连带清理关联的有向连线（使用 SQL 标准单引号，修复 SQLite 报错与假删除问题）
-    db.prepare("DELETE FROM focus_edges WHERE (sourceId = ? AND sourceType = 'NODE') OR (targetId = ? AND targetType = 'NODE')").run(id, id);
-    const result = db.prepare('DELETE FROM focus_nodes WHERE id = ?').run(id);
-    return result.changes > 0;
-  });
-
-  const deleted = deleteTx();
+  const deleted = focusTreeService.deleteNode(id as string);
   if (!deleted) {
     return res.status(404).json({ error: 'Node not found' });
   }

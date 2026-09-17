@@ -22,6 +22,7 @@ export interface FocusTreeRepository {
   updateNodeLitState(state: NodeLitState): void;
   reorderNodes(nodeIds: string[]): void;
   createNode(node: FocusNode): FocusNode;
+  deleteNodeAndEdges(id: string): boolean;
 }
 
 export interface FocusTreeRepositoryOptions { now?: () => Date; }
@@ -255,5 +256,12 @@ export function createFocusTreeRepository(
     return upsertFocusNode(node, (maxOrderRow?.maxOrder ?? -1) + 1);
   }
 
-  return { upsertFocusNode, getFullFocusTreeData, replaceFullFocusTree, getNodeLitState, updateNodeLitState, reorderNodes, createNode };
+  function deleteNodeAndEdges(id: string): boolean {
+    return db.transaction(() => {
+      db.prepare("DELETE FROM focus_edges WHERE (sourceId = ? AND sourceType = 'NODE') OR (targetId = ? AND targetType = 'NODE')").run(id, id);
+      return db.prepare('DELETE FROM focus_nodes WHERE id = ?').run(id).changes > 0;
+    })();
+  }
+
+  return { upsertFocusNode, getFullFocusTreeData, replaceFullFocusTree, getNodeLitState, updateNodeLitState, reorderNodes, createNode, deleteNodeAndEdges };
 }

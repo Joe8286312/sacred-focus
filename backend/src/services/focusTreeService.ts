@@ -9,7 +9,7 @@ export interface FocusTreeSettlement {
 }
 
 export interface FocusTreeServiceDependencies {
-  focusTreeRepository: Pick<FocusTreeRepository, 'getFullFocusTreeData' | 'replaceFullFocusTree' | 'getNodeLitState' | 'updateNodeLitState' | 'reorderNodes' | 'createNode'>;
+  focusTreeRepository: Pick<FocusTreeRepository, 'getFullFocusTreeData' | 'replaceFullFocusTree' | 'getNodeLitState' | 'updateNodeLitState' | 'reorderNodes' | 'createNode' | 'deleteNodeAndEdges'>;
   systemMetaRepository: Pick<SystemMetaRepository, 'deleteValue' | 'getSystemRevision' | 'incrementSystemRevision'>;
   settleDailyState: () => FocusTreeSettlement | null;
   getBusinessDay?: () => string;
@@ -113,5 +113,11 @@ export function createFocusTreeService({
     return savedNode;
   }
 
-  return { getFocusTree, resetSettlementAudit, synchronizeFocusTree, toggleNodeLit, reorderNodes, createNode };
+  function deleteNode(id: string): boolean {
+    const deleted = focusTreeRepository.deleteNodeAndEdges(id);
+    if (deleted) systemMetaRepository.incrementSystemRevision(now().toISOString());
+    return deleted;
+  }
+
+  return { getFocusTree, resetSettlementAudit, synchronizeFocusTree, toggleNodeLit, reorderNodes, createNode, deleteNode };
 }
