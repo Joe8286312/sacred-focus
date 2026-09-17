@@ -103,11 +103,7 @@ router.post('/nodes', (req: Request, res: Response) => {
     return res.status(400).json({ error: 'Missing required node fields' });
   }
 
-  const maxOrderRow = db.prepare('SELECT MAX(sortOrder) as maxOrder FROM focus_nodes').get() as { maxOrder: number | null };
-  const sortOrder = (maxOrderRow?.maxOrder ?? -1) + 1;
-
-  const savedNode = upsertFocusNode(n, sortOrder);
-  incrementSystemRevision();
+  const savedNode = focusTreeService.createNode(n);
   res.status(201).json(savedNode);
 });
 

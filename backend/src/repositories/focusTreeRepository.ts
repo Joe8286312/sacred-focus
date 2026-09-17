@@ -21,6 +21,7 @@ export interface FocusTreeRepository {
   getNodeLitState(id: string): NodeLitState | undefined;
   updateNodeLitState(state: NodeLitState): void;
   reorderNodes(nodeIds: string[]): void;
+  createNode(node: FocusNode): FocusNode;
 }
 
 export interface FocusTreeRepositoryOptions { now?: () => Date; }
@@ -249,5 +250,10 @@ export function createFocusTreeRepository(
     reorderTransaction();
   }
 
-  return { upsertFocusNode, getFullFocusTreeData, replaceFullFocusTree, getNodeLitState, updateNodeLitState, reorderNodes };
+  function createNode(node: FocusNode): FocusNode {
+    const maxOrderRow = db.prepare('SELECT MAX(sortOrder) as maxOrder FROM focus_nodes').get() as { maxOrder: number | null } | undefined;
+    return upsertFocusNode(node, (maxOrderRow?.maxOrder ?? -1) + 1);
+  }
+
+  return { upsertFocusNode, getFullFocusTreeData, replaceFullFocusTree, getNodeLitState, updateNodeLitState, reorderNodes, createNode };
 }

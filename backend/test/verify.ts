@@ -840,6 +840,23 @@ async function runAllTests() {
     }
   });
 
+  test('focusTree repository 锁定新增节点追加末位排序与规范化返回值', () => {
+    const focusTreeDb = new Database(':memory:');
+    createTables(focusTreeDb);
+    try {
+      const repository = createFocusTreeRepository(focusTreeDb);
+      repository.upsertFocusNode(makeNode({ id: 'existing', code: 'EX', name: '已有节点' }), 4);
+      const input = makeNode({ id: 'created', code: 'NEW', name: '新增节点', triggerTime: '7:08', triggerScene: '' });
+      assert.deepEqual(repository.createNode(input), {
+        ...input,
+        triggerTime: '07:08', triggerScene: '07:08', hasExactTime: true, timeValueMinutes: 428, previousLastLitDate: null
+      });
+      assert.deepEqual(repository.getFullFocusTreeData().nodes.map(node => node.id), ['existing', 'created']);
+    } finally {
+      focusTreeDb.close();
+    }
+  });
+
   test('maintenance repository 锁定租约冲突、revision 前置条件、过期容错与精确释放', () => {
     let currentTime = 1_000;
     const metadata = createSystemMetaRepository(testDb);
@@ -1196,7 +1213,8 @@ async function runAllTests() {
         },
         getNodeLitState: () => undefined,
         updateNodeLitState: () => undefined,
-        reorderNodes: nodeIds => { calls.push(`reorder:${nodeIds.join(',')}`); }
+        reorderNodes: nodeIds => { calls.push(`reorder:${nodeIds.join(',')}`); },
+        createNode: node => { calls.push(`create:${node.id}`); return node; }
       },
       systemMetaRepository: {
         getSystemRevision: () => revision,
@@ -1222,6 +1240,9 @@ async function runAllTests() {
     assert.deepEqual(calls.slice(2), ['replace:7:0']);
     service.reorderNodes(['node-b', 'node-a']);
     assert.deepEqual(calls.slice(3), ['reorder:node-b,node-a', 'increment:2026-09-17T12:00:00.000Z']);
+    const createdNode = makeNode({ id: 'created-by-service', code: 'CS', name: '服务新增' });
+    assert.equal(service.createNode(createdNode), createdNode);
+    assert.deepEqual(calls.slice(5), ['create:created-by-service', 'increment:2026-09-17T12:00:00.000Z']);
   });
 
   test('focusTreeService 锁定连续升级、反悔精确回退、当日重试与未找到语义', () => {
@@ -1235,7 +1256,8 @@ async function runAllTests() {
         replaceFullFocusTree: () => 1,
         getNodeLitState: () => state,
         updateNodeLitState: next => { state = next; },
-        reorderNodes: () => undefined
+        reorderNodes: () => undefined,
+        createNode: node => node
       },
       systemMetaRepository: {
         getSystemRevision: () => 1,
