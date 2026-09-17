@@ -1,10 +1,9 @@
 import { Request, Response, NextFunction } from 'express';
-import jwt from 'jsonwebtoken';
 import { timingSafeEqual } from 'crypto';
 import { config } from '../config.js';
 import { db } from '../db.js';
-import type { AuthJwtPayload } from '../types.js';
 import { createAuthRepository } from '../repositories/authRepository.js';
+import { createAuthService } from '../services/authService.js';
 
 // 免鉴权白名单子路径（相对于 /api）
 const PUBLIC_PATHS = [
@@ -14,6 +13,12 @@ const PUBLIC_PATHS = [
   '/sync/status'
 ];
 const repository = createAuthRepository(db);
+const service = createAuthService({
+  authRepository: repository,
+  jwtSecret: config.jwtSecret,
+  configuredAdminPasswordHash: config.adminPasswordHash,
+  initialAdminPassword: config.initialAdminPassword || 'admin123456'
+});
 
 export function safeCompare(a: string, b: string): boolean {
   if (typeof a !== 'string' || typeof b !== 'string') return false;
@@ -46,30 +51,23 @@ export function authMiddleware(req: Request, res: Response, next: NextFunction) 
     });
   }
 
-  try {
-    const decoded = jwt.verify(token, config.jwtSecret) as AuthJwtPayload;
-
-    // 检查 jti 是否已在系统吊销黑名单中
-    if (decoded?.jti) {
-      if (repository.isJtiRevoked(decoded.jti, { purgeExpired: true })) {
-        if (isPublic) return next();
-        return res.status(401).json({
-          error: 'TOKEN_REVOKED',
-          message: '该登录凭证已被安全注销，请重新登录'
-        });
-      }
-    }
-
-    req.user = decoded;
+  const session = service.getSessionStatus(token, { purgeExpiredRevocations: true });
+  if (session.isAuthenticated && session.user) {
+    req.user = session.user;
     return next();
+  }
 
-  } catch (err: any) {
-    if (isPublic) return next();
+  if (isPublic) return next();
+  if (session.isRevoked) {
     return res.status(401).json({
-      error: 'TOKEN_EXPIRED_OR_INVALID',
-      message: '登录凭证已过期或无效，请重新登录'
+      error: 'TOKEN_REVOKED',
+      message: '该登录凭证已被安全注销，请重新登录'
     });
   }
+  return res.status(401).json({
+    error: 'TOKEN_EXPIRED_OR_INVALID',
+    message: '登录凭证已过期或无效，请重新登录'
+  });
 }
 
 /**
@@ -77,7 +75,7 @@ export function authMiddleware(req: Request, res: Response, next: NextFunction) 
  */
 export function purgeExpiredRevokedJtis(): number {
   try {
-    const purgedCount = repository.purgeExpiredRevokedJtis();
+    const purgedCount = service.purgeExpiredRevocations();
     if (purgedCount > 0) {
       console.log(`[Sacred Focus Auth] 已清理 ${purgedCount} 条过期 JWT 吊销记录`);
     }

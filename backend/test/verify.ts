@@ -32,6 +32,7 @@ import { createEvolutionRepository } from '../src/repositories/evolutionReposito
 import { createSystemBackupRepository } from '../src/repositories/systemBackupRepository.js';
 import { createAuthRepository } from '../src/repositories/authRepository.js';
 import { createSyncStatusService } from '../src/services/syncStatusService.js';
+import { createAuthService } from '../src/services/authService.js';
 import {
   createMaintenanceRepository,
   MaintenanceInProgressError,
@@ -930,6 +931,43 @@ async function runAllTests() {
       assert.equal(repository.purgeExpiredRevokedJtis(), 1);
       assert.ok(authDb.prepare("SELECT value FROM system_meta WHERE key = 'revoked_jti:active'").get());
       assert.ok(authDb.prepare("SELECT value FROM system_meta WHERE key = 'revoked_jti:malformed'").get());
+    } finally {
+      authDb.close();
+    }
+  });
+
+  await testAsync('authService 锁定登录、会话状态、吊销原因与登出回退过期时间', async () => {
+    const authDb = new Database(':memory:');
+    createTables(authDb);
+    try {
+      const repository = createAuthRepository(authDb, {
+        now: () => 1_000,
+        hashInitialPassword: password => `hash:${password}`
+      });
+      const service = createAuthService({
+        authRepository: repository,
+        jwtSecret: 'test-secret',
+        initialAdminPassword: 'initial',
+        now: () => 1_000,
+        createJti: () => 'generated-jti',
+        comparePassword: async (password, hash) => password === 'correct' && hash === 'hash:initial',
+        signToken: payload => `signed:${payload.jti}:${payload.timestamp}`,
+        verifyToken: token => {
+          if (token === 'invalid') throw new Error('invalid token');
+          return { role: 'admin', jti: token };
+        },
+        decodeToken: token => token === 'logout' ? { jti: 'logout' } : null
+      });
+
+      assert.deepEqual(await service.login('correct'), { token: 'signed:generated-jti:1000', initializedPasswordHash: true });
+      assert.equal(await service.login('wrong'), undefined);
+      assert.deepEqual(await service.login('correct'), { token: 'signed:generated-jti:1000', initializedPasswordHash: false });
+      assert.deepEqual(service.getSessionStatus('valid'), { isAuthenticated: true, user: { role: 'admin', jti: 'valid' } });
+      repository.revokeJti('revoked', 2_000);
+      assert.deepEqual(service.getSessionStatus('revoked'), { isAuthenticated: false, isRevoked: true });
+      assert.deepEqual(service.getSessionStatus('invalid'), { isAuthenticated: false });
+      service.revokeToken('logout');
+      assert.equal(repository.isJtiRevoked('logout'), true);
     } finally {
       authDb.close();
     }
