@@ -10,14 +10,16 @@ import {
 import { exportLimiter, importLimiter } from '../middleware/rateLimiter.js';
 import { validateFullBackupPayload } from '../utils/validators.js';
 import { createSystemBackupRepository } from '../repositories/systemBackupRepository.js';
+import { createSystemBackupService } from '../services/systemBackupService.js';
 
 const router = Router();
 const repository = createSystemBackupRepository(db, { dataDir: config.dataDir });
+const service = createSystemBackupService({ systemBackupRepository: repository });
 
 // 全量导出系统整机镜像（跨设备全量迁移与灾难恢复，15次/10分钟限流保护）
 router.get('/export', exportLimiter, (_req: Request, res: Response) => {
   try {
-    res.json(repository.exportFullBackup());
+    res.json(service.exportFullBackup());
   } catch (e: any) {
     console.error('Failed to export full system backup', e);
     res.status(500).json({ error: 'Failed to export full system backup', details: e.message });

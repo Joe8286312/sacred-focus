@@ -37,6 +37,7 @@ import { createSacredSeatService } from '../src/services/sacredSeatService.js';
 import { createPrecedentCaseService } from '../src/services/precedentCaseService.js';
 import { createFocusTreeService } from '../src/services/focusTreeService.js';
 import { createEvolutionService } from '../src/services/evolutionService.js';
+import { createSystemBackupService } from '../src/services/systemBackupService.js';
 import {
   createMaintenanceRepository,
   MaintenanceInProgressError,
@@ -1585,6 +1586,10 @@ async function runAllTests() {
     assert.equal(backup.summary.caseCount, backup.precedentCases.length);
     assert.equal(backup.summary.logCount, backup.sessionLogs.length);
     assert.equal(backup.summary.snapshotCount, backup.evolution.snapshots.length);
+    const service = createSystemBackupService({
+      systemBackupRepository: { exportFullBackup: () => backup }
+    });
+    assert.equal(service.exportFullBackup(), backup);
   });
 
   test('systemBackup repository 锁定整机恢复、租约复核与失败全量回滚', () => {
