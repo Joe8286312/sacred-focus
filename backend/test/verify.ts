@@ -25,7 +25,7 @@ import {
 import { safeCompare } from '../src/middleware/auth.js';
 import { createTables } from '../src/db/schema.js';
 import { createSystemMetaRepository } from '../src/repositories/systemMetaRepository.js';
-import { createFocusTreeRepository } from '../src/repositories/focusTreeRepository.js';
+import { createFocusTreeRepository, type NodeLitState } from '../src/repositories/focusTreeRepository.js';
 import { createSacredSeatRepository } from '../src/repositories/sacredSeatRepository.js';
 import { createPrecedentCaseRepository } from '../src/repositories/precedentCaseRepository.js';
 import { createEvolutionRepository } from '../src/repositories/evolutionRepository.js';
@@ -801,6 +801,30 @@ async function runAllTests() {
     }
   });
 
+  test('focusTree repository 锁定点亮状态读取与精确字段更新', () => {
+    const focusTreeDb = new Database(':memory:');
+    createTables(focusTreeDb);
+    try {
+      const repository = createFocusTreeRepository(focusTreeDb);
+      repository.upsertFocusNode(makeNode({
+        id: 'lit-state', code: 'LIT', name: '点亮节点', level: 2, maxLevel: 4, isLit: false,
+        lastLitDate: '2026-09-16', previousLevel: 1, previousLastLitDate: '2026-09-15'
+      }));
+      assert.deepEqual(repository.getNodeLitState('lit-state'), {
+        id: 'lit-state', level: 2, maxLevel: 4, isLit: 0, lastLitDate: '2026-09-16', previousLevel: 1, previousLastLitDate: '2026-09-15'
+      });
+      repository.updateNodeLitState({
+        id: 'lit-state', level: 3, maxLevel: 4, isLit: 1, lastLitDate: '2026-09-17', previousLevel: 2, previousLastLitDate: '2026-09-16'
+      });
+      assert.deepEqual(repository.getNodeLitState('lit-state'), {
+        id: 'lit-state', level: 3, maxLevel: 4, isLit: 1, lastLitDate: '2026-09-17', previousLevel: 2, previousLastLitDate: '2026-09-16'
+      });
+      assert.equal(repository.getNodeLitState('missing'), undefined);
+    } finally {
+      focusTreeDb.close();
+    }
+  });
+
   test('maintenance repository 锁定租约冲突、revision 前置条件、过期容错与精确释放', () => {
     let currentTime = 1_000;
     const metadata = createSystemMetaRepository(testDb);
@@ -1154,7 +1178,9 @@ async function runAllTests() {
         replaceFullFocusTree: input => {
           calls.push(`replace:${input.expectedRevision}:${input.tree.nodes.length}`);
           return 8;
-        }
+        },
+        getNodeLitState: () => undefined,
+        updateNodeLitState: () => undefined
       },
       systemMetaRepository: {
         getSystemRevision: () => revision,
@@ -1178,6 +1204,43 @@ async function runAllTests() {
     ]);
     assert.deepEqual(service.synchronizeFocusTree({ expectedRevision: 7, tree }), { revision: 8, data: tree });
     assert.deepEqual(calls.slice(2), ['replace:7:0']);
+  });
+
+  test('focusTreeService 锁定连续升级、反悔精确回退、当日重试与未找到语义', () => {
+    let state: NodeLitState | undefined = {
+      id: 'node', level: 3, maxLevel: 3, isLit: 0, lastLitDate: '2026-09-16', previousLevel: 1, previousLastLitDate: '2026-09-15'
+    };
+    let revisions = 0;
+    const service = createFocusTreeService({
+      focusTreeRepository: {
+        getFullFocusTreeData: () => ({ nodes: [], edges: [], groups: [], labels: [] }),
+        replaceFullFocusTree: () => 1,
+        getNodeLitState: () => state,
+        updateNodeLitState: next => { state = next; }
+      },
+      systemMetaRepository: {
+        getSystemRevision: () => 1,
+        deleteValue: () => true,
+        incrementSystemRevision: () => ++revisions
+      },
+      settleDailyState: () => null,
+      getBusinessDay: () => '2026-09-17',
+      getPreviousBusinessDay: () => '2026-09-16',
+      now: () => new Date('2026-09-17T12:00:00.000Z')
+    });
+
+    assert.deepEqual(service.toggleNodeLit('node'), { id: 'node', isLit: true, level: 4, maxLevel: 4, lastLitDate: '2026-09-17' });
+    assert.deepEqual(state, { id: 'node', isLit: 1, level: 4, maxLevel: 4, lastLitDate: '2026-09-17', previousLevel: 3, previousLastLitDate: '2026-09-16' });
+    assert.deepEqual(service.toggleNodeLit('node'), { id: 'node', isLit: false, level: 3, maxLevel: 3, lastLitDate: '2026-09-16' });
+    assert.equal(revisions, 2);
+
+    state = { id: 'node', level: 1, maxLevel: 5, isLit: 1, lastLitDate: '2026-09-17', previousLevel: 2, previousLastLitDate: '2026-08-01' };
+    assert.deepEqual(service.toggleNodeLit('node'), { id: 'node', isLit: false, level: 2, maxLevel: 5, lastLitDate: '2026-08-01' });
+    state = { id: 'node', level: 1, maxLevel: 1, isLit: 0, lastLitDate: '2026-09-17', previousLevel: 2, previousLastLitDate: null };
+    assert.deepEqual(service.toggleNodeLit('node'), { id: 'node', isLit: true, level: 3, maxLevel: 3, lastLitDate: '2026-09-17' });
+    state = undefined;
+    assert.equal(service.toggleNodeLit('missing'), undefined);
+    assert.equal(revisions, 4);
   });
 
   test('evolution repository 锁定回滚和架构导入事务、404 优先级与版本冲突', () => {

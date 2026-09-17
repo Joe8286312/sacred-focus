@@ -5,7 +5,6 @@ import {
   incrementSystemRevision,
   upsertFocusNode
 } from '../db.js';
-import { getBusinessDay, getPreviousBusinessDay } from '../domain/calendar/businessDay.js';
 import type { FocusNode, FocusEdge, FocusGroup, FocusLabel, FocusNodeRow, FocusGroupRow } from '../types.js';
 import { createFocusTreeRepository } from '../repositories/focusTreeRepository.js';
 import { createSystemMetaRepository } from '../repositories/systemMetaRepository.js';
@@ -79,102 +78,11 @@ router.put('/', (req: Request, res: Response) => {
 // 点亮/反悔取消点亮节点（基于连续天数与凌晨 4 点业务日状态机）
 router.patch('/nodes/:id/toggle-lit', (req: Request, res: Response) => {
   const { id } = req.params;
-  const current = db.prepare('SELECT id, level, maxLevel, isLit, lastLitDate, previousLevel, previousLastLitDate FROM focus_nodes WHERE id = ?').get(id) as {
-    id: string;
-    level: number;
-    maxLevel: number;
-    isLit: number;
-    lastLitDate?: string | null;
-    previousLevel?: number;
-    previousLastLitDate?: string | null;
-  } | undefined;
-
-  if (!current) {
+  const toggled = focusTreeService.toggleNodeLit(id as string);
+  if (!toggled) {
     return res.status(404).json({ error: 'Node not found' });
   }
-
-  const today = getBusinessDay();
-  const yesterday = getPreviousBusinessDay(today);
-
-  let nextLit: boolean;
-  let nextLevel: number;
-  let nextMaxLevel: number;
-  let nextLastLitDate: string | null;
-  let nextPreviousLevel = current.previousLevel ?? 0;
-  let nextPreviousLastLitDate = current.previousLastLitDate ?? null;
-
-  if (current.isLit === 0) {
-    // 动作：执行今日点亮升级
-    nextLit = true;
-    nextPreviousLevel = current.level; // 备份当前等级供反悔回退
-    nextPreviousLastLitDate = current.lastLitDate ?? null; // 备份当前打卡日期供反悔精确回退 (P1-004)
-
-    if (current.lastLitDate === yesterday) {
-      // 连续天数：昨日已点亮，今日连续打卡，等级 +1
-      nextLevel = current.level + 1;
-    } else if (current.lastLitDate === today) {
-      // 今日此前点亮过又撤销，今日再次点亮
-      nextLevel = Math.max((current.previousLevel ?? 0) + 1, 1);
-    } else {
-      // 初始首次点亮或断签后首次点亮：升级至 1 级
-      nextLevel = 1;
-    }
-
-    nextMaxLevel = Math.max(current.maxLevel, nextLevel);
-    nextLastLitDate = today;
-  } else {
-    // 动作：当天反悔取消点亮
-    nextLit = false;
-    // 等级回退到今日点亮前的备份等级
-    nextLevel = Math.max(current.previousLevel ?? 0, 0);
-
-    // 最高等级：若最高等级恰好由今日点亮所抬升，则同步减回；否则保留历史最高（且保底至少为 1 级）
-    if (current.maxLevel === current.level) {
-      nextMaxLevel = Math.max(nextLevel, 1);
-    } else {
-      nextMaxLevel = Math.max(current.maxLevel, 1);
-    }
-
-    // P1-004 治理：反悔时精准还原打卡前保存的真实历史业务日期，杜绝写死 yesterday 导致的断签洗白刷级漏洞
-    if (current.previousLastLitDate !== undefined && current.previousLastLitDate !== null) {
-      nextLastLitDate = current.previousLastLitDate;
-    } else if (nextLevel > 0) {
-      nextLastLitDate = yesterday;
-    } else {
-      nextLastLitDate = null;
-    }
-    nextPreviousLastLitDate = null;
-  }
-
-  db.prepare(`
-    UPDATE focus_nodes SET
-      isLit = @isLit,
-      level = @level,
-      maxLevel = @maxLevel,
-      lastLitDate = @lastLitDate,
-      previousLevel = @previousLevel,
-      previousLastLitDate = @previousLastLitDate
-    WHERE id = @id
-  `).run({
-    id,
-    isLit: nextLit ? 1 : 0,
-    level: nextLevel,
-    maxLevel: nextMaxLevel,
-    lastLitDate: nextLastLitDate,
-    previousLevel: nextPreviousLevel,
-    previousLastLitDate: nextPreviousLastLitDate
-  });
-
-  // P1-002: 状态机单点修改必须原子递增版本号，通知多端探针
-  incrementSystemRevision();
-
-  res.json({
-    id,
-    isLit: nextLit,
-    level: nextLevel,
-    maxLevel: nextMaxLevel,
-    lastLitDate: nextLastLitDate
-  });
+  res.json(toggled);
 });
 
 // 保存列表基准排序

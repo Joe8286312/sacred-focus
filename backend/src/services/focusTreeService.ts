@@ -1,5 +1,6 @@
 import type { FocusTreeData, ResetNodeItem } from '../types.js';
-import type { FocusTreeRepository } from '../repositories/focusTreeRepository.js';
+import { getBusinessDay, getPreviousBusinessDay } from '../domain/calendar/businessDay.js';
+import type { FocusTreeRepository, NodeLitState } from '../repositories/focusTreeRepository.js';
 import type { SystemMetaRepository } from '../repositories/systemMetaRepository.js';
 
 export interface FocusTreeSettlement {
@@ -8,9 +9,11 @@ export interface FocusTreeSettlement {
 }
 
 export interface FocusTreeServiceDependencies {
-  focusTreeRepository: Pick<FocusTreeRepository, 'getFullFocusTreeData' | 'replaceFullFocusTree'>;
+  focusTreeRepository: Pick<FocusTreeRepository, 'getFullFocusTreeData' | 'replaceFullFocusTree' | 'getNodeLitState' | 'updateNodeLitState'>;
   systemMetaRepository: Pick<SystemMetaRepository, 'deleteValue' | 'getSystemRevision' | 'incrementSystemRevision'>;
   settleDailyState: () => FocusTreeSettlement | null;
+  getBusinessDay?: () => string;
+  getPreviousBusinessDay?: (businessDay: string) => string;
   now?: () => Date;
 }
 
@@ -21,6 +24,8 @@ export function createFocusTreeService({
   focusTreeRepository,
   systemMetaRepository,
   settleDailyState,
+  getBusinessDay: calculateBusinessDay = getBusinessDay,
+  getPreviousBusinessDay: calculatePreviousBusinessDay = getPreviousBusinessDay,
   now = () => new Date()
 }: FocusTreeServiceDependencies) {
   function getFocusTree(): FocusTreeReadResult {
@@ -43,5 +48,59 @@ export function createFocusTreeService({
     return { revision, data: focusTreeRepository.getFullFocusTreeData() };
   }
 
-  return { getFocusTree, resetSettlementAudit, synchronizeFocusTree };
+  function toggleNodeLit(id: string): { id: string; isLit: boolean; level: number; maxLevel: number; lastLitDate: string | null } | undefined {
+    const current = focusTreeRepository.getNodeLitState(id);
+    if (!current) return undefined;
+
+    const today = calculateBusinessDay();
+    const yesterday = calculatePreviousBusinessDay(today);
+    let nextLit: boolean;
+    let nextLevel: number;
+    let nextMaxLevel: number;
+    let nextLastLitDate: string | null;
+    let nextPreviousLevel = current.previousLevel ?? 0;
+    let nextPreviousLastLitDate = current.previousLastLitDate ?? null;
+
+    if (current.isLit === 0) {
+      nextLit = true;
+      nextPreviousLevel = current.level;
+      nextPreviousLastLitDate = current.lastLitDate ?? null;
+      if (current.lastLitDate === yesterday) {
+        nextLevel = current.level + 1;
+      } else if (current.lastLitDate === today) {
+        nextLevel = Math.max((current.previousLevel ?? 0) + 1, 1);
+      } else {
+        nextLevel = 1;
+      }
+      nextMaxLevel = Math.max(current.maxLevel, nextLevel);
+      nextLastLitDate = today;
+    } else {
+      nextLit = false;
+      nextLevel = Math.max(current.previousLevel ?? 0, 0);
+      nextMaxLevel = current.maxLevel === current.level ? Math.max(nextLevel, 1) : Math.max(current.maxLevel, 1);
+      if (current.previousLastLitDate !== undefined && current.previousLastLitDate !== null) {
+        nextLastLitDate = current.previousLastLitDate;
+      } else if (nextLevel > 0) {
+        nextLastLitDate = yesterday;
+      } else {
+        nextLastLitDate = null;
+      }
+      nextPreviousLastLitDate = null;
+    }
+
+    const nextState: NodeLitState = {
+      id,
+      isLit: nextLit ? 1 : 0,
+      level: nextLevel,
+      maxLevel: nextMaxLevel,
+      lastLitDate: nextLastLitDate,
+      previousLevel: nextPreviousLevel,
+      previousLastLitDate: nextPreviousLastLitDate
+    };
+    focusTreeRepository.updateNodeLitState(nextState);
+    systemMetaRepository.incrementSystemRevision(now().toISOString());
+    return { id, isLit: nextLit, level: nextLevel, maxLevel: nextMaxLevel, lastLitDate: nextLastLitDate };
+  }
+
+  return { getFocusTree, resetSettlementAudit, synchronizeFocusTree, toggleNodeLit };
 }

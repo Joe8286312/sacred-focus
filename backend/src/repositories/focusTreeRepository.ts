@@ -18,9 +18,21 @@ export interface FocusTreeRepository {
   upsertFocusNode(node: FocusNode, sortOrder?: number): FocusNode;
   getFullFocusTreeData(): FocusTreeData;
   replaceFullFocusTree(input: { expectedRevision: number; tree: FocusTreeData }): number;
+  getNodeLitState(id: string): NodeLitState | undefined;
+  updateNodeLitState(state: NodeLitState): void;
 }
 
 export interface FocusTreeRepositoryOptions { now?: () => Date; }
+
+export interface NodeLitState {
+  id: string;
+  level: number;
+  maxLevel: number;
+  isLit: number;
+  lastLitDate?: string | null;
+  previousLevel?: number;
+  previousLastLitDate?: string | null;
+}
 
 /** 国策树的 SQLite 读写边界；调用方必须显式注入数据库端口。 */
 export function createFocusTreeRepository(
@@ -210,5 +222,23 @@ export function createFocusTreeRepository(
     })();
   }
 
-  return { upsertFocusNode, getFullFocusTreeData, replaceFullFocusTree };
+  function getNodeLitState(id: string): NodeLitState | undefined {
+    return db.prepare('SELECT id, level, maxLevel, isLit, lastLitDate, previousLevel, previousLastLitDate FROM focus_nodes WHERE id = ?')
+      .get(id) as NodeLitState | undefined;
+  }
+
+  function updateNodeLitState(state: NodeLitState): void {
+    db.prepare(`
+      UPDATE focus_nodes SET
+        isLit = @isLit,
+        level = @level,
+        maxLevel = @maxLevel,
+        lastLitDate = @lastLitDate,
+        previousLevel = @previousLevel,
+        previousLastLitDate = @previousLastLitDate
+      WHERE id = @id
+    `).run(state);
+  }
+
+  return { upsertFocusNode, getFullFocusTreeData, replaceFullFocusTree, getNodeLitState, updateNodeLitState };
 }
