@@ -1333,7 +1333,10 @@ async function runAllTests() {
           createSnapshot: input => {
             snapshotInput = input;
             return { version: 'v1.1', nextVersion: 'v1.1', slotIndex: 0, targetSlotIndex: 0, activePointerIndex: 0, revision: 43 };
-          }
+          },
+          rollback: input => input.targetSlotIndex === 2 ? {
+            version: 'v1.1', revision: 43, liveTree: { nodes: [], edges: [], groups: [], labels: [] }
+          } : undefined
         },
         systemMetaRepository: systemMeta
       });
@@ -1342,6 +1345,10 @@ async function runAllTests() {
         version: 'v1.1', nextVersion: 'v1.1', slotIndex: 0, targetSlotIndex: 0, activePointerIndex: 0, revision: 43
       });
       assert.deepEqual(snapshotInput, expectedSnapshotInput);
+      assert.deepEqual(snapshotService.rollback({ expectedRevision: 42, targetSlotIndex: 2 }), {
+        version: 'v1.1', revision: 43, liveTree: { nodes: [], edges: [], groups: [], labels: [] }
+      });
+      assert.equal(snapshotService.rollback({ expectedRevision: 42, targetSlotIndex: 4 }), undefined);
     } finally {
       evolutionDb.close();
     }

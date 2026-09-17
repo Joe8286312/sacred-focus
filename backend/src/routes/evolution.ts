@@ -69,7 +69,7 @@ router.post('/rollback', (req: Request, res: Response) => {
   if (expectedRevision === null) return;
 
   try {
-    const restored = repository.rollback({ expectedRevision, targetSlotIndex });
+    const restored = service.rollback({ expectedRevision, targetSlotIndex });
     if (!restored) {
       return res.status(404).json({ error: `Snapshot not found at slot ${targetSlotIndex}` });
     }
