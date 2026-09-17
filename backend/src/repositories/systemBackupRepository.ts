@@ -1,3 +1,6 @@
+import path from 'path';
+import { promises as fs } from 'fs';
+import type { Database as SqliteDatabase } from 'better-sqlite3';
 import type { SqliteDatabasePort } from './databasePort.js';
 import { createFocusTreeRepository } from './focusTreeRepository.js';
 import { createMaintenanceRepository, type MaintenanceLease, type MaintenanceRepository } from './maintenanceRepository.js';
@@ -40,17 +43,34 @@ export interface FullSystemRestoreSummary {
 
 export interface SystemBackupRepository {
   exportFullBackup(): FullSystemBackup;
+  createPreImportBackup(): Promise<PreImportBackupResult>;
   restoreFullBackup(input: FullSystemRestoreInput): FullSystemRestoreSummary;
 }
 
 export interface SystemBackupRepositoryOptions {
   maintenanceRepository?: MaintenanceRepository;
+  dataDir?: string;
+  preImportBackupRetention?: number;
+  now?: () => Date;
 }
+
+export interface PreImportBackupResult {
+  backupFile: string;
+  prunedCount: number;
+  pruneError?: unknown;
+}
+
+type BackupCapableSqliteDatabasePort = SqliteDatabasePort & Pick<SqliteDatabase, 'backup'>;
 
 /** 系统整机镜像导出与事务恢复的 SQLite 数据访问边界。 */
 export function createSystemBackupRepository(
   db: SqliteDatabasePort,
-  { maintenanceRepository }: SystemBackupRepositoryOptions = {}
+  {
+    maintenanceRepository,
+    dataDir,
+    preImportBackupRetention = 5,
+    now = () => new Date()
+  }: SystemBackupRepositoryOptions = {}
 ): SystemBackupRepository {
   const focusTree = createFocusTreeRepository(db);
   const maintenance = maintenanceRepository ?? createMaintenanceRepository(db);
@@ -70,6 +90,34 @@ export function createSystemBackupRepository(
       focusTree: liveTree, liveTree, sacredSeatConfig, precedentCases,
       evolution: { state: evolutionState, snapshots: evolutionSnapshots }, sessionLogs
     };
+  }
+
+  async function createPreImportBackup(): Promise<PreImportBackupResult> {
+    if (!dataDir || !('backup' in db) || typeof db.backup !== 'function') {
+      throw new Error('PRE_IMPORT_BACKUP_UNSUPPORTED');
+    }
+
+    const timestamp = now().toISOString().replace(/[:.]/g, '-');
+    const backupFile = path.join(dataDir, `app_pre_import_${timestamp}.db`);
+    await (db as BackupCapableSqliteDatabasePort).backup(backupFile);
+
+    try {
+      const entries = await fs.readdir(dataDir, { withFileTypes: true });
+      const backupFiles = await Promise.all(entries
+        .filter(entry => entry.isFile() && /^app_pre_import_.*\.db$/i.test(entry.name))
+        .map(async entry => {
+          const filePath = path.join(dataDir, entry.name);
+          const stat = await fs.stat(filePath);
+          return { filePath, modifiedAt: stat.mtimeMs };
+        }));
+      backupFiles.sort((a, b) => b.modifiedAt - a.modifiedAt);
+      const expiredBackups = backupFiles.slice(preImportBackupRetention);
+      await Promise.all(expiredBackups.map(backup => fs.unlink(backup.filePath)));
+      return { backupFile, prunedCount: expiredBackups.length };
+    } catch (pruneError) {
+      // 热备已成功；裁剪失败不能降低当前恢复操作的可回退性。
+      return { backupFile, prunedCount: 0, pruneError };
+    }
   }
 
   function restoreFullBackup({
@@ -199,5 +247,5 @@ export function createSystemBackupRepository(
     })();
   }
 
-  return { exportFullBackup, restoreFullBackup };
+  return { exportFullBackup, createPreImportBackup, restoreFullBackup };
 }

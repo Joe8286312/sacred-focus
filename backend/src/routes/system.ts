@@ -1,6 +1,4 @@
 import { Router, Request, Response } from 'express';
-import path from 'path';
-import { promises as fs } from 'fs';
 import { config } from '../config.js';
 import {
   acquireMaintenanceLease,
@@ -14,24 +12,7 @@ import { validateFullBackupPayload } from '../utils/validators.js';
 import { createSystemBackupRepository } from '../repositories/systemBackupRepository.js';
 
 const router = Router();
-const PRE_IMPORT_BACKUP_RETENTION = 5;
-const repository = createSystemBackupRepository(db);
-
-async function prunePreImportBackups() {
-  const entries = await fs.readdir(config.dataDir, { withFileTypes: true });
-  const backupFiles = await Promise.all(entries
-    .filter(entry => entry.isFile() && /^app_pre_import_.*\.db$/i.test(entry.name))
-    .map(async entry => {
-      const filePath = path.join(config.dataDir, entry.name);
-      const stat = await fs.stat(filePath);
-      return { filePath, modifiedAt: stat.mtimeMs };
-    }));
-
-  backupFiles.sort((a, b) => b.modifiedAt - a.modifiedAt);
-  const expiredBackups = backupFiles.slice(PRE_IMPORT_BACKUP_RETENTION);
-  await Promise.all(expiredBackups.map(backup => fs.unlink(backup.filePath)));
-  return expiredBackups.length;
-}
+const repository = createSystemBackupRepository(db, { dataDir: config.dataDir });
 
 // 全量导出系统整机镜像（跨设备全量迁移与灾难恢复，15次/10分钟限流保护）
 router.get('/export', exportLimiter, (_req: Request, res: Response) => {
@@ -88,18 +69,14 @@ router.post('/import', importLimiter, async (req: Request, res: Response) => {
 
   // 导入前自动热备当前 SQLite 数据库快照 (P1-002: 热备失败必须终止导入，严禁破坏性覆写)
   try {
-    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-    const backupFile = path.join(config.dataDir, `app_pre_import_${timestamp}.db`);
-    await db.backup(backupFile);
-    console.log(`[Sacred Focus System] 预导入安全热备已生成: ${backupFile}`);
-    try {
-      const prunedCount = await prunePreImportBackups();
-      if (prunedCount > 0) {
-        console.log(`[Sacred Focus System] 已淘汰 ${prunedCount} 个过期预导入热备`);
-      }
-    } catch (pruneErr) {
+    const result = await repository.createPreImportBackup();
+    console.log(`[Sacred Focus System] 预导入安全热备已生成: ${result.backupFile}`);
+    if (result.prunedCount > 0) {
+      console.log(`[Sacred Focus System] 已淘汰 ${result.prunedCount} 个过期预导入热备`);
+    }
+    if (result.pruneError) {
       // 热备本身已经成功；清理失败不应降低本次恢复的可回退性。
-      console.warn('[Sacred Focus System] 预导入热备清理失败，将在下次恢复时重试:', pruneErr);
+      console.warn('[Sacred Focus System] 预导入热备清理失败，将在下次恢复时重试:', result.pruneError);
     }
   } catch (backupErr: any) {
     console.error('[Sacred Focus System] 预导入热备创建失败，终止导入操作以防数据丢失:', backupErr);

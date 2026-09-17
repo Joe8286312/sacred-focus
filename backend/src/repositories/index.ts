@@ -12,6 +12,7 @@ export {
   type FullSystemBackup,
   type FullSystemRestoreInput,
   type FullSystemRestoreSummary,
+  type PreImportBackupResult,
   type SystemBackupRepository,
   type SystemBackupRepositoryOptions
 } from './systemBackupRepository.js';

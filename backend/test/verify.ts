@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { execSync } from 'node:child_process';
 import Database from 'better-sqlite3';
@@ -60,6 +61,18 @@ let failedCount = 0;
 function test(name: string, fn: () => void | Promise<void>) {
   try {
     fn();
+    console.log(`  [PASS] ${name}`);
+    passedCount++;
+  } catch (err: any) {
+    console.error(`  [FAIL] ${name}`);
+    console.error(`         ${err?.message || err}`);
+    failedCount++;
+  }
+}
+
+async function testAsync(name: string, fn: () => Promise<void>) {
+  try {
+    await fn();
     console.log(`  [PASS] ${name}`);
     passedCount++;
   } catch (err: any) {
@@ -998,6 +1011,34 @@ async function runAllTests() {
       maintenance.releaseMaintenanceLease(failingLease);
     } finally {
       restoreDb.close();
+    }
+  });
+
+  await testAsync('systemBackup repository 锁定预导入热备与保留数量裁剪', async () => {
+    const backupDb = new Database(':memory:');
+    const backupDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sacred-focus-pre-import-'));
+    try {
+      createTables(backupDb);
+      const oldest = path.join(backupDir, 'app_pre_import_oldest.db');
+      const newer = path.join(backupDir, 'app_pre_import_newer.db');
+      fs.writeFileSync(oldest, 'oldest');
+      fs.writeFileSync(newer, 'newer');
+      fs.utimesSync(oldest, new Date('2026-09-15T00:00:00.000Z'), new Date('2026-09-15T00:00:00.000Z'));
+      fs.utimesSync(newer, new Date('2026-09-16T00:00:00.000Z'), new Date('2026-09-16T00:00:00.000Z'));
+
+      const repository = createSystemBackupRepository(backupDb, {
+        dataDir: backupDir,
+        preImportBackupRetention: 1,
+        now: () => new Date('2026-09-17T00:00:00.000Z')
+      });
+      const result = await repository.createPreImportBackup();
+      assert.equal(path.basename(result.backupFile), 'app_pre_import_2026-09-17T00-00-00-000Z.db');
+      assert.ok(fs.existsSync(result.backupFile));
+      assert.equal(result.prunedCount, 2);
+      assert.deepEqual(fs.readdirSync(backupDir).filter(name => /^app_pre_import_.*\.db$/i.test(name)), [path.basename(result.backupFile)]);
+    } finally {
+      backupDb.close();
+      fs.rmSync(backupDir, { recursive: true, force: true });
     }
   });
 
