@@ -30,6 +30,7 @@ import { createSacredSeatRepository } from '../src/repositories/sacredSeatReposi
 import { createPrecedentCaseRepository } from '../src/repositories/precedentCaseRepository.js';
 import { createEvolutionRepository } from '../src/repositories/evolutionRepository.js';
 import { createSystemBackupRepository } from '../src/repositories/systemBackupRepository.js';
+import { createAuthRepository } from '../src/repositories/authRepository.js';
 import {
   createMaintenanceRepository,
   MaintenanceInProgressError,
@@ -900,6 +901,37 @@ async function runAllTests() {
     assert.equal(architecture.evolution.snapshots.length, 2);
     assert.equal(typeof architecture.evolution.snapshots[0].dataJson, 'string');
     assert.throws(() => repository.createSnapshot({ expectedRevision: revision, changelogNotes: '过期', isMajor: false }), RevisionPreconditionError);
+  });
+
+  test('auth repository 锁定管理员哈希优先级、JTI 吊销与过期清理', () => {
+    const authDb = new Database(':memory:');
+    createTables(authDb);
+    try {
+      const repository = createAuthRepository(authDb, {
+        now: () => 1_500,
+        hashInitialPassword: password => `hash:${password}`
+      });
+      assert.deepEqual(repository.getAdminPasswordHash({ initialPassword: 'initial' }), { hash: 'hash:initial', initialized: true });
+      assert.deepEqual(repository.getAdminPasswordHash({ initialPassword: 'ignored' }), { hash: 'hash:initial', initialized: false });
+      assert.deepEqual(repository.getAdminPasswordHash({ configuredHash: 'configured-hash', initialPassword: 'ignored' }), { hash: 'configured-hash', initialized: false });
+
+      repository.revokeJti('active', 2_000);
+      repository.revokeJti('expired', 1_000);
+      authDb.prepare("INSERT INTO system_meta (key, value) VALUES ('revoked_jti:malformed', 'not-a-number')").run();
+      assert.equal(repository.isJtiRevoked('active'), true);
+      assert.equal(repository.isJtiRevoked('malformed'), true);
+      assert.equal(repository.isJtiRevoked('expired'), false);
+      assert.ok(authDb.prepare("SELECT value FROM system_meta WHERE key = 'revoked_jti:expired'").get());
+      assert.equal(repository.isJtiRevoked('expired', { purgeExpired: true }), false);
+      assert.equal(authDb.prepare("SELECT value FROM system_meta WHERE key = 'revoked_jti:expired'").get(), undefined);
+
+      repository.revokeJti('expired-batch', 1_000);
+      assert.equal(repository.purgeExpiredRevokedJtis(), 1);
+      assert.ok(authDb.prepare("SELECT value FROM system_meta WHERE key = 'revoked_jti:active'").get());
+      assert.ok(authDb.prepare("SELECT value FROM system_meta WHERE key = 'revoked_jti:malformed'").get());
+    } finally {
+      authDb.close();
+    }
   });
 
   test('evolution repository 锁定回滚和架构导入事务、404 优先级与版本冲突', () => {

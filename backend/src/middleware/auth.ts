@@ -4,6 +4,7 @@ import { timingSafeEqual } from 'crypto';
 import { config } from '../config.js';
 import { db } from '../db.js';
 import type { AuthJwtPayload } from '../types.js';
+import { createAuthRepository } from '../repositories/authRepository.js';
 
 // 免鉴权白名单子路径（相对于 /api）
 const PUBLIC_PATHS = [
@@ -12,6 +13,7 @@ const PUBLIC_PATHS = [
   '/auth/status',
   '/sync/status'
 ];
+const repository = createAuthRepository(db);
 
 export function safeCompare(a: string, b: string): boolean {
   if (typeof a !== 'string' || typeof b !== 'string') return false;
@@ -49,22 +51,12 @@ export function authMiddleware(req: Request, res: Response, next: NextFunction) 
 
     // 检查 jti 是否已在系统吊销黑名单中
     if (decoded?.jti) {
-      const revoked = db.prepare("SELECT value FROM system_meta WHERE key = ?")
-        .get(`revoked_jti:${decoded.jti}`) as { value: string } | undefined;
-      if (revoked) {
-        const exp = parseInt(revoked.value, 10);
-        if (isNaN(exp) || Date.now() < exp) {
-          if (isPublic) return next();
-          return res.status(401).json({
-            error: 'TOKEN_REVOKED',
-            message: '该登录凭证已被安全注销，请重新登录'
-          });
-        } else {
-          // 该 token 自然过期时间已过，自动物理淘汰该吊销记录 (P2-SEC-03)
-          try {
-            db.prepare("DELETE FROM system_meta WHERE key = ?").run(`revoked_jti:${decoded.jti}`);
-          } catch (_) {}
-        }
+      if (repository.isJtiRevoked(decoded.jti, { purgeExpired: true })) {
+        if (isPublic) return next();
+        return res.status(401).json({
+          error: 'TOKEN_REVOKED',
+          message: '该登录凭证已被安全注销，请重新登录'
+        });
       }
     }
 
@@ -85,20 +77,7 @@ export function authMiddleware(req: Request, res: Response, next: NextFunction) 
  */
 export function purgeExpiredRevokedJtis(): number {
   try {
-    const rows = db.prepare("SELECT key, value FROM system_meta WHERE key LIKE 'revoked_jti:%'").all() as Array<{ key: string; value: string }>;
-    const now = Date.now();
-    let purgedCount = 0;
-    const deleteStmt = db.prepare("DELETE FROM system_meta WHERE key = ?");
-    const purgeTx = db.transaction(() => {
-      for (const r of rows) {
-        const exp = parseInt(r.value, 10);
-        if (!isNaN(exp) && now >= exp) {
-          deleteStmt.run(r.key);
-          purgedCount++;
-        }
-      }
-    });
-    purgeTx();
+    const purgedCount = repository.purgeExpiredRevokedJtis();
     if (purgedCount > 0) {
       console.log(`[Sacred Focus Auth] 已清理 ${purgedCount} 条过期 JWT 吊销记录`);
     }
@@ -108,4 +87,3 @@ export function purgeExpiredRevokedJtis(): number {
     return 0;
   }
 }
-

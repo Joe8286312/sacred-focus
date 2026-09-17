@@ -8,28 +8,21 @@ import { db } from '../db.js';
 import { loginLimiter } from '../middleware/rateLimiter.js';
 import { safeCompare } from '../middleware/auth.js';
 import type { AuthJwtPayload } from '../types.js';
+import { createAuthRepository } from '../repositories/authRepository.js';
 
 const router = Router();
+const repository = createAuthRepository(db);
 
 // 获取当前系统有效管理员密码哈希
 export function getAdminPasswordHash(): string {
-  // 1. 优先采用环境变量配置的哈希
-  if (config.adminPasswordHash) {
-    return config.adminPasswordHash;
+  const result = repository.getAdminPasswordHash({
+    configuredHash: config.adminPasswordHash,
+    initialPassword: config.initialAdminPassword || 'admin123456'
+  });
+  if (result.initialized) {
+    console.info('[Sacred Focus Auth] 初始管理员密码哈希已生成并持久化');
   }
-
-  // 2. 其次查询数据库持久化的哈希
-  const row = db.prepare("SELECT value FROM system_meta WHERE key = 'admin_password_hash'").get() as { value: string } | undefined;
-  if (row && row.value) {
-    return row.value;
-  }
-
-  // 3. 若均未配置，利用初始密码自动加盐哈希并持久化
-  const initialPassword = config.initialAdminPassword || 'admin123456';
-  const newHash = bcrypt.hashSync(initialPassword, 12);
-  db.prepare("INSERT OR REPLACE INTO system_meta (key, value) VALUES ('admin_password_hash', ?)").run(newHash);
-  console.info('[Sacred Focus Auth] 初始管理员密码哈希已生成并持久化');
-  return newHash;
+  return result.hash;
 }
 
 // 登录验证并签发 30 天凭证
@@ -95,13 +88,8 @@ router.get('/status', (req: Request, res: Response) => {
   try {
     const decoded = jwt.verify(token, config.jwtSecret) as AuthJwtPayload;
     if (decoded?.jti) {
-      const revoked = db.prepare("SELECT value FROM system_meta WHERE key = ?")
-        .get(`revoked_jti:${decoded.jti}`) as { value: string } | undefined;
-      if (revoked) {
-        const exp = parseInt(revoked.value, 10);
-        if (isNaN(exp) || Date.now() < exp) {
-          return res.json({ isAuthenticated: false });
-        }
+      if (repository.isJtiRevoked(decoded.jti)) {
+        return res.json({ isAuthenticated: false });
       }
     }
     return res.json({ isAuthenticated: true, user: decoded });
@@ -122,8 +110,7 @@ router.post('/logout', (req: Request, res: Response) => {
       const decoded = jwt.decode(token) as { jti?: string; exp?: number } | null;
       if (decoded?.jti) {
         const exp = decoded.exp ? decoded.exp * 1000 : Date.now() + 30 * 24 * 60 * 60 * 1000;
-        db.prepare("INSERT OR REPLACE INTO system_meta (key, value) VALUES (?, ?)")
-          .run(`revoked_jti:${decoded.jti}`, String(exp));
+        repository.revokeJti(decoded.jti, exp);
       }
     } catch (e) {
       // 忽略解析错误
