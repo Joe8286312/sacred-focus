@@ -1336,7 +1336,13 @@ async function runAllTests() {
           },
           rollback: input => input.targetSlotIndex === 2 ? {
             version: 'v1.1', revision: 43, liveTree: { nodes: [], edges: [], groups: [], labels: [] }
-          } : undefined
+          } : undefined,
+          exportArchitecture: () => ({
+            schemaVersion: '1.0', dataType: 'FOCUS_TREE_ARCHITECTURE', exportedAt: '2026-09-18T00:00:00.000Z',
+            focusTree: { nodes: [], edges: [], groups: [], labels: [] },
+            liveTree: { nodes: [], edges: [], groups: [], labels: [] },
+            evolution: { state: undefined, snapshots: [] }
+          })
         },
         systemMetaRepository: systemMeta
       });
@@ -1349,6 +1355,12 @@ async function runAllTests() {
         version: 'v1.1', revision: 43, liveTree: { nodes: [], edges: [], groups: [], labels: [] }
       });
       assert.equal(snapshotService.rollback({ expectedRevision: 42, targetSlotIndex: 4 }), undefined);
+      assert.deepEqual(snapshotService.exportArchitecture(), {
+        schemaVersion: '1.0', dataType: 'FOCUS_TREE_ARCHITECTURE', exportedAt: '2026-09-18T00:00:00.000Z',
+        focusTree: { nodes: [], edges: [], groups: [], labels: [] },
+        liveTree: { nodes: [], edges: [], groups: [], labels: [] },
+        evolution: { state: undefined, snapshots: [] }
+      });
     } finally {
       evolutionDb.close();
     }

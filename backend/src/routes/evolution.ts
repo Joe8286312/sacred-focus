@@ -93,7 +93,7 @@ router.post('/rollback', (req: Request, res: Response) => {
 // 仅导出国策架构数据（节点、分组、连线、演化快照）
 router.get('/export', (_req: Request, res: Response) => {
   try {
-    res.json(repository.exportArchitecture());
+    res.json(service.exportArchitecture());
   } catch (e: any) {
     console.error('Failed to export focus tree backup', e);
     res.status(500).json({ error: 'Failed to export focus tree backup', details: e.message });
