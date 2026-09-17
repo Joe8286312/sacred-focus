@@ -1,10 +1,16 @@
 import { Router, Request, Response } from 'express';
-import { db, getSystemRevision, RevisionPreconditionError } from '../db.js';
+import { db, RevisionPreconditionError } from '../db.js';
 import { validateFullBackupPayload } from '../utils/validators.js';
 import { createEvolutionRepository } from '../repositories/evolutionRepository.js';
+import { createSystemMetaRepository } from '../repositories/systemMetaRepository.js';
+import { createEvolutionService } from '../services/evolutionService.js';
 
 const router = Router();
 const repository = createEvolutionRepository(db);
+const service = createEvolutionService({
+  evolutionRepository: repository,
+  systemMetaRepository: createSystemMetaRepository(db)
+});
 
 function requireExpectedRevision(req: Request, res: Response): number | null {
   const expectedRevision = req.body?.expectedRevision;
@@ -28,7 +34,7 @@ function sendVersionConflict(res: Response, currentRevision: number) {
 
 // 获取演化状态（活跃指针与全部 5 槽位快照）
 router.get('/', (_req: Request, res: Response) => {
-  res.json({ ...repository.getState(), revision: getSystemRevision() });
+  res.json(service.getEvolutionState());
 });
 
 // 归档保存新版本快照（5 槽位防震荡环形缓存）

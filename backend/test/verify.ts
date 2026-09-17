@@ -36,6 +36,7 @@ import { createAuthService } from '../src/services/authService.js';
 import { createSacredSeatService } from '../src/services/sacredSeatService.js';
 import { createPrecedentCaseService } from '../src/services/precedentCaseService.js';
 import { createFocusTreeService } from '../src/services/focusTreeService.js';
+import { createEvolutionService } from '../src/services/evolutionService.js';
 import {
   createMaintenanceRepository,
   MaintenanceInProgressError,
@@ -1300,6 +1301,32 @@ async function runAllTests() {
       });
     } finally {
       syncDb.close();
+    }
+  });
+
+  test('evolutionService 锁定演化状态与 revision 的只读组合契约', () => {
+    const evolutionDb = new Database(':memory:');
+    createTables(evolutionDb);
+    try {
+      evolutionDb.prepare('INSERT INTO evolution_state (id, activePointerIndex) VALUES (1, 1)').run();
+      evolutionDb.prepare("INSERT INTO evolution_snapshots (slotIndex,id,version,timestamp,changelogNotes,isMajor,dataJson) VALUES (1,'evolution-snapshot','v2.3','now','同步',0,'{\"nodes\":[],\"edges\":[],\"groups\":[]}')").run();
+      const systemMeta = createSystemMetaRepository(evolutionDb);
+      systemMeta.setValue('system_revision', '42');
+      const service = createEvolutionService({
+        evolutionRepository: createEvolutionRepository(evolutionDb),
+        systemMetaRepository: systemMeta
+      });
+
+      assert.deepEqual(service.getEvolutionState(), {
+        activePointerIndex: 1,
+        snapshots: [{
+          id: 'evolution-snapshot', slotIndex: 1, version: 'v2.3', timestamp: 'now', changelogNotes: '同步', isMajor: false,
+          nodes: [], edges: [], groups: []
+        }],
+        revision: 42
+      });
+    } finally {
+      evolutionDb.close();
     }
   });
 
