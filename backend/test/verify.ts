@@ -51,6 +51,7 @@ import { useListSort } from '../../frontend/src/composables/useListSort.ts';
 import { useListSort as useListSortFromComposables } from '../../frontend/src/composables/listSort/useListSort.ts';
 import { applyCompoundFocusNodeSort } from '../../frontend/src/shared/sorting/focusNodeSort.ts';
 import type { FocusNode } from '../../frontend/src/types/index.ts';
+import type { FocusTreeData } from '../src/types.js';
 
 // 简易单元测试运行器
 let passedCount = 0;
@@ -944,6 +945,60 @@ async function runAllTests() {
     assert.equal(backup.summary.caseCount, backup.precedentCases.length);
     assert.equal(backup.summary.logCount, backup.sessionLogs.length);
     assert.equal(backup.summary.snapshotCount, backup.evolution.snapshots.length);
+  });
+
+  test('systemBackup repository 锁定整机恢复、租约复核与失败全量回滚', () => {
+    const restoreDb = new Database(':memory:');
+    restoreDb.pragma('foreign_keys = ON');
+    createTables(restoreDb);
+    try {
+      restoreDb.prepare("INSERT INTO focus_groups (id,name,themeColor,positionX,positionY,width,height) VALUES ('old-group','旧分组','#000',0,0,100,100)").run();
+      restoreDb.prepare("INSERT INTO evolution_state (id,activePointerIndex) VALUES (1,0)").run();
+      restoreDb.prepare("INSERT INTO sacred_seat_config (id,sacredToken,reservationSignal,defaultFocusDuration,regretWindowSeconds,currentStreak,maxStreak,updatedAt) VALUES (1,'旧令牌','旧暗号',25,30,1,1,'old')").run();
+      restoreDb.prepare("INSERT INTO precedent_cases (id,date,behavior,verdict,boundaryCondition,createdAt) VALUES ('old-case','2026-01-01','旧行为','ALLOW','旧边界','old')").run();
+      restoreDb.prepare("INSERT INTO evolution_snapshots (slotIndex,id,version,timestamp,changelogNotes,isMajor,dataJson) VALUES (0,'old-snapshot','v1.0','old','旧快照',0,'{}')").run();
+      restoreDb.prepare("INSERT INTO focus_session_logs (id,type,startTime,endTime,targetDurationMinutes,actualDurationSeconds,status) VALUES ('old-log','FOCUS','old','old',25,1,'SUCCESS')").run();
+
+      const tree: FocusTreeData = {
+        groups: [{ id: 'restored-group', name: '恢复分组', themeColor: '#123456', position: { x: 10, y: 20 }, size: { width: 300, height: 200 } }],
+        nodes: [{ id: 'restored-node', code: 'RESTORE', name: '恢复节点', groupId: 'restored-group', triggerTime: null, triggerScene: '恢复场景', hasExactTime: false, timeValueMinutes: null, level: 1, maxLevel: 3, isLit: true, isFrozen: false, position: { x: 30, y: 40 }, specCard: { instruction: '执行', failCondition: '失败', benefitMechanism: '收益' } }],
+        edges: [{ id: 'restored-edge', sourceId: 'restored-node', sourceType: 'NODE', targetId: 'restored-group', targetType: 'GROUP', sourceAnchor: 'BOTTOM', targetAnchor: 'TOP', style: 'SOLID' }],
+        labels: [{ id: 'restored-label', text: '恢复标签', position: { x: 5, y: 6 } }]
+      };
+      const maintenance = createMaintenanceRepository(restoreDb, { now: () => 1000, createOwnerId: () => 'restore-lease' });
+      const repository = createSystemBackupRepository(restoreDb, { maintenanceRepository: maintenance });
+      const meta = createSystemMetaRepository(restoreDb);
+      const firstLease = maintenance.acquireMaintenanceLease('full-system-import', meta.getSystemRevision());
+      const summary = repository.restoreFullBackup({
+        maintenanceLease: firstLease,
+        tree,
+        sacredSeatConfig: { sacredToken: '新令牌', reservationSignal: '新暗号', defaultFocusDuration: 60, regretWindowSeconds: 45, currentStreak: 2, maxStreak: 4, updatedAt: 'new' },
+        precedentCases: [{ id: 'restored-case', date: '2026-09-17', behavior: '恢复行为', verdict: 'FORBID', boundaryCondition: '恢复边界', createdAt: 'new' }],
+        evolution: { state: { activePointerIndex: 1 }, snapshots: [{ slotIndex: 1, id: 'restored-snapshot', version: 'v2.0', timestamp: 'new', changelogNotes: '恢复', isMajor: true, dataJson: '{}' }] },
+        sessionLogs: [{ id: 'restored-log', type: 'FOCUS', startTime: 'new', endTime: 'new', targetDurationMinutes: 60, actualDurationSeconds: 3600, status: 'SUCCESS' }]
+      });
+      assert.deepEqual(summary, { nodesRestored: 1, groupsRestored: 1, edgesRestored: 1, labelsRestored: 1, snapshotsRestored: 1, logsRestored: 1, casesRestored: 1, revision: 2 });
+      assert.equal((restoreDb.prepare("SELECT name FROM focus_nodes WHERE id = 'restored-node'").get() as { name: string }).name, '恢复节点');
+      assert.equal((restoreDb.prepare("SELECT sacredToken FROM sacred_seat_config WHERE id = 1").get() as { sacredToken: string }).sacredToken, '新令牌');
+      assert.equal((restoreDb.prepare('SELECT activePointerIndex FROM evolution_state WHERE id = 1').get() as { activePointerIndex: number }).activePointerIndex, 1);
+      maintenance.releaseMaintenanceLease(firstLease);
+
+      const failingLease = maintenance.acquireMaintenanceLease('full-system-import', summary.revision);
+      assert.throws(() => repository.restoreFullBackup({
+        maintenanceLease: failingLease,
+        tree: { ...tree, nodes: [{ ...tree.nodes[0], id: 'should-not-persist', name: '不应写入' }] },
+        evolution: { state: { activePointerIndex: 0 }, snapshots: [
+          { slotIndex: 0, id: 'duplicate-a', version: 'v1.0', timestamp: 'new', changelogNotes: '', isMajor: false, dataJson: '{}' },
+          { slotIndex: 0, id: 'duplicate-b', version: 'v1.1', timestamp: 'new', changelogNotes: '', isMajor: false, dataJson: '{}' }
+        ] }
+      }));
+      assert.equal((restoreDb.prepare("SELECT name FROM focus_nodes WHERE id = 'restored-node'").get() as { name: string }).name, '恢复节点');
+      assert.equal(restoreDb.prepare("SELECT name FROM focus_nodes WHERE id = 'should-not-persist'").get(), undefined);
+      assert.equal(meta.getSystemRevision(), summary.revision);
+      maintenance.releaseMaintenanceLease(failingLease);
+    } finally {
+      restoreDb.close();
+    }
   });
 
   test('upsertFocusNode 正确清洗、补全并写入真实结构数据库', () => {

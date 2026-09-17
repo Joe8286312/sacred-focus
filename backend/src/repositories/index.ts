@@ -7,7 +7,14 @@ export { createFocusTreeRepository, type FocusTreeRepository } from './focusTree
 export { createEvolutionRepository, type EvolutionRepository } from './evolutionRepository.js';
 export { createPrecedentCaseRepository, type PrecedentCaseRepository } from './precedentCaseRepository.js';
 export { createSacredSeatRepository, type SacredSeatRepository } from './sacredSeatRepository.js';
-export { createSystemBackupRepository, type FullSystemBackup } from './systemBackupRepository.js';
+export {
+  createSystemBackupRepository,
+  type FullSystemBackup,
+  type FullSystemRestoreInput,
+  type FullSystemRestoreSummary,
+  type SystemBackupRepository,
+  type SystemBackupRepositoryOptions
+} from './systemBackupRepository.js';
 export {
   createMaintenanceRepository,
   MaintenanceInProgressError,

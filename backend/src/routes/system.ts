@@ -4,15 +4,10 @@ import { promises as fs } from 'fs';
 import { config } from '../config.js';
 import {
   acquireMaintenanceLease,
-  assertMaintenanceLease,
-  assertForeignKeyIntegrity,
   db,
-  getFullFocusTreeData,
-  incrementSystemRevision,
   MaintenanceInProgressError,
   releaseMaintenanceLease,
-  RevisionPreconditionError,
-  upsertFocusNode
+  RevisionPreconditionError
 } from '../db.js';
 import { exportLimiter, importLimiter } from '../middleware/rateLimiter.js';
 import { validateFullBackupPayload } from '../utils/validators.js';
@@ -117,147 +112,14 @@ router.post('/import', importLimiter, async (req: Request, res: Response) => {
   }
 
   try {
-    const insertGroup = db.prepare(`
-      INSERT INTO focus_groups (id, name, themeColor, positionX, positionY, width, height)
-      VALUES (@id, @name, @themeColor, @positionX, @positionY, @width, @height)
-    `);
-    const insertEdge = db.prepare(`
-      INSERT INTO focus_edges (id, sourceId, sourceType, targetId, targetType, sourceAnchor, targetAnchor, style)
-      VALUES (@id, @sourceId, @sourceType, @targetId, @targetType, @sourceAnchor, @targetAnchor, @style)
-    `);
-    const insertLabel = db.prepare(`
-      INSERT INTO focus_labels (id, text, positionX, positionY)
-      VALUES (@id, @text, @positionX, @positionY)
-    `);
-    const insertCase = db.prepare(`
-      INSERT INTO precedent_cases (id, date, behavior, verdict, boundaryCondition, createdAt)
-      VALUES (@id, @date, @behavior, @verdict, @boundaryCondition, @createdAt)
-    `);
-    const insertSnap = db.prepare(`
-      INSERT INTO evolution_snapshots (slotIndex, id, version, timestamp, changelogNotes, isMajor, dataJson)
-      VALUES (@slotIndex, @id, @version, @timestamp, @changelogNotes, @isMajor, @dataJson)
-    `);
-    const insertLog = db.prepare(`
-      INSERT INTO focus_session_logs (id, type, startTime, endTime, targetDurationMinutes, actualDurationSeconds, status, focusContent, failureReason, note)
-      VALUES (@id, @type, @startTime, @endTime, @targetDurationMinutes, @actualDurationSeconds, @status, @focusContent, @failureReason, @note)
-    `);
-    const upsertSeatConfig = db.prepare(`
-      INSERT OR REPLACE INTO sacred_seat_config (id, sacredToken, reservationSignal, defaultFocusDuration, regretWindowSeconds, currentStreak, maxStreak, updatedAt)
-      VALUES (1, @sacredToken, @reservationSignal, @defaultFocusDuration, @regretWindowSeconds, @currentStreak, @maxStreak, @updatedAt)
-    `);
-    const updateEvolutionPointer = db.prepare('UPDATE evolution_state SET activePointerIndex = ? WHERE id = 1');
-
-    const importTx = db.transaction(() => {
-      // 热备等待期间若发现租约丢失或 revision 改变，绝不开始破坏性覆写。
-      assertMaintenanceLease(maintenanceLease);
-
-      // 1. 恢复国策树 (groups, nodes, edges, labels)
-      const groups = tree.groups || [];
-      const nodes = tree.nodes || [];
-      const edges = tree.edges || [];
-      const labels = tree.labels || [];
-
-      // 外键持续开启；先删依赖项，再删被引用实体，全部操作在同一事务内回滚。
-      db.prepare('DELETE FROM focus_edges').run();
-      db.prepare('DELETE FROM focus_nodes').run();
-      db.prepare('DELETE FROM focus_groups').run();
-      db.prepare('DELETE FROM focus_labels').run();
-
-      for (const g of groups) {
-        insertGroup.run({
-          id: g.id,
-          name: g.name,
-          themeColor: g.themeColor,
-          positionX: g.position?.x ?? 0,
-          positionY: g.position?.y ?? 0,
-          width: g.size?.width ?? 480,
-          height: g.size?.height ?? 360
-        });
-      }
-
-      // 恢复节点 (使用共享 upsertFocusNode 消除重复 SQL)
-      for (let i = 0; i < nodes.length; i++) {
-        upsertFocusNode(nodes[i], i);
-      }
-
-      for (const e of edges) {
-        insertEdge.run(e);
-      }
-
-      for (const l of labels) {
-        insertLabel.run({
-          id: l.id,
-          text: l.text,
-          positionX: l.position?.x ?? 0,
-          positionY: l.position?.y ?? 0
-        });
-      }
-
-      // 2. 恢复神圣座位配置
-      if (sacredSeatConfig) {
-        upsertSeatConfig.run(sacredSeatConfig);
-      }
-
-      // 3. 恢复判例法典
-      if (precedentCases) {
-        db.prepare('DELETE FROM precedent_cases').run();
-        for (const c of precedentCases) {
-          insertCase.run(c);
-        }
-      }
-
-      // 4. 恢复演化状态与快照
-      if (evolution) {
-        if (evolution.state) {
-          updateEvolutionPointer.run(evolution.state.activePointerIndex ?? 0);
-        }
-        if (evolution.snapshots) {
-          db.prepare('DELETE FROM evolution_snapshots').run();
-          for (const s of evolution.snapshots) {
-            insertSnap.run({
-              slotIndex: s.slotIndex,
-              id: s.id,
-              version: s.version,
-              timestamp: s.timestamp,
-              changelogNotes: s.changelogNotes,
-              isMajor: s.isMajor ? 1 : 0,
-              dataJson: typeof s.dataJson === 'string' ? s.dataJson : JSON.stringify(s)
-            });
-          }
-        }
-      }
-
-      // 5. 恢复流水日志
-      if (sessionLogs) {
-        db.prepare('DELETE FROM focus_session_logs').run();
-        for (const l of sessionLogs) {
-          insertLog.run({
-            ...l,
-            focusContent: l.focusContent ?? null,
-            failureReason: l.failureReason ?? null,
-            note: l.note ?? null
-          });
-        }
-      }
-
-      assertForeignKeyIntegrity();
-
-      // 6. 原子推进全局系统版本号
-      const revision = incrementSystemRevision();
-
-      return {
-        nodesRestored: nodes.length,
-        groupsRestored: groups.length,
-        edgesRestored: edges.length,
-        labelsRestored: labels.length,
-        snapshotsRestored: (evolution?.snapshots || []).length,
-        logsRestored: (sessionLogs || []).length,
-        casesRestored: (precedentCases || []).length,
-        revision
-      };
+    const summary = repository.restoreFullBackup({
+      maintenanceLease,
+      tree,
+      sacredSeatConfig,
+      precedentCases,
+      evolution,
+      sessionLogs
     });
-
-    const summary = importTx();
     res.json({
       success: true,
       message: '全系统备份已彻底还原写入',
