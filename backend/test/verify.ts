@@ -31,6 +31,7 @@ import { createPrecedentCaseRepository } from '../src/repositories/precedentCase
 import { createEvolutionRepository } from '../src/repositories/evolutionRepository.js';
 import { createSystemBackupRepository } from '../src/repositories/systemBackupRepository.js';
 import { createAuthRepository } from '../src/repositories/authRepository.js';
+import { createSyncStatusService } from '../src/services/syncStatusService.js';
 import {
   createMaintenanceRepository,
   MaintenanceInProgressError,
@@ -931,6 +932,38 @@ async function runAllTests() {
       assert.ok(authDb.prepare("SELECT value FROM system_meta WHERE key = 'revoked_jti:malformed'").get());
     } finally {
       authDb.close();
+    }
+  });
+
+  test('syncStatusService 锁定 revision、活跃演化版本与同步时间回退契约', () => {
+    const syncDb = new Database(':memory:');
+    createTables(syncDb);
+    try {
+      const systemMeta = createSystemMetaRepository(syncDb);
+      syncDb.prepare('INSERT INTO evolution_state (id, activePointerIndex) VALUES (1, 1)').run();
+      syncDb.prepare("INSERT INTO evolution_snapshots (slotIndex,id,version,timestamp,changelogNotes,isMajor,dataJson) VALUES (1,'sync-snapshot','v2.3','now','同步',0,'{}')").run();
+      systemMeta.setValue('system_revision', '42');
+      systemMeta.setValue('last_sync_timestamp', '2026-09-17T12:00:00.000Z');
+      const service = createSyncStatusService({
+        evolutionRepository: createEvolutionRepository(syncDb),
+        systemMetaRepository: systemMeta,
+        now: () => new Date('2026-09-17T13:00:00.000Z')
+      });
+      assert.deepEqual(service.getStatus(), {
+        revision: 42,
+        evolutionVersion: 'v2.3',
+        updatedAt: '2026-09-17T12:00:00.000Z'
+      });
+
+      syncDb.prepare('UPDATE evolution_state SET activePointerIndex = 4 WHERE id = 1').run();
+      systemMeta.setValue('last_sync_timestamp', '');
+      assert.deepEqual(service.getStatus(), {
+        revision: 42,
+        evolutionVersion: 'v1.0',
+        updatedAt: '2026-09-17T13:00:00.000Z'
+      });
+    } finally {
+      syncDb.close();
     }
   });
 
