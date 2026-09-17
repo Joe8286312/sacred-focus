@@ -33,6 +33,7 @@ import { createSystemBackupRepository } from '../src/repositories/systemBackupRe
 import { createAuthRepository } from '../src/repositories/authRepository.js';
 import { createSyncStatusService } from '../src/services/syncStatusService.js';
 import { createAuthService } from '../src/services/authService.js';
+import { createSacredSeatService } from '../src/services/sacredSeatService.js';
 import {
   createMaintenanceRepository,
   MaintenanceInProgressError,
@@ -858,6 +859,60 @@ async function runAllTests() {
       targetDurationMinutes: 1, actualDurationSeconds: 600, status: 'REGRET'
     }), { currentStreak: 0, maxStreak: 4 });
     assert.equal(repository.getLogById('success-60')?.status, 'SUCCESS');
+  });
+
+  test('sacredSeatService 锁定配置、导入导出与重复日志不重复记账', () => {
+    const sacredSeatDb = new Database(':memory:');
+    createTables(sacredSeatDb);
+    try {
+      sacredSeatDb.prepare(`INSERT INTO sacred_seat_config
+        (id, sacredToken, reservationSignal, defaultFocusDuration, regretWindowSeconds, currentStreak, maxStreak, updatedAt)
+        VALUES (1, '旧令牌', '旧暗号', 25, 30, 1, 2, 'before')`).run();
+      const metadata = createSystemMetaRepository(sacredSeatDb);
+      const service = createSacredSeatService({
+        sacredSeatRepository: createSacredSeatRepository(sacredSeatDb),
+        systemMetaRepository: metadata,
+        now: () => new Date('2026-09-17T12:00:00.000Z')
+      });
+
+      assert.deepEqual(service.updateConfig({
+        sacredToken: '新令牌', reservationSignal: '新暗号', defaultFocusDuration: 60,
+        regretWindowSeconds: 45, currentStreak: 2, maxStreak: 3
+      }), {
+        sacredToken: '新令牌', reservationSignal: '新暗号', defaultFocusDuration: 60,
+        regretWindowSeconds: 45, currentStreak: 2, maxStreak: 3
+      });
+      assert.equal(metadata.getSystemRevision(), 2);
+      assert.deepEqual(service.resetStreak(), { currentStreak: 0, maxStreak: 3 });
+      assert.equal(metadata.getSystemRevision(), 3);
+
+      assert.deepEqual(service.importLogs([
+        { id: 'imported', type: 'FOCUS', startTime: '2026-09-16T08:00:00Z', status: 'SUCCESS', actualDurationSeconds: 75 }
+      ]), { importedCount: 1, totalLogs: 1 });
+      assert.equal(metadata.getSystemRevision(), 4);
+      assert.deepEqual(service.exportLogs(), {
+        version: 1,
+        exportedAt: '2026-09-17T12:00:00.000Z',
+        dataType: 'FOCUS_SESSION_LOGS',
+        total: 1,
+        logs: [{
+          id: 'imported', type: 'FOCUS', startTime: '2026-09-16T08:00:00Z', endTime: '2026-09-16T08:00:00Z',
+          targetDurationMinutes: 0, actualDurationSeconds: 75, status: 'SUCCESS',
+          focusContent: undefined, failureReason: undefined, note: undefined
+        }]
+      });
+
+      const log = {
+        id: 'idempotent-log', type: 'FOCUS' as const, startTime: '2026-09-17T08:00:00Z', endTime: '2026-09-17T08:01:00Z',
+        targetDurationMinutes: 1, actualDurationSeconds: 60, status: 'SUCCESS' as const
+      };
+      assert.deepEqual(service.saveLog(log), { logId: 'idempotent-log', status: 'SUCCESS', currentStreak: 1, maxStreak: 3 });
+      assert.equal(metadata.getSystemRevision(), 5);
+      assert.deepEqual(service.saveLog(log), { logId: 'idempotent-log', status: 'SUCCESS', currentStreak: 1, maxStreak: 3, idempotent: true });
+      assert.equal(metadata.getSystemRevision(), 5);
+    } finally {
+      sacredSeatDb.close();
+    }
   });
 
   test('precedentCase repository 锁定排序、过滤、容错导入、覆盖与未找到语义', () => {

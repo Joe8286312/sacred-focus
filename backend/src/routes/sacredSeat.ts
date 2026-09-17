@@ -1,13 +1,18 @@
 import { Router, Request, Response } from 'express';
-import { db, incrementSystemRevision } from '../db.js';
+import { db } from '../db.js';
 import { createSacredSeatRepository } from '../repositories/sacredSeatRepository.js';
+import { createSystemMetaRepository } from '../repositories/systemMetaRepository.js';
+import { createSacredSeatService } from '../services/sacredSeatService.js';
 
 const router = Router();
-const repository = createSacredSeatRepository(db);
+const service = createSacredSeatService({
+  sacredSeatRepository: createSacredSeatRepository(db),
+  systemMetaRepository: createSystemMetaRepository(db)
+});
 
 // 获取神圣座位配置
 router.get('/config', (_req: Request, res: Response) => {
-  const config = repository.getConfig();
+  const config = service.getConfig();
   if (!config) {
     return res.status(404).json({ error: 'Config not found' });
   }
@@ -18,7 +23,7 @@ router.get('/config', (_req: Request, res: Response) => {
 router.put('/config', (req: Request, res: Response) => {
   const { sacredToken, reservationSignal, defaultFocusDuration, regretWindowSeconds, currentStreak, maxStreak } = req.body;
 
-  const current = repository.getConfig();
+  const current = service.getConfig();
   if (!current) {
     return res.status(404).json({ error: 'Config not found' });
   }
@@ -61,7 +66,7 @@ router.put('/config', (req: Request, res: Response) => {
     return res.status(400).json({ error: 'INVALID_STREAK_RANGE', message: '当前连胜不能超过历史最大连胜' });
   }
 
-  const updated = repository.updateConfig({
+  const updated = service.updateConfig({
     sacredToken: sacredToken !== undefined ? String(sacredToken).trim() : current.sacredToken,
     reservationSignal: reservationSignal !== undefined ? String(reservationSignal).trim() : current.reservationSignal,
     defaultFocusDuration: defaultFocusDuration !== undefined ? Number(defaultFocusDuration) : current.defaultFocusDuration,
@@ -70,7 +75,6 @@ router.put('/config', (req: Request, res: Response) => {
     maxStreak: targetMaxStreak
   });
 
-  incrementSystemRevision();
   if (!updated) {
     return res.status(500).json({ error: 'Failed to retrieve updated config' });
   }
@@ -80,8 +84,7 @@ router.put('/config', (req: Request, res: Response) => {
 
 // 主链连胜手动清零（违规二次确认后触发）
 router.post('/reset-streak', (_req: Request, res: Response) => {
-  const updated = repository.resetStreak();
-  incrementSystemRevision();
+  const updated = service.resetStreak();
   res.json(updated);
 });
 
@@ -90,20 +93,12 @@ router.get('/logs', (req: Request, res: Response) => {
   const rawLimit = parseInt(String(req.query.limit || '50'), 10);
   const limit = isNaN(rawLimit) || rawLimit < 1 ? 50 : Math.min(rawLimit, 500);
 
-  res.json(repository.listLogs(limit));
+  res.json(service.listLogs(limit));
 });
 
 // 导出全部专注流水日志
 router.get('/logs/export', (_req: Request, res: Response) => {
-  const logs = repository.listLogs();
-
-  res.json({
-    version: 1,
-    exportedAt: new Date().toISOString(),
-    dataType: 'FOCUS_SESSION_LOGS',
-    total: logs.length,
-    logs
-  });
+  res.json(service.exportLogs());
 });
 
 // 批量导入专注流水日志 (支持增量合并与覆盖更新)
@@ -116,8 +111,7 @@ router.post('/logs/import', (req: Request, res: Response) => {
   }
 
   try {
-    const summary = repository.importLogs(rawLogs);
-    incrementSystemRevision();
+    const summary = service.importLogs(rawLogs);
     res.json({
       success: true,
       ...summary
@@ -138,7 +132,7 @@ router.get('/heatmap', (req: Request, res: Response) => {
     days = isNaN(parsed) || parsed < 0 ? 365 : Math.min(parsed, 3650);
   }
 
-  res.json(repository.getHeatmap(days));
+  res.json(service.getHeatmap(days));
 });
 
 const VALID_LOG_TYPES = ['FOCUS', 'RESERVATION'] as const;
@@ -160,30 +154,13 @@ router.post('/logs', (req: Request, res: Response) => {
     return res.status(400).json({ error: 'INVALID_STATUS', message: `Invalid session status: ${status}. Expected SUCCESS, FAIL, or REGRET.` });
   }
 
-  // P1-005 幂等性支持：如果该日志 ID 已存在，直接返回已有记录及当前连胜状态，不重复记账或抛出唯一键冲突
-  const existing = repository.getLogById(id);
-  if (existing) {
-    const currentConfig = repository.getStreak();
-    return res.status(200).json({
-      logId: existing.id,
-      status: existing.status,
-      currentStreak: currentConfig?.currentStreak ?? 0,
-      maxStreak: currentConfig?.maxStreak ?? 0,
-      idempotent: true
-    });
-  }
-
   try {
-    const streak = repository.createLogWithStreakSettlement({
+    const saved = service.saveLog({
       id, type, startTime, endTime, targetDurationMinutes, actualDurationSeconds, status,
       focusContent, failureReason, note
     });
 
-    res.status(201).json({
-      logId: id,
-      status,
-      ...streak
-    });
+    res.status(saved.idempotent ? 200 : 201).json(saved);
   } catch (err: any) {
     console.error('Failed to save session log:', err);
     res.status(500).json({
