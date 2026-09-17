@@ -889,6 +889,25 @@ async function runAllTests() {
     }
   });
 
+  test('focusTree repository 锁定分组读取与完整字段更新', () => {
+    const focusTreeDb = new Database(':memory:');
+    createTables(focusTreeDb);
+    try {
+      const repository = createFocusTreeRepository(focusTreeDb);
+      repository.createGroup({ id: 'editable-group', name: '旧分组', themeColor: '#111111', position: { x: 1, y: 2 }, size: { width: 300, height: 200 } });
+      assert.deepEqual(repository.getGroup('editable-group'), {
+        id: 'editable-group', name: '旧分组', themeColor: '#111111', position: { x: 1, y: 2 }, size: { width: 300, height: 200 }
+      });
+      repository.updateGroup({ id: 'editable-group', name: '新分组', themeColor: '#222222', position: { x: 3, y: 4 }, size: { width: 500, height: 600 } });
+      assert.deepEqual(repository.getGroup('editable-group'), {
+        id: 'editable-group', name: '新分组', themeColor: '#222222', position: { x: 3, y: 4 }, size: { width: 500, height: 600 }
+      });
+      assert.equal(repository.getGroup('missing'), undefined);
+    } finally {
+      focusTreeDb.close();
+    }
+  });
+
   test('maintenance repository 锁定租约冲突、revision 前置条件、过期容错与精确释放', () => {
     let currentTime = 1_000;
     const metadata = createSystemMetaRepository(testDb);
@@ -1236,6 +1255,9 @@ async function runAllTests() {
       resetNodes: [], settlementDate: '2026-09-17'
     };
     const calls: string[] = [];
+    let editableGroup: FocusTreeData['groups'][number] = {
+      id: 'editable-group', name: '旧分组', themeColor: '#111111', position: { x: 1, y: 2 }, size: { width: 300, height: 200 }
+    };
     const service = createFocusTreeService({
       focusTreeRepository: {
         getFullFocusTreeData: () => tree,
@@ -1248,7 +1270,9 @@ async function runAllTests() {
         reorderNodes: nodeIds => { calls.push(`reorder:${nodeIds.join(',')}`); },
         createNode: node => { calls.push(`create:${node.id}`); return node; },
         deleteNodeAndEdges: id => { calls.push(`delete-node:${id}`); return id !== 'missing'; },
-        createGroup: group => { calls.push(`create-group:${group.id}`); }
+        createGroup: group => { calls.push(`create-group:${group.id}`); },
+        getGroup: id => id === editableGroup.id ? editableGroup : undefined,
+        updateGroup: group => { editableGroup = group; calls.push(`update-group:${group.id}`); }
       },
       systemMetaRepository: {
         getSystemRevision: () => revision,
@@ -1282,6 +1306,13 @@ async function runAllTests() {
     assert.deepEqual(calls.slice(7), ['delete-node:deleted-by-service', 'increment:2026-09-17T12:00:00.000Z', 'delete-node:missing']);
     service.createGroup({ id: 'group-by-service', name: '服务分组', themeColor: '#123456', position: { x: 1, y: 2 }, size: { width: 3, height: 4 } });
     assert.deepEqual(calls.slice(10), ['create-group:group-by-service', 'increment:2026-09-17T12:00:00.000Z']);
+    assert.deepEqual(service.updateGroup('editable-group', {
+      name: '更新分组', position: { x: 9 } as FocusTreeData['groups'][number]['position']
+    }), {
+      id: 'editable-group', name: '更新分组', themeColor: '#111111', position: { x: 9, y: 2 }, size: { width: 300, height: 200 }
+    });
+    assert.equal(service.updateGroup('missing', { name: '不存在' }), undefined);
+    assert.deepEqual(calls.slice(12), ['update-group:editable-group', 'increment:2026-09-17T12:00:00.000Z']);
   });
 
   test('focusTreeService 锁定连续升级、反悔精确回退、当日重试与未找到语义', () => {
@@ -1298,7 +1329,9 @@ async function runAllTests() {
         reorderNodes: () => undefined,
         createNode: node => node,
         deleteNodeAndEdges: () => false,
-        createGroup: () => undefined
+        createGroup: () => undefined,
+        getGroup: () => undefined,
+        updateGroup: () => undefined
       },
       systemMetaRepository: {
         getSystemRevision: () => 1,

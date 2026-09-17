@@ -5,7 +5,7 @@ import {
   incrementSystemRevision,
   upsertFocusNode
 } from '../db.js';
-import type { FocusNode, FocusEdge, FocusGroup, FocusLabel, FocusNodeRow, FocusGroupRow } from '../types.js';
+import type { FocusNode, FocusEdge, FocusGroup, FocusLabel, FocusNodeRow } from '../types.js';
 import { createFocusTreeRepository } from '../repositories/focusTreeRepository.js';
 import { createSystemMetaRepository } from '../repositories/systemMetaRepository.js';
 import { createFocusTreeService } from '../services/focusTreeService.js';
@@ -219,41 +219,11 @@ router.post('/groups', (req: Request, res: Response) => {
 router.put('/groups/:id', (req: Request, res: Response) => {
   const { id } = req.params;
   const updates = req.body as Partial<FocusGroup>;
-
-  const current = db.prepare('SELECT * FROM focus_groups WHERE id = ?').get(id) as FocusGroupRow | undefined;
-  if (!current) {
+  const updated = focusTreeService.updateGroup(id as string, updates);
+  if (!updated) {
     return res.status(404).json({ error: 'Group not found' });
   }
-
-  const name = updates.name ?? current.name;
-  const themeColor = updates.themeColor ?? current.themeColor;
-  const positionX = updates.position?.x ?? current.positionX;
-  const positionY = updates.position?.y ?? current.positionY;
-  const width = updates.size?.width ?? current.width;
-  const height = updates.size?.height ?? current.height;
-
-  db.prepare(`
-    UPDATE focus_groups 
-    SET name = @name, themeColor = @themeColor, positionX = @positionX, positionY = @positionY, width = @width, height = @height
-    WHERE id = @id
-  `).run({
-    id,
-    name,
-    themeColor,
-    positionX,
-    positionY,
-    width,
-    height
-  });
-
-  incrementSystemRevision();
-  res.json({
-    id,
-    name,
-    themeColor,
-    position: { x: positionX, y: positionY },
-    size: { width, height }
-  });
+  res.json(updated);
 });
 
 router.delete('/groups/:id', (req: Request, res: Response) => {

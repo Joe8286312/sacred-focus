@@ -24,6 +24,8 @@ export interface FocusTreeRepository {
   createNode(node: FocusNode): FocusNode;
   deleteNodeAndEdges(id: string): boolean;
   createGroup(group: FocusGroup): void;
+  getGroup(id: string): FocusGroup | undefined;
+  updateGroup(group: FocusGroup): void;
 }
 
 export interface FocusTreeRepositoryOptions { now?: () => Date; }
@@ -279,5 +281,32 @@ export function createFocusTreeRepository(
     });
   }
 
-  return { upsertFocusNode, getFullFocusTreeData, replaceFullFocusTree, getNodeLitState, updateNodeLitState, reorderNodes, createNode, deleteNodeAndEdges, createGroup };
+  function getGroup(id: string): FocusGroup | undefined {
+    const row = db.prepare('SELECT * FROM focus_groups WHERE id = ?').get(id) as FocusGroupRow | undefined;
+    return row ? {
+      id: row.id,
+      name: row.name,
+      themeColor: row.themeColor,
+      position: { x: row.positionX, y: row.positionY },
+      size: { width: row.width, height: row.height }
+    } : undefined;
+  }
+
+  function updateGroup(group: FocusGroup): void {
+    db.prepare(`
+      UPDATE focus_groups
+      SET name = @name, themeColor = @themeColor, positionX = @positionX, positionY = @positionY, width = @width, height = @height
+      WHERE id = @id
+    `).run({
+      id: group.id,
+      name: group.name,
+      themeColor: group.themeColor,
+      positionX: group.position.x,
+      positionY: group.position.y,
+      width: group.size.width,
+      height: group.size.height
+    });
+  }
+
+  return { upsertFocusNode, getFullFocusTreeData, replaceFullFocusTree, getNodeLitState, updateNodeLitState, reorderNodes, createNode, deleteNodeAndEdges, createGroup, getGroup, updateGroup };
 }

@@ -9,7 +9,7 @@ export interface FocusTreeSettlement {
 }
 
 export interface FocusTreeServiceDependencies {
-  focusTreeRepository: Pick<FocusTreeRepository, 'getFullFocusTreeData' | 'replaceFullFocusTree' | 'getNodeLitState' | 'updateNodeLitState' | 'reorderNodes' | 'createNode' | 'deleteNodeAndEdges' | 'createGroup'>;
+  focusTreeRepository: Pick<FocusTreeRepository, 'getFullFocusTreeData' | 'replaceFullFocusTree' | 'getNodeLitState' | 'updateNodeLitState' | 'reorderNodes' | 'createNode' | 'deleteNodeAndEdges' | 'createGroup' | 'getGroup' | 'updateGroup'>;
   systemMetaRepository: Pick<SystemMetaRepository, 'deleteValue' | 'getSystemRevision' | 'incrementSystemRevision'>;
   settleDailyState: () => FocusTreeSettlement | null;
   getBusinessDay?: () => string;
@@ -124,5 +124,26 @@ export function createFocusTreeService({
     systemMetaRepository.incrementSystemRevision(now().toISOString());
   }
 
-  return { getFocusTree, resetSettlementAudit, synchronizeFocusTree, toggleNodeLit, reorderNodes, createNode, deleteNode, createGroup };
+  function updateGroup(id: string, updates: Partial<FocusTreeData['groups'][number]>): FocusTreeData['groups'][number] | undefined {
+    const current = focusTreeRepository.getGroup(id);
+    if (!current) return undefined;
+    const updated = {
+      id,
+      name: updates.name ?? current.name,
+      themeColor: updates.themeColor ?? current.themeColor,
+      position: {
+        x: updates.position?.x ?? current.position.x,
+        y: updates.position?.y ?? current.position.y
+      },
+      size: {
+        width: updates.size?.width ?? current.size.width,
+        height: updates.size?.height ?? current.size.height
+      }
+    };
+    focusTreeRepository.updateGroup(updated);
+    systemMetaRepository.incrementSystemRevision(now().toISOString());
+    return updated;
+  }
+
+  return { getFocusTree, resetSettlementAudit, synchronizeFocusTree, toggleNodeLit, reorderNodes, createNode, deleteNode, createGroup, updateGroup };
 }
