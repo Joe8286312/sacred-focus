@@ -212,20 +212,7 @@ router.post('/groups', (req: Request, res: Response) => {
     return res.status(400).json({ error: 'Missing required group fields' });
   }
 
-  db.prepare(`
-    INSERT INTO focus_groups (id, name, themeColor, positionX, positionY, width, height)
-    VALUES (@id, @name, @themeColor, @positionX, @positionY, @width, @height)
-  `).run({
-    id: g.id,
-    name: g.name,
-    themeColor: g.themeColor,
-    positionX: g.position?.x ?? 0,
-    positionY: g.position?.y ?? 0,
-    width: g.size?.width ?? 320,
-    height: g.size?.height ?? 200
-  });
-
-  incrementSystemRevision();
+  focusTreeService.createGroup(g);
   res.status(201).json(g);
 });
 

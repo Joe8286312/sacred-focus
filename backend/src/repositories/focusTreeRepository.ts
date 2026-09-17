@@ -23,6 +23,7 @@ export interface FocusTreeRepository {
   reorderNodes(nodeIds: string[]): void;
   createNode(node: FocusNode): FocusNode;
   deleteNodeAndEdges(id: string): boolean;
+  createGroup(group: FocusGroup): void;
 }
 
 export interface FocusTreeRepositoryOptions { now?: () => Date; }
@@ -263,5 +264,20 @@ export function createFocusTreeRepository(
     })();
   }
 
-  return { upsertFocusNode, getFullFocusTreeData, replaceFullFocusTree, getNodeLitState, updateNodeLitState, reorderNodes, createNode, deleteNodeAndEdges };
+  function createGroup(group: FocusGroup): void {
+    db.prepare(`
+      INSERT INTO focus_groups (id, name, themeColor, positionX, positionY, width, height)
+      VALUES (@id, @name, @themeColor, @positionX, @positionY, @width, @height)
+    `).run({
+      id: group.id,
+      name: group.name,
+      themeColor: group.themeColor,
+      positionX: group.position?.x ?? 0,
+      positionY: group.position?.y ?? 0,
+      width: group.size?.width ?? 320,
+      height: group.size?.height ?? 200
+    });
+  }
+
+  return { upsertFocusNode, getFullFocusTreeData, replaceFullFocusTree, getNodeLitState, updateNodeLitState, reorderNodes, createNode, deleteNodeAndEdges, createGroup };
 }
