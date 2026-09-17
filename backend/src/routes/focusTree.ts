@@ -9,8 +9,16 @@ import {
 } from '../db.js';
 import { getBusinessDay, getPreviousBusinessDay } from '../domain/calendar/businessDay.js';
 import type { FocusNode, FocusEdge, FocusGroup, FocusLabel, FocusNodeRow, FocusGroupRow } from '../types.js';
+import { createFocusTreeRepository } from '../repositories/focusTreeRepository.js';
+import { createSystemMetaRepository } from '../repositories/systemMetaRepository.js';
+import { createFocusTreeService } from '../services/focusTreeService.js';
 
 const router = Router();
+const focusTreeService = createFocusTreeService({
+  focusTreeRepository: createFocusTreeRepository(db),
+  systemMetaRepository: createSystemMetaRepository(db),
+  settleDailyState: settleFocusTreeDailyState
+});
 
 class VersionConflictError extends Error {
   constructor(public readonly currentRevision: number) {
@@ -21,18 +29,12 @@ class VersionConflictError extends Error {
 
 // 获取当前完整国策树（节点、连线、分组），并在每日首次上线时执行自控跨天结算审计
 router.get('/', (_req: Request, res: Response) => {
-  const settlement = settleFocusTreeDailyState();
-  const data = getFullFocusTreeData();
-  if (settlement && settlement.resetNodes.length > 0) {
-    data.resetSummary = settlement;
-  }
-  res.json({ ...data, revision: getSystemRevision() });
+  res.json(focusTreeService.getFocusTree());
 });
 
 // 重置每日跨天审计结算标记（便于随时进行联调与测试）
 router.post('/reset-settlement-audit', (_req: Request, res: Response) => {
-  db.prepare('DELETE FROM system_meta WHERE key = ?').run('lastDailySettlementDate');
-  incrementSystemRevision();
+  focusTreeService.resetSettlementAudit();
   res.json({ ok: true, message: 'Settlement audit reset successfully' });
 });
 

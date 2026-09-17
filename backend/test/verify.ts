@@ -35,6 +35,7 @@ import { createSyncStatusService } from '../src/services/syncStatusService.js';
 import { createAuthService } from '../src/services/authService.js';
 import { createSacredSeatService } from '../src/services/sacredSeatService.js';
 import { createPrecedentCaseService } from '../src/services/precedentCaseService.js';
+import { createFocusTreeService } from '../src/services/focusTreeService.js';
 import {
   createMaintenanceRepository,
   MaintenanceInProgressError,
@@ -1112,6 +1113,37 @@ async function runAllTests() {
     } finally {
       syncDb.close();
     }
+  });
+
+  test('focusTreeService 锁定日结摘要过滤、读取 revision 与审计重置顺序', () => {
+    const tree: FocusTreeData = { nodes: [], edges: [], groups: [], labels: [] };
+    let revision = 7;
+    let settlement: { resetNodes: Array<{ id: string; code: string; name: string; lostLevel: number; maxLevel: number }>; settlementDate: string } | null = {
+      resetNodes: [], settlementDate: '2026-09-17'
+    };
+    const calls: string[] = [];
+    const service = createFocusTreeService({
+      focusTreeRepository: { getFullFocusTreeData: () => tree },
+      systemMetaRepository: {
+        getSystemRevision: () => revision,
+        deleteValue: key => { calls.push(`delete:${key}`); return true; },
+        incrementSystemRevision: now => { calls.push(`increment:${now}`); revision++; return revision; }
+      },
+      settleDailyState: () => settlement,
+      now: () => new Date('2026-09-17T12:00:00.000Z')
+    });
+
+    assert.deepEqual(service.getFocusTree(), { ...tree, revision: 7 });
+    settlement = {
+      resetNodes: [{ id: 'reset-node', code: 'R1', name: '断签节点', lostLevel: 2, maxLevel: 3 }],
+      settlementDate: '2026-09-17'
+    };
+    assert.deepEqual(service.getFocusTree(), { ...tree, resetSummary: settlement, revision: 7 });
+    assert.equal(service.resetSettlementAudit(), 8);
+    assert.deepEqual(calls, [
+      'delete:lastDailySettlementDate',
+      'increment:2026-09-17T12:00:00.000Z'
+    ]);
   });
 
   test('evolution repository 锁定回滚和架构导入事务、404 优先级与版本冲突', () => {
