@@ -34,6 +34,7 @@ import { createAuthRepository } from '../src/repositories/authRepository.js';
 import { createSyncStatusService } from '../src/services/syncStatusService.js';
 import { createAuthService } from '../src/services/authService.js';
 import { createSacredSeatService } from '../src/services/sacredSeatService.js';
+import { createPrecedentCaseService } from '../src/services/precedentCaseService.js';
 import {
   createMaintenanceRepository,
   MaintenanceInProgressError,
@@ -936,6 +937,59 @@ async function runAllTests() {
     assert.equal(repository.update('not-found', { behavior: 'x', verdict: 'ALLOW', boundaryCondition: 'x' }), false);
     assert.equal(repository.delete('not-found'), false);
     assert.equal(repository.delete('case-old'), true);
+  });
+
+  test('precedentCaseService 锁定 CRUD、导入导出、revision 与 createdAt 回退', () => {
+    const precedentDb = new Database(':memory:');
+    createTables(precedentDb);
+    try {
+      const metadata = createSystemMetaRepository(precedentDb);
+      const now = () => new Date('2026-09-17T12:00:00.000Z');
+      const service = createPrecedentCaseService({
+        precedentCaseRepository: createPrecedentCaseRepository(precedentDb, { now }),
+        systemMetaRepository: metadata,
+        now
+      });
+
+      service.createCase({
+        id: 'created', date: '2026-09-16', behavior: '创建行为', verdict: 'ALLOW', boundaryCondition: '创建边界'
+      });
+      assert.equal(metadata.getSystemRevision(), 2);
+      assert.deepEqual(service.listCases('ALLOW'), [{
+        id: 'created', date: '2026-09-16', behavior: '创建行为', verdict: 'ALLOW', boundaryCondition: '创建边界',
+        createdAt: '2026-09-17T12:00:00.000Z'
+      }]);
+
+      assert.deepEqual(service.importCases([
+        { id: 'imported', date: '2026-09-17', behavior: '导入行为', verdict: 'FORBID', boundaryCondition: '导入边界' },
+        { id: 'ignored', behavior: '缺少裁定', boundaryCondition: '不会导入' }
+      ]), { importedCount: 1, totalCases: 2 });
+      assert.equal(metadata.getSystemRevision(), 3);
+      assert.deepEqual(service.exportCases(), {
+        version: 1,
+        exportedAt: '2026-09-17T12:00:00.000Z',
+        dataType: 'PRECEDENT_CASES',
+        total: 2,
+        cases: [{
+          id: 'imported', date: '2026-09-17', behavior: '导入行为', verdict: 'FORBID', boundaryCondition: '导入边界',
+          createdAt: '2026-09-17T12:00:00.000Z'
+        }, {
+          id: 'created', date: '2026-09-16', behavior: '创建行为', verdict: 'ALLOW', boundaryCondition: '创建边界',
+          createdAt: '2026-09-17T12:00:00.000Z'
+        }]
+      });
+
+      assert.equal(service.updateCase('missing', { behavior: 'x', verdict: 'ALLOW', boundaryCondition: 'x' }), false);
+      assert.equal(metadata.getSystemRevision(), 3);
+      assert.equal(service.updateCase('created', { date: '2026-09-15', behavior: '更新行为', verdict: 'FORBID', boundaryCondition: '更新边界' }), true);
+      assert.equal(metadata.getSystemRevision(), 4);
+      assert.equal(service.deleteCase('missing'), false);
+      assert.equal(metadata.getSystemRevision(), 4);
+      assert.equal(service.deleteCase('created'), true);
+      assert.equal(metadata.getSystemRevision(), 5);
+    } finally {
+      precedentDb.close();
+    }
   });
 
   test('evolution repository 锁定五槽快照版本递进、指针推进与 revision 前置条件', () => {

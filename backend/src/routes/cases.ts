@@ -1,27 +1,24 @@
 import { Router, Request, Response } from 'express';
-import { db, incrementSystemRevision } from '../db.js';
+import { db } from '../db.js';
 import { createPrecedentCaseRepository } from '../repositories/precedentCaseRepository.js';
+import { createSystemMetaRepository } from '../repositories/systemMetaRepository.js';
+import { createPrecedentCaseService } from '../services/precedentCaseService.js';
 
 const router = Router();
-const repository = createPrecedentCaseRepository(db);
+const service = createPrecedentCaseService({
+  precedentCaseRepository: createPrecedentCaseRepository(db),
+  systemMetaRepository: createSystemMetaRepository(db)
+});
 
 // 获取判例列表
 router.get('/', (req: Request, res: Response) => {
   const verdict = req.query.verdict as string | undefined;
-  res.json(verdict === 'ALLOW' || verdict === 'FORBID' ? repository.list(verdict) : repository.list());
+  res.json(verdict === 'ALLOW' || verdict === 'FORBID' ? service.listCases(verdict) : service.listCases());
 });
 
 // 导出全部判例法典
 router.get('/export', (_req: Request, res: Response) => {
-  const cases = repository.list();
-
-  res.json({
-    version: 1,
-    exportedAt: new Date().toISOString(),
-    dataType: 'PRECEDENT_CASES',
-    total: cases.length,
-    cases
-  });
+  res.json(service.exportCases());
 });
 
 // 批量导入判例法典 (支持增量合并与覆盖更新)
@@ -34,8 +31,7 @@ router.post('/import', (req: Request, res: Response) => {
   }
 
   try {
-    const summary = repository.importCases(rawCases);
-    incrementSystemRevision();
+    const summary = service.importCases(rawCases);
     res.json({
       success: true,
       ...summary
@@ -58,9 +54,7 @@ router.post('/', (req: Request, res: Response) => {
     return res.status(400).json({ error: 'Invalid verdict value. Must be ALLOW or FORBID.' });
   }
 
-  repository.create({ id, date, behavior, verdict, boundaryCondition, createdAt: createdAt || new Date().toISOString() });
-
-  incrementSystemRevision();
+  service.createCase({ id, date, behavior, verdict, boundaryCondition, createdAt });
 
   res.status(201).json({ id, date, behavior, verdict, boundaryCondition, createdAt });
 });
@@ -78,11 +72,9 @@ router.put('/:id', (req: Request, res: Response) => {
     return res.status(400).json({ error: 'Invalid verdict value. Must be ALLOW or FORBID.' });
   }
 
-  if (!repository.update(id as string, { behavior, verdict, boundaryCondition, date })) {
+  if (!service.updateCase(id as string, { behavior, verdict, boundaryCondition, date })) {
     return res.status(404).json({ error: 'Case not found' });
   }
-
-  incrementSystemRevision();
 
   res.json({ id, date, behavior, verdict, boundaryCondition });
 });
@@ -90,11 +82,9 @@ router.put('/:id', (req: Request, res: Response) => {
 // 删除判例
 router.delete('/:id', (req: Request, res: Response) => {
   const { id } = req.params;
-  if (!repository.delete(id as string)) {
+  if (!service.deleteCase(id as string)) {
     return res.status(404).json({ error: 'Case not found' });
   }
-
-  incrementSystemRevision();
 
   res.json({ message: 'Deleted successfully', id });
 });
