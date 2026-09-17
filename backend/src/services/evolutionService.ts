@@ -7,7 +7,7 @@ export interface EvolutionStatus extends EvolutionState {
 }
 
 export interface EvolutionServiceDependencies {
-  evolutionRepository: Pick<EvolutionRepository, 'getState' | 'createSnapshot' | 'rollback' | 'exportArchitecture'>;
+  evolutionRepository: Pick<EvolutionRepository, 'getState' | 'createSnapshot' | 'rollback' | 'exportArchitecture' | 'importArchitecture'>;
   systemMetaRepository: Pick<SystemMetaRepository, 'getSystemRevision'>;
 }
 
@@ -35,5 +35,9 @@ export function createEvolutionService({
     return evolutionRepository.exportArchitecture();
   }
 
-  return { getEvolutionState, createSnapshot, rollback, exportArchitecture };
+  function importArchitecture(input: Parameters<EvolutionRepository['importArchitecture']>[0]) {
+    return evolutionRepository.importArchitecture(input);
+  }
+
+  return { getEvolutionState, createSnapshot, rollback, exportArchitecture, importArchitecture };
 }

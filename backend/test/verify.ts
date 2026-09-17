@@ -1327,6 +1327,7 @@ async function runAllTests() {
       });
 
       let snapshotInput: { expectedRevision: number; changelogNotes: string; isMajor: boolean } | undefined;
+      let importInput: unknown;
       const snapshotService = createEvolutionService({
         evolutionRepository: {
           getState: () => ({ activePointerIndex: 0, snapshots: [] }),
@@ -1342,7 +1343,11 @@ async function runAllTests() {
             focusTree: { nodes: [], edges: [], groups: [], labels: [] },
             liveTree: { nodes: [], edges: [], groups: [], labels: [] },
             evolution: { state: undefined, snapshots: [] }
-          })
+          }),
+          importArchitecture: input => {
+            importInput = input;
+            return 43;
+          }
         },
         systemMetaRepository: systemMeta
       });
@@ -1361,6 +1366,13 @@ async function runAllTests() {
         liveTree: { nodes: [], edges: [], groups: [], labels: [] },
         evolution: { state: undefined, snapshots: [] }
       });
+      const expectedImportInput = {
+        expectedRevision: 42,
+        tree: { nodes: [], edges: [], groups: [], labels: [] },
+        evolution: { state: { activePointerIndex: 0 } }
+      };
+      assert.equal(snapshotService.importArchitecture(expectedImportInput), 43);
+      assert.deepEqual(importInput, expectedImportInput);
     } finally {
       evolutionDb.close();
     }
