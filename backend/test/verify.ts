@@ -42,6 +42,7 @@ import { createSystemBackupService, SystemBackupImportError } from '../src/servi
 import { createApp } from '../src/app.js';
 import { getErrorDetails } from '../src/utils/errorDetails.js';
 import { isSqliteLockError } from '../src/utils/sqliteErrors.js';
+import { getSystemImportFailureResponse } from '../src/routes/systemImportFailure.js';
 import {
   createMaintenanceRepository,
   MaintenanceInProgressError,
@@ -1775,6 +1776,33 @@ async function runAllTests() {
       error => error instanceof SystemBackupImportError && error.phase === 'backup' && error.cause === backupFailure
     );
     assert.deepEqual(failedCalls, ['acquire', 'backup', 'release:import-lease']);
+  });
+
+  test('systemImportFailure 锁定整机恢复各阶段 HTTP 映射与日志语义', () => {
+    assert.equal(getSystemImportFailureResponse(new Error('unrelated')), undefined);
+    assert.deepEqual(
+      getSystemImportFailureResponse(new SystemBackupImportError('acquire', new RevisionPreconditionError(9))),
+      { status: 409, body: { error: 'VERSION_CONFLICT', message: '系统已被其他终端修改，请同步最新状态后再执行整机恢复', currentRevision: 9 } }
+    );
+    assert.deepEqual(
+      getSystemImportFailureResponse(new SystemBackupImportError('acquire', new MaintenanceInProgressError(2_500)), () => 1_000),
+      { status: 503, body: { error: 'MAINTENANCE_IN_PROGRESS', message: '已有整机恢复正在执行，请稍后重试', retryAfterSeconds: 2 } }
+    );
+    const backupFailure = new Error('热备不可写');
+    assert.deepEqual(getSystemImportFailureResponse(new SystemBackupImportError('backup', backupFailure)), {
+      status: 500,
+      body: { error: 'BACKUP_FAILED_ABORT_IMPORT', message: '导入前热备数据库快照失败，为防止数据损坏已终止导入', details: '热备不可写' },
+      log: { message: '[Sacred Focus System] 预导入热备创建失败，终止导入操作以防数据丢失:', cause: backupFailure }
+    });
+    assert.deepEqual(
+      getSystemImportFailureResponse(new SystemBackupImportError('restore', new RevisionPreconditionError(10))),
+      { status: 409, body: { error: 'VERSION_CONFLICT', message: '恢复前置版本已变化，已终止覆写', currentRevision: 10 } }
+    );
+    assert.deepEqual(getSystemImportFailureResponse(new SystemBackupImportError('restore', '数据库约束失败')), {
+      status: 500,
+      body: { error: '导入系统备份失败', details: '数据库约束失败' },
+      log: { message: 'Failed to import full system backup', cause: '数据库约束失败' }
+    });
   });
 
   test('upsertFocusNode 正确清洗、补全并写入真实结构数据库', () => {
