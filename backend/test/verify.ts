@@ -2563,6 +2563,27 @@ async function runAllTests() {
     assert.match(baseCompose, /VCS_REF: \$\{VCS_REF:-unknown\}/);
   });
 
+  test('Nginx 网关锁定 HTTPS、健康探针、可信转发头、升级连接与上传边界', () => {
+    const rootDir = path.resolve(__dirname, '../..');
+    const nginxConfigPath = path.join(rootDir, 'nginx/conf.d/default.conf');
+    if (!fs.existsSync(nginxConfigPath)) return;
+    const nginxConfig = fs.readFileSync(nginxConfigPath, 'utf8');
+
+    assert.match(nginxConfig, /map \$http_upgrade \$connection_upgrade/);
+    assert.match(nginxConfig, /'' close;/);
+    assert.match(nginxConfig, /listen 80;/);
+    assert.match(nginxConfig, /location \/api\/health/);
+    assert.match(nginxConfig, /return 301 https:\/\/\$host\$request_uri;/);
+    assert.match(nginxConfig, /listen 443 ssl;/);
+    assert.match(nginxConfig, /ssl_protocols TLSv1\.2 TLSv1\.3;/);
+    assert.match(nginxConfig, /client_max_body_size 15m;/);
+    assert.match(nginxConfig, /proxy_set_header Connection \$connection_upgrade;/);
+    assert.match(nginxConfig, /proxy_set_header X-Forwarded-Host \$host;/);
+    assert.match(nginxConfig, /proxy_set_header X-Forwarded-Port \$server_port;/);
+    assert.match(nginxConfig, /proxy_set_header X-Forwarded-Proto https;/);
+    assert.match(nginxConfig, /server_tokens off;/);
+  });
+
   // -----------------------------------------------------------
   // 总结
   // -----------------------------------------------------------
