@@ -41,6 +41,7 @@ import { createEvolutionService } from '../src/services/evolutionService.js';
 import { createSystemBackupService, SystemBackupImportError } from '../src/services/systemBackupService.js';
 import { createApp } from '../src/app.js';
 import { getErrorDetails } from '../src/utils/errorDetails.js';
+import { isSqliteLockError } from '../src/utils/sqliteErrors.js';
 import {
   createMaintenanceRepository,
   MaintenanceInProgressError,
@@ -1946,6 +1947,15 @@ async function runAllTests() {
     assert.equal(getErrorDetails({ message: '' }), '[object Object]');
     assert.equal(getErrorDetails('连接断开'), '连接断开');
     assert.equal(getErrorDetails(null), 'null');
+  });
+
+  test('sqliteErrors 仅将可重试的写锁竞争识别为锁错误', () => {
+    assert.equal(isSqliteLockError({ code: 'SQLITE_BUSY' }), true);
+    assert.equal(isSqliteLockError({ code: 'SQLITE_LOCKED' }), true);
+    assert.equal(isSqliteLockError({ code: 'SQLITE_CONSTRAINT' }), false);
+    assert.equal(isSqliteLockError(new Error('database is locked')), false);
+    assert.equal(isSqliteLockError({ code: 5 }), false);
+    assert.equal(isSqliteLockError(null), false);
   });
 
   await testAsync('fullscreen adapter 锁定标准 API 优先、历史前缀回退与已激活短路', async () => {

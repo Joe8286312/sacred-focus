@@ -2,6 +2,7 @@ import { db } from '../connection.js';
 import { getBusinessDay, getPreviousBusinessDay } from '../../domain/calendar/businessDay.js';
 import { incrementSystemRevision } from '../revision.js';
 import type { ResetNodeItem, FocusNodeRow } from '../../types.js';
+import { isSqliteLockError } from '../../utils/sqliteErrors.js';
 
 // 每日首次上线结算引擎：
 // 严格确保每天仅在第一次上线时执行断签判断，后续刷新绝不重复触发
@@ -79,8 +80,8 @@ export function settleFocusTreeDailyState(): { resetNodes: ResetNodeItem[]; sett
   try {
     // busy_timeout 已在连接层设为 5 秒；竞争者会等待获锁者完成，然后命中二次核查退出。
     executed = settleTx.immediate();
-  } catch (e: any) {
-    if (e?.code === 'SQLITE_BUSY' || e?.code === 'SQLITE_LOCKED') {
+  } catch (e: unknown) {
+    if (isSqliteLockError(e)) {
       console.warn('[Sacred Focus Settlement] 跨天结算锁忙，跳过本次读取并等待后续探针重试');
       return null;
     }
