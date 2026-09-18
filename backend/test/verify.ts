@@ -2584,6 +2584,33 @@ async function runAllTests() {
     assert.match(nginxConfig, /server_tokens off;/);
   });
 
+  test('运维脚本锁定公共 Docker 契约、语义化标签、统一离线包与数据目录解析', () => {
+    const rootDir = path.resolve(__dirname, '../..');
+    const scriptsDir = path.join(rootDir, 'scripts');
+    const common = fs.readFileSync(path.join(scriptsDir, 'lib/docker-common.sh'), 'utf8');
+    const pack = fs.readFileSync(path.join(scriptsDir, 'docker-pack.sh'), 'utf8');
+    const backup = fs.readFileSync(path.join(scriptsDir, 'docker-backup.sh'), 'utf8');
+    const update = fs.readFileSync(path.join(scriptsDir, 'docker-update.sh'), 'utf8');
+    const powershellPack = fs.readFileSync(path.join(scriptsDir, 'docker-pack.ps1'), 'utf8');
+
+    assert.match(common, /sf_require_semver/);
+    assert.match(common, /sf_require_docker/);
+    assert.match(common, /sf_require_compose/);
+    assert.match(common, /sf_host_data_dir/);
+    assert.match(pack, /source "\$\{SCRIPT_DIR\}\/lib\/docker-common\.sh"/);
+    assert.match(backup, /source "\$\{SCRIPT_DIR\}\/lib\/docker-common\.sh"/);
+    assert.match(update, /source "\$\{SCRIPT_DIR\}\/lib\/docker-common\.sh"/);
+    assert.match(pack, /sacred-focus-v\$\{VERSION\}\.tar/);
+    assert.match(powershellPack, /sacred-focus-v\$Version\.tar/);
+    assert.match(pack, /--build-arg "APP_VERSION=v\$\{VERSION\}"/);
+    assert.match(powershellPack, /--build-arg "APP_VERSION=v\$Version"/);
+    assert.match(backup, /DATA_DIR="\$\(sf_host_data_dir\)"/);
+    assert.match(update, /DATA_DIR="\$\(sf_host_data_dir\)"/);
+    assert.doesNotMatch(pack, /\.env/);
+    assert.doesNotMatch(backup, /echo .*\$\{JWT_SECRET\}/);
+    assert.doesNotMatch(update, /echo .*\$\{JWT_SECRET\}/);
+  });
+
   // -----------------------------------------------------------
   // 总结
   // -----------------------------------------------------------

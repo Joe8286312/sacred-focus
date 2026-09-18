@@ -2,32 +2,24 @@
 # ========================================================
 # Sacred Focus 服务器/虚拟机端 Docker 一键平滑更新脚本
 # 用法:
-#   1. 离线镜像包更新: ./scripts/docker-update.sh sacred-focus-v1.1.0.tar.gz
+#   1. 离线镜像包更新: ./scripts/docker-update.sh sacred-focus-v1.1.0.tar
 #   2. 在线版本拉取更新: ./scripts/docker-update.sh v1.1.0
 # ========================================================
 
-set -e
+set -euo pipefail
 
 TARGET="${1:-}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-ROOT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
+source "${SCRIPT_DIR}/lib/docker-common.sh"
 
-cd "${ROOT_DIR}"
+cd "${SF_ROOT_DIR}"
 
 echo "=========================================================="
 echo "🔄 Sacred Focus 生产环境 Docker 平滑更新程序"
 echo "=========================================================="
 
 # 1. 检查运行环境
-if ! command -v docker &> /dev/null; then
-    echo "❌ 错误: 未检测到 docker 命令。"
-    exit 1
-fi
-
-if ! docker compose version &> /dev/null; then
-    echo "❌ 错误: 未检测到 docker compose 插件。"
-    exit 1
-fi
+sf_require_compose
 
 # 2. 检查 .env 配置文件 (P0-001 安全加固：严禁自动应用示例配置)
 if [ ! -f ".env" ]; then
@@ -43,7 +35,7 @@ if [ ! -f ".env" ]; then
 fi
 
 # 3. 核心资产自动前置热备（P2-002: 零风险事务级原子热备与快照一致性）
-DATA_DIR="./data"
+DATA_DIR="$(sf_host_data_dir)"
 if [ -f "${DATA_DIR}/app.db" ]; then
     BACKUP_DIR="${DATA_DIR}/backup"
     mkdir -p "${BACKUP_DIR}"
@@ -56,9 +48,9 @@ if [ -f "${DATA_DIR}/app.db" ]; then
         sqlite3 "${DATA_DIR}/app.db" ".backup '${BACKUP_FILE}'" && BACKUP_DONE=1
     fi
 
-    if [ "${BACKUP_DONE}" -eq 0 ] && docker compose ps -q sacred-focus >/dev/null 2>&1 && [ -n "$(docker compose ps -q sacred-focus 2>/dev/null)" ]; then
+    if [ "${BACKUP_DONE}" -eq 0 ] && sf_compose ps -q sacred-focus >/dev/null 2>&1 && [ -n "$(sf_compose ps -q sacred-focus 2>/dev/null)" ]; then
         echo "   - 使用容器运行时 better-sqlite3 执行在线热备..."
-        docker compose exec -T sacred-focus node -e "const Database = require('better-sqlite3'); const db = new Database('/app/data/app.db'); db.backup('/app/data/backup/app_pre_update_${TIMESTAMP}.db');" >/dev/null 2>&1 && BACKUP_DONE=1
+        sf_compose exec -T sacred-focus node -e "const Database = require('better-sqlite3'); const db = new Database('/app/data/app.db'); db.backup('/app/data/backup/app_pre_update_${TIMESTAMP}.db');" >/dev/null 2>&1 && BACKUP_DONE=1
     fi
 
     if [ "${BACKUP_DONE}" -eq 0 ] && command -v python3 >/dev/null 2>&1; then
@@ -68,10 +60,10 @@ if [ -f "${DATA_DIR}/app.db" ]; then
 
     if [ "${BACKUP_DONE}" -eq 0 ]; then
         echo "⚠️ 警告: 宿主未安装 sqlite3/python3，正在暂停容器后进行快照冷备..."
-        docker compose pause sacred-focus >/dev/null 2>&1 || true
+        sf_compose pause sacred-focus >/dev/null 2>&1 || true
         cp "${DATA_DIR}/app.db" "${BACKUP_FILE}"
         [ -f "${DATA_DIR}/app.db-wal" ] && cp "${DATA_DIR}/app.db-wal" "${BACKUP_DIR}/app_pre_update_${TIMESTAMP}.db-wal"
-        docker compose unpause sacred-focus >/dev/null 2>&1 || true
+        sf_compose unpause sacred-focus >/dev/null 2>&1 || true
     fi
 
     # 完整性快速核验
@@ -106,11 +98,11 @@ elif [ -n "${TARGET}" ]; then
     echo ""
     echo "🌐 指定更新版本: ${NEW_VERSION}，正在拉取最新镜像 ..."
     # 临时覆盖 APP_VERSION 触发 pull (拉取失败直接抛错退出)
-    APP_VERSION="${NEW_VERSION}" docker compose pull
+    APP_VERSION="${NEW_VERSION}" sf_compose pull
 else
     echo ""
     echo "ℹ️ 未指定参数，将拉取当前配置版本的最新镜像 ..."
-    docker compose pull
+    sf_compose pull
 fi
 
 # 更新 .env 中的 APP_VERSION
@@ -126,7 +118,7 @@ fi
 # 5. 平滑替换容器
 echo ""
 echo "🚀 正在无损平滑启动新容器 ..."
-docker compose up -d --remove-orphans
+sf_compose up -d --remove-orphans
 
 # 6. 健康检查探测与版本核对 (P1-006)
 echo ""

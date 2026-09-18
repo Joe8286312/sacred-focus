@@ -16,10 +16,17 @@ param (
     [string]$OutputDir = "./release",
 
     [Parameter(Mandatory = $false)]
-    [string]$Registry = ""
+    [string]$Registry = "",
+
+    [Parameter(Mandatory = $false)]
+    [string]$VcsRef = "unknown"
 )
 
 $ErrorActionPreference = "Stop"
+
+if ($Version -notmatch '^\d+\.\d+\.\d+$') {
+    throw "版本必须是 x.y.z 形式，收到：$Version"
+}
 
 Write-Host "==========================================================" -ForegroundColor Cyan
 Write-Host "📦 Sacred Focus Docker 镜像封装工具 (v$Version)" -ForegroundColor Green
@@ -27,7 +34,7 @@ Write-Host "==========================================================" -Foregro
 
 # 1. 检查 Docker 运行时
 try {
-    $dockerVer = docker --version
+    $dockerVer = docker version --format '{{.Server.Version}}'
     Write-Host "✓ 检测到 Docker 环境: $dockerVer" -ForegroundColor Gray
 } catch {
     Write-Error "❌ 未检测到 Docker 守护进程，请确认 Docker Desktop 是否已启动并加入 PATH。"
@@ -41,6 +48,8 @@ Write-Host "`n🚀 开始多阶段构建镜像 [$ImageTag] ..." -ForegroundColor
 $sw = [System.Diagnostics.Stopwatch]::StartNew()
 
 docker build `
+    --build-arg "APP_VERSION=v$Version" `
+    --build-arg "VCS_REF=$VcsRef" `
     -t $ImageTag `
     -t $LatestTag `
     -f Dockerfile .
