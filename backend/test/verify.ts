@@ -37,7 +37,7 @@ import { createSacredSeatService } from '../src/services/sacredSeatService.js';
 import { createPrecedentCaseService } from '../src/services/precedentCaseService.js';
 import { createFocusTreeService } from '../src/services/focusTreeService.js';
 import { createEvolutionService } from '../src/services/evolutionService.js';
-import { createSystemBackupService } from '../src/services/systemBackupService.js';
+import { createSystemBackupService, SystemBackupImportError } from '../src/services/systemBackupService.js';
 import {
   createMaintenanceRepository,
   MaintenanceInProgressError,
@@ -1591,6 +1591,10 @@ async function runAllTests() {
         exportFullBackup: () => backup,
         createPreImportBackup: async () => { throw new Error('pre-import backup should not be called'); },
         restoreFullBackup: () => { throw new Error('restore should not be called'); }
+      },
+      maintenanceRepository: {
+        acquireMaintenanceLease: () => { throw new Error('maintenance should not be called'); },
+        releaseMaintenanceLease: () => undefined
       }
     });
     assert.equal(service.exportFullBackup(), backup);
@@ -1639,6 +1643,10 @@ async function runAllTests() {
             restoredInput = input;
             return summary;
           }
+        },
+        maintenanceRepository: {
+          acquireMaintenanceLease: () => { throw new Error('maintenance should not be called'); },
+          releaseMaintenanceLease: () => undefined
         }
       });
       const expectedRestoreInput = { maintenanceLease: firstLease, tree };
@@ -1691,6 +1699,10 @@ async function runAllTests() {
           exportFullBackup: () => { throw new Error('export should not be called'); },
           createPreImportBackup: async () => result,
           restoreFullBackup: () => { throw new Error('restore should not be called'); }
+        },
+        maintenanceRepository: {
+          acquireMaintenanceLease: () => { throw new Error('maintenance should not be called'); },
+          releaseMaintenanceLease: () => undefined
         }
       });
       assert.equal(await service.createPreImportBackup(), result);
@@ -1698,6 +1710,49 @@ async function runAllTests() {
       backupDb.close();
       fs.rmSync(backupDir, { recursive: true, force: true });
     }
+  });
+
+  await testAsync('systemBackupService 锁定维护租约、热备、恢复与必定释放顺序', async () => {
+    const tree: FocusTreeData = { nodes: [], edges: [], groups: [], labels: [] };
+    const lease = { ownerId: 'import-lease', operation: 'full-system-import', expectedRevision: 7, expiresAt: 2_000 };
+    const preImportBackup = { backupFile: '/tmp/pre-import.db', prunedCount: 0 };
+    const summary = { nodesRestored: 0, groupsRestored: 0, edgesRestored: 0, labelsRestored: 0, snapshotsRestored: 0, logsRestored: 0, casesRestored: 0, revision: 8 };
+    const calls: string[] = [];
+    let restoredInput: unknown;
+    const service = createSystemBackupService({
+      systemBackupRepository: {
+        exportFullBackup: () => { throw new Error('export should not be called'); },
+        createPreImportBackup: async () => { calls.push('backup'); return preImportBackup; },
+        restoreFullBackup: input => { calls.push('restore'); restoredInput = input; return summary; }
+      },
+      maintenanceRepository: {
+        acquireMaintenanceLease: (operation, expectedRevision) => { calls.push(`acquire:${operation}:${expectedRevision}`); return lease; },
+        releaseMaintenanceLease: releasedLease => { calls.push(`release:${releasedLease.ownerId}`); }
+      }
+    });
+    const input = { expectedRevision: 7, tree };
+    assert.deepEqual(await service.importFullBackup(input), { preImportBackup, summary });
+    assert.deepEqual(restoredInput, { tree, maintenanceLease: lease });
+    assert.deepEqual(calls, ['acquire:full-system-import:7', 'backup', 'restore', 'release:import-lease']);
+
+    const backupFailure = new Error('backup failed');
+    const failedCalls: string[] = [];
+    const failedService = createSystemBackupService({
+      systemBackupRepository: {
+        exportFullBackup: () => { throw new Error('export should not be called'); },
+        createPreImportBackup: async () => { failedCalls.push('backup'); throw backupFailure; },
+        restoreFullBackup: () => { throw new Error('restore should not be called'); }
+      },
+      maintenanceRepository: {
+        acquireMaintenanceLease: () => { failedCalls.push('acquire'); return lease; },
+        releaseMaintenanceLease: releasedLease => { failedCalls.push(`release:${releasedLease.ownerId}`); }
+      }
+    });
+    await assert.rejects(
+      () => failedService.importFullBackup(input),
+      error => error instanceof SystemBackupImportError && error.phase === 'backup' && error.cause === backupFailure
+    );
+    assert.deepEqual(failedCalls, ['acquire', 'backup', 'release:import-lease']);
   });
 
   test('upsertFocusNode 正确清洗、补全并写入真实结构数据库', () => {
