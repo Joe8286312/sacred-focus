@@ -8,7 +8,8 @@ services:
     # 隐藏直接暴露的 3000 端口，由内部网络流通
     ports: !override []
     environment:
-      # 应用容器仅由本 Compose 文件定义的单层 Nginx 代理访问。
+      # 应用容器仅由本 Compose 文件定义的单层 Nginx 代理访问；
+      # 与 Nginx 的 X-Forwarded-* 头配对，禁止在基础 Compose 中开启。
       TRUST_PROXY: "1"
     networks:
       - sacred-network

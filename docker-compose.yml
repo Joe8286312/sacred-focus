@@ -11,12 +11,15 @@ services:
       - "127.0.0.1:${PORT:-3000}:3000"
     environment:
       NODE_ENV: production
+      # 同时作为 /api/health 的可追溯交付版本；镜像标签与应用版本保持一致。
+      APP_VERSION: ${APP_VERSION:-latest}
       PORT: "3000"
       HOST: 0.0.0.0
       DATA_DIR: /app/data
       TZ: ${TZ:-Asia/Shanghai}
-      JWT_SECRET: ${JWT_SECRET}
-      ADMIN_PASSWORD: ${ADMIN_PASSWORD}
+      # 生产密钥必须由 .env 提供；Compose 在启动前失败，不允许以空值运行。
+      JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET in .env}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:?Set ADMIN_PASSWORD in .env}
       # 默认不信任转发头；Nginx 组合编排会显式覆盖为 1。
       TRUST_PROXY: "false"
       TRUSTED_IPS: ${TRUSTED_IPS:-}

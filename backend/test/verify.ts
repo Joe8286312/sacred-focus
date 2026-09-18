@@ -2515,6 +2515,25 @@ async function runAllTests() {
     assert.ok(fs.existsSync(path.join(sslDir, 'README.md')));
   });
 
+  test('部署 Compose 契约锁定本地回环、生产密钥、版本传播与 Nginx 覆盖边界', () => {
+    const rootDir = path.resolve(__dirname, '../..');
+    const envTemplate = fs.readFileSync(path.join(rootDir, '.env.production.example'), 'utf8');
+    const baseCompose = fs.readFileSync(path.join(rootDir, 'docker-compose.yml'), 'utf8');
+    const nginxCompose = fs.readFileSync(path.join(rootDir, 'docker-compose.nginx.yml'), 'utf8');
+
+    assert.match(envTemplate, /^APP_VERSION=v\d+\.\d+\.\d+$/m);
+    assert.match(envTemplate, /^TZ=Asia\/Shanghai$/m);
+    assert.match(baseCompose, /image: sacred-focus:\$\{APP_VERSION:-latest\}/);
+    assert.match(baseCompose, /APP_VERSION: \$\{APP_VERSION:-latest\}/);
+    assert.match(baseCompose, /127\.0\.0\.1:\$\{PORT:-3000\}:3000/);
+    assert.match(baseCompose, /JWT_SECRET: \$\{JWT_SECRET:\?Set JWT_SECRET in \.env\}/);
+    assert.match(baseCompose, /ADMIN_PASSWORD: \$\{ADMIN_PASSWORD:\?Set ADMIN_PASSWORD in \.env\}/);
+    assert.match(baseCompose, /TRUST_PROXY: "false"/);
+    assert.match(nginxCompose, /ports: !override \[\]/);
+    assert.match(nginxCompose, /TRUST_PROXY: "1"/);
+    assert.match(nginxCompose, /NGINX_SSL_DIR:\?Set NGINX_SSL_DIR/);
+  });
+
   // -----------------------------------------------------------
   // 总结
   // -----------------------------------------------------------
