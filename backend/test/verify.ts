@@ -64,7 +64,9 @@ import { applyCompoundFocusNodeSort } from '../../frontend/src/shared/sorting/fo
 import { createSyncCoordinator } from '../../frontend/src/application/sync/syncCoordinator.ts';
 import { ApiAuthenticationError, ApiHttpError, createApiClient } from '../../frontend/src/application/http/apiClient.ts';
 import { completeLogout } from '../../frontend/src/application/auth/sessionLifecycle.ts';
+import { createPrecedentCaseGateway } from '../../frontend/src/application/cases/precedentCaseGateway.ts';
 import type { FocusNode } from '../../frontend/src/types/index.ts';
+import type { PrecedentCase } from '../../frontend/src/types/index.ts';
 import type { FocusTreeData } from '../src/types.js';
 
 // 简易单元测试运行器
@@ -1991,6 +1993,30 @@ async function runAllTests() {
       () => conflictClient.apiFetch('/api/write'),
       error => error instanceof ApiHttpError && error.status === 409 && (error.details as { currentRevision: number }).currentRevision === 9
     );
+  });
+
+  await testAsync('precedentCaseGateway 锁定判例列表、CRUD 与导入导出 HTTP 协议', async () => {
+    const calls: Array<{ url: string; options?: RequestInit }> = [];
+    const gateway = createPrecedentCaseGateway(async <T>(url: string, options?: RequestInit) => {
+      calls.push({ url, options });
+      if (url === '/api/cases/import') return { importedCount: 2, totalCases: 5 } as T;
+      return {} as T;
+    });
+    const caseItem: PrecedentCase = {
+      id: 'case-1', date: '2026-09-18', behavior: '测试行为', verdict: 'ALLOW', boundaryCondition: '测试边界', createdAt: 'now'
+    };
+    await gateway.list('FORBID');
+    await gateway.save(caseItem, true);
+    await gateway.remove(caseItem.id);
+    await gateway.exportAll();
+    assert.deepEqual(await gateway.importAll([caseItem]), { importedCount: 2, totalCases: 5 });
+    assert.deepEqual(calls.map(call => ({ url: call.url, method: call.options?.method, body: call.options?.body })), [
+      { url: '/api/cases?verdict=FORBID', method: undefined, body: undefined },
+      { url: '/api/cases/case-1', method: 'PUT', body: JSON.stringify(caseItem) },
+      { url: '/api/cases/case-1', method: 'DELETE', body: undefined },
+      { url: '/api/cases/export', method: undefined, body: undefined },
+      { url: '/api/cases/import', method: 'POST', body: JSON.stringify([caseItem]) }
+    ]);
   });
 
   test('auth 会话收尾锁定登出状态清理与组合根导航回调', () => {

@@ -2,7 +2,7 @@
 import { ref, onMounted, onUnmounted } from 'vue';
 import type { PrecedentCase } from '../types';
 import CaseEditModal from '../components/case/CaseEditModal.vue';
-import { apiFetch } from '../utils/api';
+import { precedentCaseGateway } from '../platform/browser/precedentCases';
 
 const cases = ref<PrecedentCase[]>([]);
 const filter = ref<'ALL' | 'ALLOW' | 'FORBID'>('ALL');
@@ -13,8 +13,7 @@ const editingCase = ref<PrecedentCase | null>(null);
 
 async function fetchCases() {
   try {
-    const url = filter.value === 'ALL' ? '/api/cases' : `/api/cases?verdict=${filter.value}`;
-    cases.value = await apiFetch(url);
+    cases.value = await precedentCaseGateway.list(filter.value);
   } catch (e) {
     console.error('Failed to fetch precedent cases', e);
   }
@@ -45,9 +44,7 @@ function openEditModal(item: PrecedentCase) {
 async function confirmDelete(item: PrecedentCase) {
   confirmingDeleteId.value = null;
   try {
-    await apiFetch(`/api/cases/${item.id}`, {
-      method: 'DELETE'
-    });
+    await precedentCaseGateway.remove(item.id);
     cases.value = cases.value.filter(c => c.id !== item.id);
     showFeedback(`已彻底删除判例【${item.behavior}】`);
   } catch (err) {
@@ -68,7 +65,7 @@ async function handleExportCases() {
   if (isExporting.value) return;
   isExporting.value = true;
   try {
-    const data = await apiFetch('/api/cases/export');
+    const data = await precedentCaseGateway.exportAll();
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const now = new Date();
@@ -112,10 +109,7 @@ async function handleFileImport(e: Event) {
       throw new Error('所选文件非合法的 JSON 格式');
     }
 
-    const result = await apiFetch('/api/cases/import', {
-      method: 'POST',
-      body: JSON.stringify(json)
-    });
+    const result = await precedentCaseGateway.importAll(json);
 
     await fetchCases();
     showFeedback(`成功导入 ${result.importedCount} 条判例 (当前共计 ${result.totalCases} 条)`);

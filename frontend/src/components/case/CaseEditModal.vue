@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, watch } from 'vue';
 import type { PrecedentCase, CaseVerdict } from '../../types';
-import { apiFetch } from '../../utils/api';
+import { precedentCaseGateway } from '../../platform/browser/precedentCases';
 
 const props = defineProps<{
   isOpen: boolean;
@@ -54,8 +54,6 @@ async function handleSubmit() {
   isSubmitting.value = true;
   try {
     const isEdit = !!props.caseData;
-    const url = isEdit ? `/api/cases/${props.caseData!.id}` : '/api/cases';
-    const method = isEdit ? 'PUT' : 'POST';
 
     const payload: PrecedentCase = {
       id: props.caseData ? props.caseData.id : `case-${Date.now()}`,
@@ -66,10 +64,7 @@ async function handleSubmit() {
       createdAt: props.caseData ? props.caseData.createdAt : new Date().toISOString()
     };
 
-    const saved = await apiFetch(url, {
-      method,
-      body: JSON.stringify(payload)
-    });
+    const saved = await precedentCaseGateway.save(payload, isEdit);
 
     emit('save', { ...payload, ...saved });
     emit('close');
