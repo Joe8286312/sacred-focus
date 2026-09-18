@@ -43,6 +43,7 @@ import { createApp } from '../src/app.js';
 import { getErrorDetails } from '../src/utils/errorDetails.js';
 import { isSqliteLockError } from '../src/utils/sqliteErrors.js';
 import { getSystemImportFailureResponse } from '../src/routes/systemImportFailure.js';
+import { getUnhandledErrorResponse } from '../src/http/unhandledErrorResponse.js';
 import {
   createMaintenanceRepository,
   MaintenanceInProgressError,
@@ -1984,6 +1985,25 @@ async function runAllTests() {
     assert.equal(isSqliteLockError(new Error('database is locked')), false);
     assert.equal(isSqliteLockError({ code: 5 }), false);
     assert.equal(isSqliteLockError(null), false);
+  });
+
+  test('unhandledErrorResponse 锁定全局异常的状态、文案与生产环境脱敏规则', () => {
+    assert.deepEqual(getUnhandledErrorResponse({ status: 418, code: 'TEAPOT', message: '短暂故障' }, false), {
+      status: 418,
+      body: { error: 'TEAPOT', message: '短暂故障' }
+    });
+    assert.deepEqual(getUnhandledErrorResponse({ status: 418, code: 'TEAPOT', message: '短暂故障' }, true), {
+      status: 418,
+      body: { error: 'TEAPOT', message: '服务器自控中枢发生内部异常，请稍后重试' }
+    });
+    assert.deepEqual(getUnhandledErrorResponse({ status: 200, code: 500, message: '' }, false), {
+      status: 500,
+      body: { error: 'INTERNAL_SERVER_ERROR', message: 'Unknown Server Error' }
+    });
+    assert.deepEqual(getUnhandledErrorResponse(null, false), {
+      status: 500,
+      body: { error: 'INTERNAL_SERVER_ERROR', message: 'Unknown Server Error' }
+    });
   });
 
   await testAsync('fullscreen adapter 锁定标准 API 优先、历史前缀回退与已激活短路', async () => {

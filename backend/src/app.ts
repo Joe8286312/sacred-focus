@@ -16,6 +16,7 @@ import casesRouter from './routes/cases.js';
 import focusTreeRouter from './routes/focusTree.js';
 import evolutionRouter from './routes/evolution.js';
 import systemRouter from './routes/system.js';
+import { getUnhandledErrorResponse } from './http/unhandledErrorResponse.js';
 
 export interface CreateAppDependencies {
   appConfig?: Pick<typeof config, 'trustProxy' | 'isProduction' | 'allowedOrigins'>;
@@ -83,13 +84,11 @@ export function createApp({
     app.get('*', (_req: Request, res: Response) => res.sendFile(path.join(frontendDist, 'index.html')));
   }
 
-  app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
+  app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {
     reportError('[Sacred Focus Server] Unhandled internal error:', err);
     if (res.headersSent) return;
-    res.status(err.status || 500).json({
-      error: err.code || 'INTERNAL_SERVER_ERROR',
-      message: appConfig.isProduction ? '服务器自控中枢发生内部异常，请稍后重试' : (err.message || 'Unknown Server Error')
-    });
+    const response = getUnhandledErrorResponse(err, appConfig.isProduction);
+    res.status(response.status).json(response.body);
   });
 
   return app;
