@@ -1,7 +1,7 @@
 import { defineStore } from 'pinia';
 import { ref } from 'vue';
 import type { SacredSeatConfig, FocusSessionLog, DailyFocusHeatmapItem } from '../types';
-import { apiFetch } from '../utils/api';
+import { sacredSeatGateway } from '../platform/browser/sacredSeat';
 
 export const useSacredSeatStore = defineStore('sacredSeat', () => {
   const config = ref<SacredSeatConfig>({
@@ -81,7 +81,7 @@ export const useSacredSeatStore = defineStore('sacredSeat', () => {
 
   async function fetchConfig() {
     try {
-      config.value = await apiFetch('/api/sacred-seat/config');
+      config.value = await sacredSeatGateway.getConfig();
     } catch (e) {
       console.error('Failed to fetch sacred seat config', e);
     }
@@ -89,10 +89,7 @@ export const useSacredSeatStore = defineStore('sacredSeat', () => {
 
   async function updateConfig(partial: Partial<SacredSeatConfig>) {
     try {
-      config.value = await apiFetch('/api/sacred-seat/config', {
-        method: 'PUT',
-        body: JSON.stringify(partial)
-      });
+      config.value = await sacredSeatGateway.updateConfig(partial);
     } catch (e) {
       console.error('Failed to update config', e);
     }
@@ -100,7 +97,7 @@ export const useSacredSeatStore = defineStore('sacredSeat', () => {
 
   async function resetStreak() {
     try {
-      const data = await apiFetch('/api/sacred-seat/reset-streak', { method: 'POST' });
+      const data = await sacredSeatGateway.resetStreak();
       config.value.currentStreak = data.currentStreak;
       config.value.maxStreak = data.maxStreak;
     } catch (e) {
@@ -110,7 +107,7 @@ export const useSacredSeatStore = defineStore('sacredSeat', () => {
 
   async function fetchLogs() {
     try {
-      logs.value = await apiFetch('/api/sacred-seat/logs');
+      logs.value = await sacredSeatGateway.listLogs();
     } catch (e) {
       console.error('Failed to fetch logs', e);
     }
@@ -118,7 +115,7 @@ export const useSacredSeatStore = defineStore('sacredSeat', () => {
 
   async function fetchHeatmapData(days = 365) {
     try {
-      heatmapData.value = await apiFetch(`/api/sacred-seat/heatmap?days=${days}`);
+      heatmapData.value = await sacredSeatGateway.getHeatmap(days);
     } catch (e) {
       console.error('Failed to fetch heatmap data', e);
     }
@@ -126,10 +123,7 @@ export const useSacredSeatStore = defineStore('sacredSeat', () => {
 
   async function recordSession(session: FocusSessionLog) {
     try {
-      const data = await apiFetch('/api/sacred-seat/logs', {
-        method: 'POST',
-        body: JSON.stringify(session)
-      });
+      const data = await sacredSeatGateway.recordSession(session);
       config.value.currentStreak = data.currentStreak;
       config.value.maxStreak = data.maxStreak;
       const existingIdx = logs.value.findIndex(l => l.id === session.id);
@@ -147,7 +141,7 @@ export const useSacredSeatStore = defineStore('sacredSeat', () => {
   }
 
   async function exportLogs(): Promise<void> {
-    const data = await apiFetch('/api/sacred-seat/logs/export');
+    const data = await sacredSeatGateway.exportLogs();
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const now = new Date();
@@ -163,10 +157,7 @@ export const useSacredSeatStore = defineStore('sacredSeat', () => {
   }
 
   async function importLogs(payload: unknown): Promise<{ success: boolean; importedCount: number; totalLogs: number }> {
-    const result = await apiFetch('/api/sacred-seat/logs/import', {
-      method: 'POST',
-      body: JSON.stringify(payload)
-    });
+    const result = await sacredSeatGateway.importLogs(payload);
     await Promise.all([
       fetchLogs(),
       fetchHeatmapData(),

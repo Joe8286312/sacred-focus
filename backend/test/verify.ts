@@ -65,7 +65,8 @@ import { createSyncCoordinator } from '../../frontend/src/application/sync/syncC
 import { ApiAuthenticationError, ApiHttpError, createApiClient } from '../../frontend/src/application/http/apiClient.ts';
 import { completeLogout } from '../../frontend/src/application/auth/sessionLifecycle.ts';
 import { createPrecedentCaseGateway } from '../../frontend/src/application/cases/precedentCaseGateway.ts';
-import type { FocusNode } from '../../frontend/src/types/index.ts';
+import { createSacredSeatGateway } from '../../frontend/src/application/sacredSeat/sacredSeatGateway.ts';
+import type { FocusNode, FocusSessionLog } from '../../frontend/src/types/index.ts';
 import type { PrecedentCase } from '../../frontend/src/types/index.ts';
 import type { FocusTreeData } from '../src/types.js';
 
@@ -2018,6 +2019,37 @@ async function runAllTests() {
       { url: '/api/cases/case-1', method: 'DELETE', body: undefined },
       { url: '/api/cases/export', method: undefined, body: undefined },
       { url: '/api/cases/import', method: 'POST', body: JSON.stringify([caseItem]) }
+    ]);
+  });
+
+  await testAsync('sacredSeatGateway 锁定配置、流水、热力图与导入导出 HTTP 协议', async () => {
+    const calls: Array<{ url: string; options?: RequestInit }> = [];
+    const gateway = createSacredSeatGateway(async <T>(url: string, options?: RequestInit) => {
+      calls.push({ url, options });
+      if (url === '/api/sacred-seat/logs/import') return { success: true, importedCount: 1, totalLogs: 3 } as T;
+      return {} as T;
+    });
+    const session: FocusSessionLog = {
+      id: 'log-1', type: 'FOCUS', startTime: '2026-09-18T08:00:00.000Z', endTime: '2026-09-18T08:30:00.000Z',
+      targetDurationMinutes: 30, actualDurationSeconds: 1800, status: 'SUCCESS'
+    };
+    await gateway.getConfig();
+    await gateway.updateConfig({ defaultFocusDuration: 45 });
+    await gateway.resetStreak();
+    await gateway.listLogs();
+    await gateway.getHeatmap(30);
+    await gateway.recordSession(session);
+    await gateway.exportLogs();
+    assert.deepEqual(await gateway.importLogs([session]), { success: true, importedCount: 1, totalLogs: 3 });
+    assert.deepEqual(calls.map(call => ({ url: call.url, method: call.options?.method, body: call.options?.body })), [
+      { url: '/api/sacred-seat/config', method: undefined, body: undefined },
+      { url: '/api/sacred-seat/config', method: 'PUT', body: JSON.stringify({ defaultFocusDuration: 45 }) },
+      { url: '/api/sacred-seat/reset-streak', method: 'POST', body: undefined },
+      { url: '/api/sacred-seat/logs', method: undefined, body: undefined },
+      { url: '/api/sacred-seat/heatmap?days=30', method: undefined, body: undefined },
+      { url: '/api/sacred-seat/logs', method: 'POST', body: JSON.stringify(session) },
+      { url: '/api/sacred-seat/logs/export', method: undefined, body: undefined },
+      { url: '/api/sacred-seat/logs/import', method: 'POST', body: JSON.stringify([session]) }
     ]);
   });
 
