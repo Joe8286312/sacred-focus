@@ -5,6 +5,7 @@ import path from 'node:path';
 import { execSync } from 'node:child_process';
 import http from 'node:http';
 import Database from 'better-sqlite3';
+import { createTestHarness } from './testHarness.js';
 import {
   validateEdgeItem,
   validateFullBackupPayload,
@@ -89,33 +90,7 @@ import type { FocusEdge, FocusGroup, FocusNode, FocusSessionLog, FocusTreeData }
 import type { PrecedentCase } from '../../frontend/src/types/index.ts';
 import type { FocusTreeData } from '../src/types.js';
 
-// 简易单元测试运行器
-let passedCount = 0;
-let failedCount = 0;
-
-function test(name: string, fn: () => void | Promise<void>) {
-  try {
-    fn();
-    console.log(`  [PASS] ${name}`);
-    passedCount++;
-  } catch (err: any) {
-    console.error(`  [FAIL] ${name}`);
-    console.error(`         ${err?.message || err}`);
-    failedCount++;
-  }
-}
-
-async function testAsync(name: string, fn: () => Promise<void>) {
-  try {
-    await fn();
-    console.log(`  [PASS] ${name}`);
-    passedCount++;
-  } catch (err: any) {
-    console.error(`  [FAIL] ${name}`);
-    console.error(`         ${err?.message || err}`);
-    failedCount++;
-  }
-}
+const { test, testAsync, getSummary } = createTestHarness();
 
 function replaceGlobal(name: string, value: unknown): () => void {
   const descriptor = Object.getOwnPropertyDescriptor(globalThis, name);
@@ -159,6 +134,18 @@ async function runAllTests() {
   // 1. 业务日分界线算法测试 (04:00 业务日分水岭)
   // -----------------------------------------------------------
   console.log('[Suite 1] 04:00 业务日计算算法 (domain/calendar/businessDay.ts)');
+
+  await testAsync('test harness 锁定同步/异步成功计数与可替换日志端口', async () => {
+    const output: string[] = [];
+    const harness = createTestHarness({
+      log: (message) => output.push(`log:${message}`),
+      error: (message) => output.push(`error:${message}`)
+    });
+    harness.test('同步用例', () => undefined);
+    await harness.testAsync('异步用例', async () => undefined);
+    assert.deepEqual(harness.getSummary(), { passedCount: 2, failedCount: 0 });
+    assert.deepEqual(output, ['log:  [PASS] 同步用例', 'log:  [PASS] 异步用例']);
+  });
 
   test('旧 db/dateUtils 入口仍以同一实现保持兼容', () => {
     assert.equal(getBusinessDayFromLegacyPath, getBusinessDay);
@@ -2532,6 +2519,7 @@ async function runAllTests() {
   // 总结
   // -----------------------------------------------------------
   console.log('\n====================================================');
+  const { passedCount, failedCount } = getSummary();
   console.log(`测试完成：全部 ${passedCount + failedCount} 个用例，通过 ${passedCount} 个，失败 ${failedCount} 个`);
   console.log('====================================================');
 
