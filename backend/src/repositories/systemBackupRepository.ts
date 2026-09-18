@@ -5,7 +5,7 @@ import type { SqliteDatabasePort } from './databasePort.js';
 import { createFocusTreeRepository } from './focusTreeRepository.js';
 import { createMaintenanceRepository, type MaintenanceLease, type MaintenanceRepository } from './maintenanceRepository.js';
 import { createSystemMetaRepository } from './systemMetaRepository.js';
-import type { FocusTreeData } from '../types.js';
+import type { FocusSessionLog, FocusTreeData, PrecedentCase, SacredSeatConfig } from '../types.js';
 import type { EvolutionImportData } from './evolutionRepository.js';
 
 export interface FullSystemBackup {
@@ -24,11 +24,18 @@ export interface FullSystemBackup {
 export interface FullSystemRestoreInput {
   maintenanceLease: MaintenanceLease;
   tree: FocusTreeData;
-  sacredSeatConfig?: any;
-  precedentCases?: any[] | null;
+  sacredSeatConfig?: RestoredSacredSeatConfig | null;
+  precedentCases?: PrecedentCase[] | null;
   evolution?: EvolutionImportData | null;
-  sessionLogs?: any[] | null;
+  sessionLogs?: RestoredFocusSessionLog[] | null;
 }
+
+export type RestoredSacredSeatConfig = SacredSeatConfig & { updatedAt: string };
+export type RestoredFocusSessionLog = Omit<FocusSessionLog, 'focusContent' | 'failureReason' | 'note'> & {
+  focusContent?: string | null;
+  failureReason?: string | null;
+  note?: string | null;
+};
 
 export interface FullSystemRestoreSummary {
   nodesRestored: number;

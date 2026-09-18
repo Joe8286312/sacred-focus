@@ -14,11 +14,15 @@ export interface SacredSeatRepository {
   updateConfig(config: SacredSeatConfig): SacredSeatConfig | undefined;
   resetStreak(): { currentStreak: number; maxStreak: number };
   listLogs(limit?: number): FocusSessionLog[];
-  importLogs(logs: any[]): { importedCount: number; totalLogs: number };
+  importLogs(logs: readonly unknown[]): { importedCount: number; totalLogs: number };
   getHeatmap(days: number): DailyFocusHeatmapItem[];
   getLogById(id: string): FocusSessionLog | undefined;
   getStreak(): { currentStreak: number; maxStreak: number } | undefined;
   createLogWithStreakSettlement(log: FocusSessionLog): { currentStreak: number; maxStreak: number };
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
 function toConfig(row: SacredSeatConfigRow): SacredSeatConfig {
@@ -84,7 +88,7 @@ export function createSacredSeatRepository(db: SqliteDatabasePort): SacredSeatRe
     return rows.map(toLog);
   }
 
-  function importLogs(logs: any[]): { importedCount: number; totalLogs: number } {
+  function importLogs(logs: readonly unknown[]): { importedCount: number; totalLogs: number } {
     const upsert = db.prepare(`
       INSERT INTO focus_session_logs (id, type, startTime, endTime, targetDurationMinutes, actualDurationSeconds, status, focusContent, failureReason, note)
       VALUES (@id, @type, @startTime, @endTime, @targetDurationMinutes, @actualDurationSeconds, @status, @focusContent, @failureReason, @note)
@@ -93,8 +97,10 @@ export function createSacredSeatRepository(db: SqliteDatabasePort): SacredSeatRe
         status=excluded.status, focusContent=excluded.focusContent, failureReason=excluded.failureReason, note=excluded.note
     `);
     let importedCount = 0;
-    db.transaction((items: any[]) => {
-      for (const log of items) {
+    db.transaction((items: readonly unknown[]) => {
+      for (const candidate of items) {
+        if (!isRecord(candidate)) continue;
+        const log = candidate as Partial<FocusSessionLog>;
         if (!log.id || !log.type || !log.startTime || !log.status) continue;
         upsert.run({
           id: String(log.id), type: String(log.type), startTime: String(log.startTime),

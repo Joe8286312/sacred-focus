@@ -5,7 +5,7 @@ export type CaseVerdict = PrecedentCase['verdict'];
 
 export interface PrecedentCaseRepository {
   list(verdict?: CaseVerdict): PrecedentCase[];
-  importCases(cases: any[]): { importedCount: number; totalCases: number };
+  importCases(cases: readonly unknown[]): { importedCount: number; totalCases: number };
   create(caseItem: PrecedentCase): void;
   update(id: string, updates: Pick<PrecedentCase, 'behavior' | 'verdict' | 'boundaryCondition'> & { date?: string }): boolean;
   delete(id: string): boolean;
@@ -15,6 +15,10 @@ export interface PrecedentCaseRepositoryOptions { now?: () => Date; }
 
 function toCase(row: PrecedentCaseRow): PrecedentCase {
   return { id: row.id, date: row.date, behavior: row.behavior, verdict: row.verdict, boundaryCondition: row.boundaryCondition, createdAt: row.createdAt };
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
 /** 判例法典 SQLite CRUD 与容错导入边界。 */
@@ -29,14 +33,16 @@ export function createPrecedentCaseRepository(
     return rows.map(toCase);
   }
 
-  function importCases(cases: any[]): { importedCount: number; totalCases: number } {
+  function importCases(cases: readonly unknown[]): { importedCount: number; totalCases: number } {
     const upsert = db.prepare(`INSERT INTO precedent_cases (id,date,behavior,verdict,boundaryCondition,createdAt)
       VALUES (@id,@date,@behavior,@verdict,@boundaryCondition,@createdAt)
       ON CONFLICT(id) DO UPDATE SET date=excluded.date,behavior=excluded.behavior,verdict=excluded.verdict,
         boundaryCondition=excluded.boundaryCondition,createdAt=excluded.createdAt`);
     let importedCount = 0;
-    db.transaction((items: any[]) => {
-      for (const item of items) {
+    db.transaction((items: readonly unknown[]) => {
+      for (const candidate of items) {
+        if (!isRecord(candidate)) continue;
+        const item = candidate as Partial<PrecedentCase>;
         if (!item.id || !item.behavior || !item.verdict || !item.boundaryCondition) continue;
         if (item.verdict !== 'ALLOW' && item.verdict !== 'FORBID') continue;
         const timestamp = now().toISOString();
