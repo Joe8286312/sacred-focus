@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia';
 import { ref } from 'vue';
-import type { FocusNode, FocusEdge, FocusGroup, FocusLabel, EvolutionState } from '../types';
+import type { FocusNode, FocusEdge, FocusGroup, FocusLabel, EvolutionState, FocusTreeData } from '../types';
 import { evolutionGateway } from '../platform/browser/evolution';
 import { systemBackupGateway } from '../platform/browser/systemBackup';
 import { focusTreeGateway } from '../platform/browser/focusTree';
@@ -23,7 +23,7 @@ export const useFocusTreeStore = defineStore('focusTree', () => {
   const lastCreatedNodeId = ref<string | null>(null);
   const lastCreatedGroupId = ref<string | null>(null);
   const lastCreatedLabelId = ref<string | null>(null);
-  const pendingResetSummary = ref<{ resetNodes: any[]; settlementDate: string } | null>(null);
+  const pendingResetSummary = ref<NonNullable<FocusTreeData['resetSummary']> | null>(null);
   const versionConflictWarning = ref(false);
   const lastErrorMessage = ref<string | null>(null);
 
@@ -298,7 +298,7 @@ export const useFocusTreeStore = defineStore('focusTree', () => {
   }
 
   // 仅导入国策架构数据（不触碰专注记录和判例法典）
-  async function importSystemBackup(backupData: any) {
+  async function importSystemBackup(backupData: object) {
     try {
       await evolutionGateway.importArchitecture(backupData, getExpectedRevision());
       await fetchTree();
@@ -334,7 +334,7 @@ export const useFocusTreeStore = defineStore('focusTree', () => {
   }
 
   // 全系统整机跨设备镜像导入恢复
-  async function importFullSystemBackup(backupData: any): Promise<{ success: boolean; summary?: any; error?: string }> {
+  async function importFullSystemBackup(backupData: object): Promise<{ success: boolean; summary?: unknown; error?: string }> {
     try {
       const data = await systemBackupGateway.importFull(backupData, getExpectedRevision());
       await Promise.all([
