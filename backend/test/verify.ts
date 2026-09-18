@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { execSync } from 'node:child_process';
+import http from 'node:http';
 import Database from 'better-sqlite3';
 import {
   validateEdgeItem,
@@ -38,6 +39,7 @@ import { createPrecedentCaseService } from '../src/services/precedentCaseService
 import { createFocusTreeService } from '../src/services/focusTreeService.js';
 import { createEvolutionService } from '../src/services/evolutionService.js';
 import { createSystemBackupService, SystemBackupImportError } from '../src/services/systemBackupService.js';
+import { createApp } from '../src/app.js';
 import {
   createMaintenanceRepository,
   MaintenanceInProgressError,
@@ -1863,6 +1865,34 @@ async function runAllTests() {
       assert.equal((recoveryDb.prepare("SELECT name FROM focus_nodes WHERE id = 'N1'").get() as { name: string }).name, '节点');
     } finally {
       recoveryDb.close();
+    }
+  });
+
+  await testAsync('createApp 可在不监听端口时装配，并保留健康检查 HTTP 契约', async () => {
+    const app = createApp({
+      frontendDist: false,
+      appConfig: { trustProxy: false, isProduction: false, allowedOrigins: [] }
+    });
+    const server = http.createServer(app);
+    await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
+    try {
+      const address = server.address();
+      assert.ok(address && typeof address !== 'string');
+      const response = await new Promise<{ statusCode: number; body: string }>((resolve, reject) => {
+        const request = http.get(`http://127.0.0.1:${address.port}/api/health`, result => {
+          let body = '';
+          result.setEncoding('utf8');
+          result.on('data', chunk => { body += chunk; });
+          result.on('end', () => resolve({ statusCode: result.statusCode || 0, body }));
+        });
+        request.on('error', reject);
+      });
+      assert.equal(response.statusCode, 200);
+      assert.deepEqual(JSON.parse(response.body), {
+        status: 'ok', version: process.env.APP_VERSION || '1.0.0', timestamp: JSON.parse(response.body).timestamp, service: 'sacred-focus-backend'
+      });
+    } finally {
+      await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve()));
     }
   });
 
