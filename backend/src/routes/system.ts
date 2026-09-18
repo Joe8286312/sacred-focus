@@ -91,7 +91,7 @@ router.post('/import', importLimiter, async (req: Request, res: Response) => {
   }
 
   try {
-    const summary = repository.restoreFullBackup({
+    const summary = service.restoreFullBackup({
       maintenanceLease,
       tree,
       sacredSeatConfig,

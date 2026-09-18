@@ -1587,7 +1587,11 @@ async function runAllTests() {
     assert.equal(backup.summary.logCount, backup.sessionLogs.length);
     assert.equal(backup.summary.snapshotCount, backup.evolution.snapshots.length);
     const service = createSystemBackupService({
-      systemBackupRepository: { exportFullBackup: () => backup }
+      systemBackupRepository: {
+        exportFullBackup: () => backup,
+        createPreImportBackup: async () => { throw new Error('pre-import backup should not be called'); },
+        restoreFullBackup: () => { throw new Error('restore should not be called'); }
+      }
     });
     assert.equal(service.exportFullBackup(), backup);
   });
@@ -1626,6 +1630,20 @@ async function runAllTests() {
       assert.equal((restoreDb.prepare("SELECT name FROM focus_nodes WHERE id = 'restored-node'").get() as { name: string }).name, '恢复节点');
       assert.equal((restoreDb.prepare("SELECT sacredToken FROM sacred_seat_config WHERE id = 1").get() as { sacredToken: string }).sacredToken, '新令牌');
       assert.equal((restoreDb.prepare('SELECT activePointerIndex FROM evolution_state WHERE id = 1').get() as { activePointerIndex: number }).activePointerIndex, 1);
+      let restoredInput: unknown;
+      const service = createSystemBackupService({
+        systemBackupRepository: {
+          exportFullBackup: () => { throw new Error('export should not be called'); },
+          createPreImportBackup: async () => { throw new Error('pre-import backup should not be called'); },
+          restoreFullBackup: input => {
+            restoredInput = input;
+            return summary;
+          }
+        }
+      });
+      const expectedRestoreInput = { maintenanceLease: firstLease, tree };
+      assert.equal(service.restoreFullBackup(expectedRestoreInput), summary);
+      assert.deepEqual(restoredInput, expectedRestoreInput);
       maintenance.releaseMaintenanceLease(firstLease);
 
       const failingLease = maintenance.acquireMaintenanceLease('full-system-import', summary.revision);
@@ -1671,7 +1689,8 @@ async function runAllTests() {
       const service = createSystemBackupService({
         systemBackupRepository: {
           exportFullBackup: () => { throw new Error('export should not be called'); },
-          createPreImportBackup: async () => result
+          createPreImportBackup: async () => result,
+          restoreFullBackup: () => { throw new Error('restore should not be called'); }
         }
       });
       assert.equal(await service.createPreImportBackup(), result);
