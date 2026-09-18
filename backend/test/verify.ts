@@ -71,6 +71,7 @@ import { createSyncCoordinator } from '../../frontend/src/application/sync/syncC
 import { initSyncManager as initSyncManagerFromLegacyPath } from '../../frontend/src/utils/syncManager.ts';
 import { initSyncManager } from '../../frontend/src/platform/browser/syncManager.ts';
 import { exitDocumentFullscreen, isDocumentFullscreen, requestDocumentFullscreen, type FullscreenDocument } from '../../frontend/src/platform/browser/fullscreen.ts';
+import { downloadSacredSeatLogs, subscribeToFullscreenChanges } from '../../frontend/src/platform/browser/sacredSeatEffects.ts';
 import { ApiAuthenticationError, ApiHttpError, createApiClient } from '../../frontend/src/application/http/apiClient.ts';
 import { apiFetch as apiFetchFromLegacyPath, setUnauthorizedHandler as setUnauthorizedHandlerFromLegacyPath } from '../../frontend/src/utils/api.ts';
 import { apiFetch, setUnauthorizedHandler } from '../../frontend/src/platform/browser/api.ts';
@@ -2045,6 +2046,63 @@ async function runAllTests() {
     legacyDocumentState.webkitFullscreenElement = null;
     await requestDocumentFullscreen(legacyDocument);
     assert.deepEqual(calls, ['request-standard', 'exit-standard', 'exit-webkit', 'request-webkit']);
+  });
+
+  test('sacredSeat browser effects 锁定全屏前缀事件、清理与日志下载契约', () => {
+    const listeners = new Map<string, () => void>();
+    const removedEvents: string[] = [];
+    const fullscreenDocument = {
+      documentElement: {},
+      fullscreenElement: null,
+      addEventListener(eventName: string, listener: () => void) {
+        listeners.set(eventName, listener);
+      },
+      removeEventListener(eventName: string) {
+        removedEvents.push(eventName);
+      }
+    } as unknown as FullscreenDocument & Document;
+    const states: boolean[] = [];
+    const unsubscribe = subscribeToFullscreenChanges(fullscreenDocument, (isFullscreen) => states.push(isFullscreen));
+
+    listeners.get('fullscreenchange')?.();
+    (fullscreenDocument as unknown as { fullscreenElement: Element | null }).fullscreenElement = {} as Element;
+    listeners.get('webkitfullscreenchange')?.();
+    unsubscribe();
+    assert.deepEqual(states, [false, true]);
+    assert.deepEqual(removedEvents, ['fullscreenchange', 'webkitfullscreenchange', 'mozfullscreenchange', 'MSFullscreenChange']);
+
+    const anchor = {
+      href: '',
+      download: '',
+      clickCount: 0,
+      click() { this.clickCount++; }
+    };
+    const appended: unknown[] = [];
+    const removed: unknown[] = [];
+    const downloadDocument = {
+      createElement: () => anchor,
+      body: {
+        appendChild(element: unknown) { appended.push(element); return element; },
+        removeChild(element: unknown) { removed.push(element); return element; }
+      }
+    } as unknown as Pick<Document, 'createElement' | 'body'>;
+    const createdUrls: Blob[] = [];
+    const revokedUrls: string[] = [];
+    downloadSacredSeatLogs({ id: 'log-1' }, {
+      documentRef: downloadDocument,
+      urlApi: {
+        createObjectURL(blob) { createdUrls.push(blob); return 'blob:test-log'; },
+        revokeObjectURL(url) { revokedUrls.push(url); }
+      },
+      now: new Date(2026, 8, 17, 12, 34)
+    });
+    assert.equal(anchor.href, 'blob:test-log');
+    assert.equal(anchor.download, 'sacred-focus-logs-20260917_1234.json');
+    assert.equal(anchor.clickCount, 1);
+    assert.deepEqual(appended, [anchor]);
+    assert.deepEqual(removed, [anchor]);
+    assert.equal(createdUrls.length, 1);
+    assert.deepEqual(revokedUrls, ['blob:test-log']);
   });
 
   await testAsync('syncCoordinator 锁定登录门禁、草稿挂起、刷新顺序与并发探针抑制', async () => {

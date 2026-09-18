@@ -2,7 +2,12 @@ import { defineStore } from 'pinia';
 import { ref } from 'vue';
 import type { SacredSeatConfig, FocusSessionLog, DailyFocusHeatmapItem } from '../types';
 import { sacredSeatGateway } from '../platform/browser/sacredSeat';
-import { exitDocumentFullscreen, isDocumentFullscreen, requestDocumentFullscreen } from '../platform/browser/fullscreen';
+import {
+  downloadSacredSeatLogs,
+  enterBrowserFullscreen,
+  exitBrowserFullscreen,
+  subscribeToFullscreenChanges
+} from '../platform/browser/sacredSeatEffects';
 
 export const useSacredSeatStore = defineStore('sacredSeat', () => {
   const config = ref<SacredSeatConfig>({
@@ -24,19 +29,14 @@ export const useSacredSeatStore = defineStore('sacredSeat', () => {
 
   // 监听浏览器全屏状态变化（如按 ESC 退出全屏时同步）
   if (typeof window !== 'undefined' && typeof document !== 'undefined') {
-    const handleFullscreenChange = () => {
-      isFullscreen.value = isDocumentFullscreen(document);
-    };
-
-    document.addEventListener('fullscreenchange', handleFullscreenChange);
-    document.addEventListener('webkitfullscreenchange', handleFullscreenChange);
-    document.addEventListener('mozfullscreenchange', handleFullscreenChange);
-    document.addEventListener('MSFullscreenChange', handleFullscreenChange);
+    subscribeToFullscreenChanges(document, (isActive) => {
+      isFullscreen.value = isActive;
+    });
   }
 
   async function enterFullscreen() {
     try {
-      await requestDocumentFullscreen(document);
+      await enterBrowserFullscreen(document);
     } catch (e) {
       console.warn('Fullscreen entry failed or user denied:', e);
     }
@@ -44,7 +44,7 @@ export const useSacredSeatStore = defineStore('sacredSeat', () => {
 
   async function exitFullscreen() {
     try {
-      await exitDocumentFullscreen(document);
+      await exitBrowserFullscreen(document);
     } catch (e) {
       console.warn('Exit fullscreen failed:', e);
     }
@@ -121,18 +121,7 @@ export const useSacredSeatStore = defineStore('sacredSeat', () => {
 
   async function exportLogs(): Promise<void> {
     const data = await sacredSeatGateway.exportLogs();
-    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const now = new Date();
-    const pad = (n: number) => String(n).padStart(2, '0');
-    const timestamp = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}_${pad(now.getHours())}${pad(now.getMinutes())}`;
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `sacred-focus-logs-${timestamp}.json`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+    downloadSacredSeatLogs(data);
   }
 
   async function importLogs(payload: unknown): Promise<{ success: boolean; importedCount: number; totalLogs: number }> {
