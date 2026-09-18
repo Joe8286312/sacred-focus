@@ -2042,17 +2042,19 @@ async function runAllTests() {
     await gateway.listLogs();
     await gateway.getHeatmap(30);
     await gateway.recordSession(session);
+    await gateway.recordSessionOnUnload(session);
     await gateway.exportLogs();
     assert.deepEqual(await gateway.importLogs([session]), { success: true, importedCount: 1, totalLogs: 3 });
-    assert.deepEqual(calls.map(call => ({ url: call.url, method: call.options?.method, body: call.options?.body })), [
-      { url: '/api/sacred-seat/config', method: undefined, body: undefined },
-      { url: '/api/sacred-seat/config', method: 'PUT', body: JSON.stringify({ defaultFocusDuration: 45 }) },
-      { url: '/api/sacred-seat/reset-streak', method: 'POST', body: undefined },
-      { url: '/api/sacred-seat/logs', method: undefined, body: undefined },
-      { url: '/api/sacred-seat/heatmap?days=30', method: undefined, body: undefined },
-      { url: '/api/sacred-seat/logs', method: 'POST', body: JSON.stringify(session) },
-      { url: '/api/sacred-seat/logs/export', method: undefined, body: undefined },
-      { url: '/api/sacred-seat/logs/import', method: 'POST', body: JSON.stringify([session]) }
+    assert.deepEqual(calls.map(call => ({ url: call.url, method: call.options?.method, body: call.options?.body, keepalive: call.options?.keepalive })), [
+      { url: '/api/sacred-seat/config', method: undefined, body: undefined, keepalive: undefined },
+      { url: '/api/sacred-seat/config', method: 'PUT', body: JSON.stringify({ defaultFocusDuration: 45 }), keepalive: undefined },
+      { url: '/api/sacred-seat/reset-streak', method: 'POST', body: undefined, keepalive: undefined },
+      { url: '/api/sacred-seat/logs', method: undefined, body: undefined, keepalive: undefined },
+      { url: '/api/sacred-seat/heatmap?days=30', method: undefined, body: undefined, keepalive: undefined },
+      { url: '/api/sacred-seat/logs', method: 'POST', body: JSON.stringify(session), keepalive: undefined },
+      { url: '/api/sacred-seat/logs', method: 'POST', body: JSON.stringify(session), keepalive: true },
+      { url: '/api/sacred-seat/logs/export', method: undefined, body: undefined, keepalive: undefined },
+      { url: '/api/sacred-seat/logs/import', method: 'POST', body: JSON.stringify([session]), keepalive: undefined }
     ]);
   });
 

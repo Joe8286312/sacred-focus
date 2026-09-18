@@ -2,6 +2,7 @@
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue';
 import { onBeforeRouteLeave } from 'vue-router';
 import { useSacredSeatStore } from '../stores/sacredSeat';
+import { sacredSeatGateway } from '../platform/browser/sacredSeat';
 import StreakWarningModal from '../components/seat/StreakWarningModal.vue';
 import PrecedentCaseModal from '../components/seat/PrecedentCaseModal.vue';
 import SeatSettingsModal from '../components/seat/SeatSettingsModal.vue';
@@ -420,7 +421,7 @@ function handleUnloadSession() {
       try {
         const data = JSON.parse(raw);
         const actualSec = calculateActualSeconds();
-        const payload = {
+        const payload: FocusSessionLog = {
           id: data.id || generateLogId(),
           type: 'FOCUS',
           startTime: data.startTime || new Date().toISOString(),
@@ -432,12 +433,7 @@ function handleUnloadSession() {
           failureReason: '浏览器窗口或标签页被非正常关闭/刷新导致专注中断',
           note: '页面被意外关闭或刷新，触发防逃逸失败记录并清零连胜'
         };
-        fetch('/api/sacred-seat/logs', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload),
-          keepalive: true
-        }).catch(() => {});
+        sacredSeatGateway.recordSessionOnUnload(payload).catch(() => {});
         localStorage.removeItem(ACTIVE_SESSION_KEY);
       } catch (err) {
         console.error('Failed to send unload beacon', err);

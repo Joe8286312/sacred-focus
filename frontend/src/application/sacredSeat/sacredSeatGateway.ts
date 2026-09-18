@@ -20,6 +20,7 @@ export interface SacredSeatGateway {
   listLogs(): Promise<FocusSessionLog[]>;
   getHeatmap(days: number): Promise<DailyFocusHeatmapItem[]>;
   recordSession(session: FocusSessionLog): Promise<SacredSeatStreak>;
+  recordSessionOnUnload(session: FocusSessionLog): Promise<void>;
   exportLogs(): Promise<unknown>;
   importLogs(payload: unknown): Promise<SacredSeatImportResult>;
 }
@@ -44,6 +45,9 @@ export function createSacredSeatGateway(request: SacredSeatApiRequest): SacredSe
     },
     recordSession(session) {
       return request<SacredSeatStreak>('/api/sacred-seat/logs', { method: 'POST', body: JSON.stringify(session) });
+    },
+    async recordSessionOnUnload(session) {
+      await request('/api/sacred-seat/logs', { method: 'POST', body: JSON.stringify(session), keepalive: true });
     },
     exportLogs() {
       return request('/api/sacred-seat/logs/export');
