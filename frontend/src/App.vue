@@ -6,7 +6,7 @@ import SystemMigrationModal from './components/common/SystemMigrationModal.vue';
 import { useFocusTreeStore } from './stores/focusTree';
 import { useSacredSeatStore } from './stores/sacredSeat';
 import { useAuthStore } from './stores/auth';
-import { initSyncManager } from './utils/syncManager';
+import { initSyncManager } from './platform/browser/syncManager';
 import { focusTreeGateway } from './platform/browser/focusTree';
 import { getTheme, toggleTheme as toggleGlobalTheme, type Theme } from './platform/browser/theme';
 

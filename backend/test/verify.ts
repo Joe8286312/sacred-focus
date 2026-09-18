@@ -62,6 +62,8 @@ import { useListSort } from '../../frontend/src/composables/useListSort.ts';
 import { useListSort as useListSortFromComposables } from '../../frontend/src/composables/listSort/useListSort.ts';
 import { applyCompoundFocusNodeSort } from '../../frontend/src/shared/sorting/focusNodeSort.ts';
 import { createSyncCoordinator } from '../../frontend/src/application/sync/syncCoordinator.ts';
+import { initSyncManager as initSyncManagerFromLegacyPath } from '../../frontend/src/utils/syncManager.ts';
+import { initSyncManager } from '../../frontend/src/platform/browser/syncManager.ts';
 import { ApiAuthenticationError, ApiHttpError, createApiClient } from '../../frontend/src/application/http/apiClient.ts';
 import { completeLogout } from '../../frontend/src/application/auth/sessionLifecycle.ts';
 import { createAuthGateway, readAuthResponse } from '../../frontend/src/application/auth/authGateway.ts';
@@ -1911,6 +1913,10 @@ async function runAllTests() {
   // 5. 前端 API 安全解析器模拟测试 (api.ts F-4)
   // -----------------------------------------------------------
   console.log('\n[Suite 5] 前端 apiFetch 安全容错解析逻辑 (api.ts)');
+
+  test('旧 syncManager 入口仍转出浏览器组合层的同一初始化函数', () => {
+    assert.equal(initSyncManagerFromLegacyPath, initSyncManager);
+  });
 
   await testAsync('syncCoordinator 锁定登录门禁、草稿挂起、刷新顺序与并发探针抑制', async () => {
     let authenticated = false;
