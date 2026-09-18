@@ -1,6 +1,13 @@
 import { defineStore } from 'pinia';
 import { ref } from 'vue';
-import { router } from '../router';
+import { completeLogout } from '../application/auth/sessionLifecycle';
+
+let logoutHandler: (() => void) | undefined;
+
+/** 由浏览器组合根注册登出后的导航；store 不反向依赖 Vue Router。 */
+export function setAuthLogoutHandler(handler: (() => void) | undefined) {
+  logoutHandler = handler;
+}
 
 async function readAuthResponse(res: Response): Promise<Record<string, any>> {
   const rawText = await res.text();
@@ -62,9 +69,11 @@ export const useAuthStore = defineStore('auth', () => {
     } catch (e) {
       // 登出静默清理
     } finally {
-      isAuthenticated.value = false;
-      hasCheckedAuth.value = true;
-      router.push('/login');
+      completeLogout({
+        markUnauthenticated: () => { isAuthenticated.value = false; },
+        markAuthChecked: () => { hasCheckedAuth.value = true; },
+        onLoggedOut: logoutHandler
+      });
     }
   }
 

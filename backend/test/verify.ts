@@ -63,6 +63,7 @@ import { useListSort as useListSortFromComposables } from '../../frontend/src/co
 import { applyCompoundFocusNodeSort } from '../../frontend/src/shared/sorting/focusNodeSort.ts';
 import { createSyncCoordinator } from '../../frontend/src/application/sync/syncCoordinator.ts';
 import { ApiAuthenticationError, ApiHttpError, createApiClient } from '../../frontend/src/application/http/apiClient.ts';
+import { completeLogout } from '../../frontend/src/application/auth/sessionLifecycle.ts';
 import type { FocusNode } from '../../frontend/src/types/index.ts';
 import type { FocusTreeData } from '../src/types.js';
 
@@ -1990,6 +1991,16 @@ async function runAllTests() {
       () => conflictClient.apiFetch('/api/write'),
       error => error instanceof ApiHttpError && error.status === 409 && (error.details as { currentRevision: number }).currentRevision === 9
     );
+  });
+
+  test('auth 会话收尾锁定登出状态清理与组合根导航回调', () => {
+    const calls: string[] = [];
+    completeLogout({
+      markUnauthenticated: () => { calls.push('unauthenticated'); },
+      markAuthChecked: () => { calls.push('checked'); },
+      onLoggedOut: () => { calls.push('navigate'); }
+    });
+    assert.deepEqual(calls, ['unauthenticated', 'checked', 'navigate']);
   });
 
   function safeParseResponse(rawText: string): any {
