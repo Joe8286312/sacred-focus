@@ -73,6 +73,7 @@ import { createPrecedentCaseGateway } from '../../frontend/src/application/cases
 import { createSacredSeatGateway } from '../../frontend/src/application/sacredSeat/sacredSeatGateway.ts';
 import { createEvolutionGateway } from '../../frontend/src/application/evolution/evolutionGateway.ts';
 import { createSystemBackupGateway } from '../../frontend/src/application/systemBackup/systemBackupGateway.ts';
+import { isSystemBackupPayload } from '../../frontend/src/application/systemBackup/backupPayload.ts';
 import { createFocusTreeGateway } from '../../frontend/src/application/focusTree/focusTreeGateway.ts';
 import type { FocusEdge, FocusGroup, FocusNode, FocusSessionLog, FocusTreeData } from '../../frontend/src/types/index.ts';
 import type { PrecedentCase } from '../../frontend/src/types/index.ts';
@@ -2109,6 +2110,15 @@ async function runAllTests() {
       { url: '/api/system/export', method: undefined, body: undefined },
       { url: '/api/system/import', method: 'POST', body: JSON.stringify({ ...backup, expectedRevision: 12 }) }
     ]);
+  });
+
+  test('systemBackupPayload 锁定整机迁移弹窗的 focusTree/liveTree 候选门槛', () => {
+    assert.equal(isSystemBackupPayload({ focusTree: { nodes: [] } }), true);
+    assert.equal(isSystemBackupPayload({ liveTree: { nodes: [] } }), true);
+    assert.equal(isSystemBackupPayload({ focusTree: null, liveTree: null }), false);
+    assert.equal(isSystemBackupPayload({}), false);
+    assert.equal(isSystemBackupPayload(null), false);
+    assert.equal(isSystemBackupPayload('backup'), false);
   });
 
   await testAsync('focusTreeGateway 锁定树快照、CAS 保存、点亮与排序 HTTP 协议', async () => {

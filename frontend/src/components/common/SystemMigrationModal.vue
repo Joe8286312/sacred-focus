@@ -3,6 +3,7 @@ import { ref } from 'vue';
 import { useFocusTreeStore } from '../../stores/focusTree';
 import { useSacredSeatStore } from '../../stores/sacredSeat';
 import { precedentCaseGateway } from '../../platform/browser/precedentCases';
+import { isSystemBackupPayload, type SystemBackupPayload } from '../../application/systemBackup/backupPayload';
 
 defineProps<{
   isOpen: boolean;
@@ -17,7 +18,7 @@ const seatStore = useSacredSeatStore();
 
 // 状态反馈
 const toastNotice = ref<{ text: string; isError?: boolean } | null>(null);
-let toastTimer: any = null;
+let toastTimer: ReturnType<typeof setTimeout> | null = null;
 
 function showToast(text: string, isError = false) {
   toastNotice.value = { text, isError };
@@ -31,7 +32,7 @@ function showToast(text: string, isError = false) {
 const isExportingFull = ref(false);
 const isImportingFull = ref(false);
 const fullFileInputRef = ref<HTMLInputElement | null>(null);
-const pendingFullBackup = ref<any | null>(null);
+const pendingFullBackup = ref<SystemBackupPayload | null>(null);
 const isConfirmingFullImport = ref(false);
 
 async function handleExportFull() {
@@ -66,9 +67,8 @@ function onFullFileSelected(e: Event) {
   const reader = new FileReader();
   reader.onload = () => {
     try {
-      const data = JSON.parse(reader.result as string);
-      const tree = data?.focusTree || data?.liveTree;
-      if (!data || !tree) {
+      const data: unknown = JSON.parse(reader.result as string);
+      if (!isSystemBackupPayload(data)) {
         showToast('备份文件格式不合法，缺少国策树数据', true);
         return;
       }
