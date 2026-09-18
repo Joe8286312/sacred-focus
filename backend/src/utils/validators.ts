@@ -17,14 +17,61 @@ import {
   validateLabelItem,
   validateNodeItem
 } from '../domain/backupValidation/treeItems.js';
+import type { FocusEdge, FocusGroup, FocusLabel, FocusNode, FocusTreeData, PrecedentCase } from '../types.js';
 
 // 兼容既有导入路径：树元素校验器的实现已移至 domain/backupValidation。
 export { validateEdgeItem, validateGroupItem, validateLabelItem, validateNodeItem };
 
+export interface ValidatedSacredSeatConfig {
+  sacredToken: string;
+  reservationSignal: string;
+  defaultFocusDuration: number;
+  regretWindowSeconds: number;
+  currentStreak: number;
+  maxStreak: number;
+  updatedAt: string;
+}
+
+export interface ValidatedEvolutionSnapshot {
+  slotIndex: number;
+  id: string;
+  version: string;
+  timestamp: string;
+  changelogNotes: string;
+  isMajor: boolean;
+  dataJson: string;
+}
+
+export interface ValidatedEvolution {
+  state: { activePointerIndex: number };
+  snapshots: ValidatedEvolutionSnapshot[];
+}
+
+export interface ValidatedFocusSessionLog {
+  id: string;
+  type: 'FOCUS' | 'RESERVATION';
+  startTime: string;
+  endTime: string;
+  targetDurationMinutes: number;
+  actualDurationSeconds: number;
+  status: 'SUCCESS' | 'FAIL' | 'REGRET';
+  focusContent: string | null;
+  failureReason: string | null;
+  note: string | null;
+}
+
+export interface ValidatedFullBackupPayload {
+  tree: FocusTreeData;
+  sacredSeatConfig: ValidatedSacredSeatConfig | null;
+  precedentCases: PrecedentCase[] | null;
+  evolution: ValidatedEvolution | null;
+  sessionLogs: ValidatedFocusSessionLog[] | null;
+}
+
 /**
  * 全量系统整机镜像导入校验器 (D-1)
  */
-export function validateFullBackupPayload(body: unknown): ValidationResult<any> {
+export function validateFullBackupPayload(body: unknown): ValidationResult<ValidatedFullBackupPayload> {
   if (!isObject(body)) {
     return { success: false, error: '备份文件格式不合法：必须为 JSON 对象' };
   }
@@ -54,7 +101,7 @@ export function validateFullBackupPayload(body: unknown): ValidationResult<any> 
   if (rawNodes.length > 500) {
     return { success: false, error: '国策节点数量超过系统安全上限 (最大500条)' };
   }
-  const validatedNodes: any[] = [];
+  const validatedNodes: FocusNode[] = [];
   const nodeIds = new Set<string>();
   for (let i = 0; i < rawNodes.length; i++) {
     const node = validateNodeItem(rawNodes[i], i, errors);
@@ -64,7 +111,7 @@ export function validateFullBackupPayload(body: unknown): ValidationResult<any> 
       } else {
         nodeIds.add(node.id);
       }
-      validatedNodes.push(node);
+      validatedNodes.push(node as FocusNode);
     }
   }
 
@@ -73,7 +120,7 @@ export function validateFullBackupPayload(body: unknown): ValidationResult<any> 
   if (rawGroups.length > 100) {
     return { success: false, error: '分组数量超过系统安全上限 (最大100个)' };
   }
-  const validatedGroups: any[] = [];
+  const validatedGroups: FocusGroup[] = [];
   const groupIds = new Set<string>();
   for (let i = 0; i < rawGroups.length; i++) {
     const group = validateGroupItem(rawGroups[i], i, errors);
@@ -83,7 +130,7 @@ export function validateFullBackupPayload(body: unknown): ValidationResult<any> 
       } else {
         groupIds.add(group.id);
       }
-      validatedGroups.push(group);
+      validatedGroups.push(group as FocusGroup);
     }
   }
 
@@ -99,7 +146,7 @@ export function validateFullBackupPayload(body: unknown): ValidationResult<any> 
   if (rawEdges.length > 1000) {
     return { success: false, error: '拓扑连线数量超过系统安全上限 (最大1000条)' };
   }
-  const validatedEdges: any[] = [];
+  const validatedEdges: FocusEdge[] = [];
   const edgeIds = new Set<string>();
   for (let i = 0; i < rawEdges.length; i++) {
     const edge = validateEdgeItem(rawEdges[i], i, errors);
@@ -118,7 +165,7 @@ export function validateFullBackupPayload(body: unknown): ValidationResult<any> 
       if (!validTarget) {
         errors.push(`连线 ${edge.id} 的目标节点/分组 ${edge.targetId} 不存在`);
       }
-      validatedEdges.push(edge);
+      validatedEdges.push(edge as FocusEdge);
     }
   }
 
@@ -127,7 +174,7 @@ export function validateFullBackupPayload(body: unknown): ValidationResult<any> 
   if (rawLabels.length > 200) {
     return { success: false, error: '标签数量超过系统安全上限 (最大200个)' };
   }
-  const validatedLabels: any[] = [];
+  const validatedLabels: FocusLabel[] = [];
   const labelIds = new Set<string>();
   for (let i = 0; i < rawLabels.length; i++) {
     const label = validateLabelItem(rawLabels[i], i, errors);
@@ -137,7 +184,7 @@ export function validateFullBackupPayload(body: unknown): ValidationResult<any> 
       } else {
         labelIds.add(label.id);
       }
-      validatedLabels.push(label);
+      validatedLabels.push(label as FocusLabel);
     }
   }
 
@@ -150,7 +197,7 @@ export function validateFullBackupPayload(body: unknown): ValidationResult<any> 
   }
 
   // 5. 神圣座位配置校验
-  let validatedSeatConfig: any = null;
+  let validatedSeatConfig: ValidatedSacredSeatConfig | null = null;
   if (body.sacredSeatConfig && isObject(body.sacredSeatConfig)) {
     const c = body.sacredSeatConfig;
     validatedSeatConfig = {
@@ -165,7 +212,7 @@ export function validateFullBackupPayload(body: unknown): ValidationResult<any> 
   }
 
   // 6. 判例法典校验 (上限 2000)
-  let validatedCases: any[] | null = null;
+  let validatedCases: PrecedentCase[] | null = null;
   if (Array.isArray(body.precedentCases)) {
     if (body.precedentCases.length > 2000) {
       return { success: false, error: '判例数量超过系统安全上限 (最大2000条)' };
@@ -185,7 +232,7 @@ export function validateFullBackupPayload(body: unknown): ValidationResult<any> 
   }
 
   // 7. 演化快照与指针校验
-  let validatedEvolution: any = null;
+  let validatedEvolution: ValidatedEvolution | null = null;
   if (body.evolution && isObject(body.evolution)) {
     const rawState = body.evolution.state;
     const rawSnaps = Array.isArray(body.evolution.snapshots) ? body.evolution.snapshots : [];
@@ -206,7 +253,7 @@ export function validateFullBackupPayload(body: unknown): ValidationResult<any> 
   }
 
   // 8. 流水日志校验 (上限 50000)
-  let validatedSessionLogs: any[] | null = null;
+  let validatedSessionLogs: ValidatedFocusSessionLog[] | null = null;
   if (Array.isArray(body.sessionLogs)) {
     if (body.sessionLogs.length > 50000) {
       return { success: false, error: '专注日志数量超过系统安全上限 (最大50000条)' };

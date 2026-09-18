@@ -117,7 +117,7 @@ router.post('/import', (req: Request, res: Response) => {
   const { tree, evolution } = validation.data;
 
   try {
-    const revision = service.importArchitecture({ expectedRevision, tree, evolution });
+    const revision = service.importArchitecture({ expectedRevision, tree, evolution: evolution ?? undefined });
     res.json({ message: 'Focus tree architecture successfully imported and restored', revision });
   } catch (e: unknown) {
     if (e instanceof RevisionPreconditionError) {
