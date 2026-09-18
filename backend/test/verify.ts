@@ -2593,6 +2593,8 @@ async function runAllTests() {
     const update = fs.readFileSync(path.join(scriptsDir, 'docker-update.sh'), 'utf8');
     const updateTransaction = fs.readFileSync(path.join(scriptsDir, 'lib/update-transaction.sh'), 'utf8');
     const updateContract = fs.readFileSync(path.join(scriptsDir, 'test/docker-update-contract.sh'), 'utf8');
+    const deliveryVerifier = fs.readFileSync(path.join(scriptsDir, 'verify-delivery.sh'), 'utf8');
+    const operationsRunbook = fs.readFileSync(path.join(scriptsDir, 'README.md'), 'utf8');
     const powershellPack = fs.readFileSync(path.join(scriptsDir, 'docker-pack.ps1'), 'utf8');
 
     assert.match(common, /sf_require_semver/);
@@ -2618,6 +2620,11 @@ async function runAllTests() {
     assert.match(updateContract, /health-failure/);
     assert.match(updateContract, /rollback-failure/);
     assert.match(updateContract, /backup-failure/);
+    assert.match(deliveryVerifier, /docker-compose\.nginx\.yml/);
+    assert.match(deliveryVerifier, /sf_rollback_update/);
+    assert.match(operationsRunbook, /verify-delivery\.sh/);
+    assert.match(operationsRunbook, /docker-update\.sh/);
+    assert.match(operationsRunbook, /退出码 `2`/);
     assert.doesNotMatch(pack, /\.env/);
     assert.doesNotMatch(backup, /echo .*\$\{JWT_SECRET\}/);
     assert.doesNotMatch(update, /echo .*\$\{JWT_SECRET\}/);

@@ -16,6 +16,7 @@
     "build:frontend": "npm --prefix frontend run build",
     "build": "npm run build:backend && npm run build:frontend",
     "test": "npm run test:contracts && npm --prefix backend run test",
+    "verify:delivery": "bash ./scripts/verify-delivery.sh",
     "start": "npm --prefix backend start"
   },
 
