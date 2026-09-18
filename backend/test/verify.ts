@@ -48,6 +48,7 @@ import {
 // 此文件由 tsx 直接执行，因此显式引用 TypeScript 源文件。
 import { writeAllAssets } from '../../scripts/generate-icons.ts';
 import { formatCompactDuration } from '../../frontend/src/shared/formatters/duration.ts';
+import { getErrorMessage } from '../../frontend/src/shared/errors/errorMessage.ts';
 import { formatCompactDuration as formatCompactDurationFromLegacyPath } from '../../frontend/src/utils/time.ts';
 import { getTheme, setTheme, toggleTheme } from '../../frontend/src/utils/theme.ts';
 import {
@@ -1925,6 +1926,15 @@ async function runAllTests() {
   test('旧 api 入口仍转出浏览器组合层的同一 client 与未授权回调注册函数', () => {
     assert.equal(apiFetchFromLegacyPath, apiFetch);
     assert.equal(setUnauthorizedHandlerFromLegacyPath, setUnauthorizedHandler);
+  });
+
+  test('errorMessage 锁定 Error、结构化 message 与无效异常的显示规则', () => {
+    assert.equal(getErrorMessage(new Error('网络异常')), '网络异常');
+    assert.equal(getErrorMessage({ message: '版本冲突' }), '版本冲突');
+    assert.equal(getErrorMessage({ message: '' }), undefined);
+    assert.equal(getErrorMessage({ message: 409 }), undefined);
+    assert.equal(getErrorMessage('网络异常'), undefined);
+    assert.equal(getErrorMessage(null), undefined);
   });
 
   await testAsync('fullscreen adapter 锁定标准 API 优先、历史前缀回退与已激活短路', async () => {

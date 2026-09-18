@@ -4,6 +4,7 @@ import type { FocusNode, FocusEdge, FocusGroup, FocusLabel, EvolutionState, Focu
 import { evolutionGateway } from '../platform/browser/evolution';
 import { systemBackupGateway } from '../platform/browser/systemBackup';
 import { focusTreeGateway } from '../platform/browser/focusTree';
+import { getErrorMessage } from '../shared/errors/errorMessage';
 
 export const useFocusTreeStore = defineStore('focusTree', () => {
   const nodes = ref<FocusNode[]>([]);
@@ -164,8 +165,8 @@ export const useFocusTreeStore = defineStore('focusTree', () => {
         markSyncedRevision(res.revision);
       }
       return true;
-    } catch (e: any) {
-      if (e.message === 'VERSION_CONFLICT') {
+    } catch (e: unknown) {
+      if (getErrorMessage(e) === 'VERSION_CONFLICT') {
         console.warn('【OCC并发冲突】检测到云端有更新，自动触发数据拉取重合');
         await fetchTree();
       }
@@ -189,12 +190,12 @@ export const useFocusTreeStore = defineStore('focusTree', () => {
       edges.value = JSON.parse(JSON.stringify(tree.edges));
       labels.value = JSON.parse(JSON.stringify(tree.labels || []));
       return true;
-    } catch (e: any) {
-      if (e.message === 'VERSION_CONFLICT') {
+    } catch (e: unknown) {
+      if (getErrorMessage(e) === 'VERSION_CONFLICT') {
         versionConflictWarning.value = true;
         lastErrorMessage.value = '【并发冲突提示】检测到云端已被其他终端修改。为保护数据安全，请先刷新同步最新版本！';
       } else {
-        lastErrorMessage.value = e?.message || '保存全量国策树失败';
+        lastErrorMessage.value = getErrorMessage(e) || '保存全量国策树失败';
       }
       console.error('Failed to save whole tree', e);
       return false;
@@ -342,9 +343,9 @@ export const useFocusTreeStore = defineStore('focusTree', () => {
         fetchEvolution()
       ]);
       return { success: true, summary: data.summary };
-    } catch (e: any) {
+    } catch (e: unknown) {
       console.error('Failed to import full system backup', e);
-      return { success: false, error: e.message };
+      return { success: false, error: getErrorMessage(e) };
     }
   }
 
@@ -356,11 +357,11 @@ export const useFocusTreeStore = defineStore('focusTree', () => {
     lastCreatedNodeId.value = node.id;
     try {
       await focusTreeGateway.createNode(node);
-    } catch (e: any) {
+    } catch (e: unknown) {
       console.error('Failed to add node, rolling back optimistic state', e);
       nodes.value = nodes.value.filter(n => n.id !== node.id);
       lastCreatedNodeId.value = null;
-      lastErrorMessage.value = e?.message || '添加国策节点失败';
+      lastErrorMessage.value = getErrorMessage(e) || '添加国策节点失败';
       throw e;
     }
   }
@@ -379,12 +380,12 @@ export const useFocusTreeStore = defineStore('focusTree', () => {
     }
     try {
       await focusTreeGateway.updateNode(id, updates);
-    } catch (e: any) {
+    } catch (e: unknown) {
       console.error('Failed to update node, rolling back optimistic state', e);
       if (prevNode && idx !== -1) {
         nodes.value[idx] = prevNode;
       }
-      lastErrorMessage.value = e?.message || '更新国策节点失败';
+      lastErrorMessage.value = getErrorMessage(e) || '更新国策节点失败';
       throw e;
     }
   }
@@ -403,10 +404,10 @@ export const useFocusTreeStore = defineStore('focusTree', () => {
     nodes.value = reordered;
     try {
       await reorderNodes(orderedIds);
-    } catch (e: any) {
+    } catch (e: unknown) {
       console.error('Failed to reorder nodes, rolling back', e);
       nodes.value = prevNodes;
-      lastErrorMessage.value = e?.message || '保存节点排序失败';
+      lastErrorMessage.value = getErrorMessage(e) || '保存节点排序失败';
       throw e;
     }
   }
@@ -419,7 +420,7 @@ export const useFocusTreeStore = defineStore('focusTree', () => {
     edges.value = edges.value.filter(e => e.sourceId !== id && e.targetId !== id);
     try {
       await focusTreeGateway.deleteNode(id);
-    } catch (e: any) {
+    } catch (e: unknown) {
       console.error('Failed to delete node, rolling back optimistic state', e);
       if (prevNode) {
         nodes.value.push(prevNode);
@@ -427,7 +428,7 @@ export const useFocusTreeStore = defineStore('focusTree', () => {
       if (prevEdges.length > 0) {
         edges.value.push(...prevEdges);
       }
-      lastErrorMessage.value = e?.message || '删除国策节点失败';
+      lastErrorMessage.value = getErrorMessage(e) || '删除国策节点失败';
       throw e;
     }
   }
@@ -436,10 +437,10 @@ export const useFocusTreeStore = defineStore('focusTree', () => {
     edges.value.push(edge);
     try {
       await focusTreeGateway.createEdge(edge);
-    } catch (e: any) {
+    } catch (e: unknown) {
       console.error('Failed to add edge, rolling back optimistic state', e);
       edges.value = edges.value.filter(e => e.id !== edge.id);
-      lastErrorMessage.value = e?.message || '创建拓扑连线失败';
+      lastErrorMessage.value = getErrorMessage(e) || '创建拓扑连线失败';
       throw e;
     }
   }
@@ -449,12 +450,12 @@ export const useFocusTreeStore = defineStore('focusTree', () => {
     edges.value = edges.value.filter(e => e.id !== id);
     try {
       await focusTreeGateway.deleteEdge(id);
-    } catch (e: any) {
+    } catch (e: unknown) {
       console.error('Failed to delete edge, rolling back optimistic state', e);
       if (prevEdge) {
         edges.value.push(prevEdge);
       }
-      lastErrorMessage.value = e?.message || '删除拓扑连线失败';
+      lastErrorMessage.value = getErrorMessage(e) || '删除拓扑连线失败';
       throw e;
     }
   }
@@ -467,11 +468,11 @@ export const useFocusTreeStore = defineStore('focusTree', () => {
     lastCreatedGroupId.value = group.id;
     try {
       await focusTreeGateway.createGroup(group);
-    } catch (e: any) {
+    } catch (e: unknown) {
       console.error('Failed to add group, rolling back optimistic state', e);
       groups.value = groups.value.filter(g => g.id !== group.id);
       lastCreatedGroupId.value = null;
-      lastErrorMessage.value = e?.message || '创建分组失败';
+      lastErrorMessage.value = getErrorMessage(e) || '创建分组失败';
       throw e;
     }
   }
@@ -485,12 +486,12 @@ export const useFocusTreeStore = defineStore('focusTree', () => {
     }
     try {
       await focusTreeGateway.updateGroup(id, updates);
-    } catch (e: any) {
+    } catch (e: unknown) {
       console.error('Failed to update group, rolling back optimistic state', e);
       if (prevGroup && idx !== -1) {
         groups.value[idx] = prevGroup;
       }
-      lastErrorMessage.value = e?.message || '更新分组失败';
+      lastErrorMessage.value = getErrorMessage(e) || '更新分组失败';
       throw e;
     }
   }
@@ -509,7 +510,7 @@ export const useFocusTreeStore = defineStore('focusTree', () => {
     edges.value = edges.value.filter(e => e.sourceId !== id && e.targetId !== id);
     try {
       await focusTreeGateway.deleteGroup(id);
-    } catch (e: any) {
+    } catch (e: unknown) {
       console.error('Failed to delete group, rolling back optimistic state', e);
       if (prevGroup) {
         groups.value.push(prevGroup);
@@ -520,7 +521,7 @@ export const useFocusTreeStore = defineStore('focusTree', () => {
       if (prevEdges.length > 0) {
         edges.value.push(...prevEdges);
       }
-      lastErrorMessage.value = e?.message || '删除分组失败';
+      lastErrorMessage.value = getErrorMessage(e) || '删除分组失败';
       throw e;
     }
   }
