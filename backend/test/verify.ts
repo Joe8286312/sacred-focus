@@ -62,6 +62,7 @@ import { useListSort } from '../../frontend/src/composables/useListSort.ts';
 import { useListSort as useListSortFromComposables } from '../../frontend/src/composables/listSort/useListSort.ts';
 import { applyCompoundFocusNodeSort } from '../../frontend/src/shared/sorting/focusNodeSort.ts';
 import { createSyncCoordinator } from '../../frontend/src/application/sync/syncCoordinator.ts';
+import { ApiAuthenticationError, ApiHttpError, createApiClient } from '../../frontend/src/application/http/apiClient.ts';
 import type { FocusNode } from '../../frontend/src/types/index.ts';
 import type { FocusTreeData } from '../src/types.js';
 
@@ -1957,6 +1958,38 @@ async function runAllTests() {
     assert.equal(statusRequests, 1);
     resolveStatus?.({ revision: 1, evolutionVersion: 'v1.0', updatedAt: 'now' });
     await Promise.all([firstProbe, secondProbe]);
+  });
+
+  await testAsync('apiClient 锁定 Cookie、JSON 解析与结构化认证/冲突错误契约', async () => {
+    let receivedOptions: RequestInit | undefined;
+    const client = createApiClient({
+      fetchImpl: async (_url, options) => {
+        receivedOptions = options;
+        return new Response(JSON.stringify({ revision: 42 }), { status: 200 });
+      }
+    });
+    assert.deepEqual(await client.apiFetch('/api/test', { method: 'POST', body: JSON.stringify({ value: 1 }) }), { revision: 42 });
+    assert.equal(receivedOptions?.credentials, 'include');
+    assert.equal(new Headers(receivedOptions?.headers).get('Content-Type'), 'application/json');
+
+    let unauthorizedError: ApiAuthenticationError | undefined;
+    const unauthorizedClient = createApiClient({
+      fetchImpl: async () => new Response(JSON.stringify({ message: '登录已失效', reason: 'expired' }), { status: 401 }),
+      onUnauthorized: error => { unauthorizedError = error; }
+    });
+    await assert.rejects(
+      () => unauthorizedClient.apiFetch('/api/private'),
+      error => error instanceof ApiAuthenticationError && error.message === '登录已失效' && error.status === 401
+    );
+    assert.deepEqual(unauthorizedError?.details, { message: '登录已失效', reason: 'expired' });
+
+    const conflictClient = createApiClient({
+      fetchImpl: async () => new Response(JSON.stringify({ message: '版本冲突', currentRevision: 9 }), { status: 409 })
+    });
+    await assert.rejects(
+      () => conflictClient.apiFetch('/api/write'),
+      error => error instanceof ApiHttpError && error.status === 409 && (error.details as { currentRevision: number }).currentRevision === 9
+    );
   });
 
   function safeParseResponse(rawText: string): any {
