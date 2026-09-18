@@ -2,7 +2,7 @@
 import { ref, computed, watch } from 'vue';
 import { formatCompactDuration } from '../../shared/formatters/duration';
 import type { PrecedentCase } from '../../types';
-import { apiFetch } from '../../utils/api';
+import { precedentCaseGateway } from '../../platform/browser/precedentCases';
 
 const props = defineProps<{
   isOpen: boolean;
@@ -96,10 +96,7 @@ async function handleSaveCase() {
   };
 
   try {
-    await apiFetch('/api/cases', {
-      method: 'POST',
-      body: JSON.stringify(newCase)
-    });
+    await precedentCaseGateway.save(newCase, false);
 
     emit('complete-with-case', newCase, focusContent.value.trim());
     resetForm();

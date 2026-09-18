@@ -2,7 +2,7 @@
 import { ref } from 'vue';
 import { useFocusTreeStore } from '../../stores/focusTree';
 import { useSacredSeatStore } from '../../stores/sacredSeat';
-import { apiFetch } from '../../utils/api';
+import { precedentCaseGateway } from '../../platform/browser/precedentCases';
 
 defineProps<{
   isOpen: boolean;
@@ -209,7 +209,7 @@ async function handleExportCases() {
   if (isExportingCases.value) return;
   isExportingCases.value = true;
   try {
-    const data = await apiFetch('/api/cases/export');
+    const data = await precedentCaseGateway.exportAll();
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const now = new Date();
@@ -246,10 +246,7 @@ async function onCasesFileSelected(e: Event) {
   try {
     const text = await file.text();
     const json = JSON.parse(text);
-    const result = await apiFetch('/api/cases/import', {
-      method: 'POST',
-      body: JSON.stringify(json)
-    });
+    const result = await precedentCaseGateway.importAll(json);
     window.dispatchEvent(new CustomEvent('sacred-focus:refresh-cases'));
     showToast(`成功增量导入 ${result.importedCount} 条判例 (共计 ${result.totalCases} 条)`);
   } catch (err: any) {

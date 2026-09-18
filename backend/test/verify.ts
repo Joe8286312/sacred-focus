@@ -2005,14 +2005,16 @@ async function runAllTests() {
     const caseItem: PrecedentCase = {
       id: 'case-1', date: '2026-09-18', behavior: '测试行为', verdict: 'ALLOW', boundaryCondition: '测试边界', createdAt: 'now'
     };
-    await gateway.list('FORBID');
-    await gateway.save(caseItem, true);
+  await gateway.list('FORBID');
+  await gateway.save(caseItem, false);
+  await gateway.save(caseItem, true);
     await gateway.remove(caseItem.id);
     await gateway.exportAll();
     assert.deepEqual(await gateway.importAll([caseItem]), { importedCount: 2, totalCases: 5 });
     assert.deepEqual(calls.map(call => ({ url: call.url, method: call.options?.method, body: call.options?.body })), [
-      { url: '/api/cases?verdict=FORBID', method: undefined, body: undefined },
-      { url: '/api/cases/case-1', method: 'PUT', body: JSON.stringify(caseItem) },
+    { url: '/api/cases?verdict=FORBID', method: undefined, body: undefined },
+    { url: '/api/cases', method: 'POST', body: JSON.stringify(caseItem) },
+    { url: '/api/cases/case-1', method: 'PUT', body: JSON.stringify(caseItem) },
       { url: '/api/cases/case-1', method: 'DELETE', body: undefined },
       { url: '/api/cases/export', method: undefined, body: undefined },
       { url: '/api/cases/import', method: 'POST', body: JSON.stringify([caseItem]) }
