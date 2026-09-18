@@ -64,6 +64,7 @@ import { applyCompoundFocusNodeSort } from '../../frontend/src/shared/sorting/fo
 import { createSyncCoordinator } from '../../frontend/src/application/sync/syncCoordinator.ts';
 import { initSyncManager as initSyncManagerFromLegacyPath } from '../../frontend/src/utils/syncManager.ts';
 import { initSyncManager } from '../../frontend/src/platform/browser/syncManager.ts';
+import { exitDocumentFullscreen, isDocumentFullscreen, requestDocumentFullscreen, type FullscreenDocument } from '../../frontend/src/platform/browser/fullscreen.ts';
 import { ApiAuthenticationError, ApiHttpError, createApiClient } from '../../frontend/src/application/http/apiClient.ts';
 import { apiFetch as apiFetchFromLegacyPath, setUnauthorizedHandler as setUnauthorizedHandlerFromLegacyPath } from '../../frontend/src/utils/api.ts';
 import { apiFetch, setUnauthorizedHandler } from '../../frontend/src/platform/browser/api.ts';
@@ -1924,6 +1925,33 @@ async function runAllTests() {
   test('旧 api 入口仍转出浏览器组合层的同一 client 与未授权回调注册函数', () => {
     assert.equal(apiFetchFromLegacyPath, apiFetch);
     assert.equal(setUnauthorizedHandlerFromLegacyPath, setUnauthorizedHandler);
+  });
+
+  await testAsync('fullscreen adapter 锁定标准 API 优先、历史前缀回退与已激活短路', async () => {
+    const calls: string[] = [];
+    const standardDocumentState = {
+      fullscreenElement: null as Element | null,
+      documentElement: { requestFullscreen: async () => { calls.push('request-standard'); } },
+      exitFullscreen: async () => { calls.push('exit-standard'); }
+    };
+    const standardDocument = standardDocumentState as unknown as FullscreenDocument;
+    await requestDocumentFullscreen(standardDocument);
+    standardDocumentState.fullscreenElement = {} as Element;
+    assert.equal(isDocumentFullscreen(standardDocument), true);
+    await requestDocumentFullscreen(standardDocument);
+    await exitDocumentFullscreen(standardDocument);
+
+    const legacyDocumentState = {
+      fullscreenElement: null as Element | null,
+      webkitFullscreenElement: {} as Element | null,
+      documentElement: { webkitRequestFullscreen: async () => { calls.push('request-webkit'); } },
+      webkitExitFullscreen: async () => { calls.push('exit-webkit'); }
+    };
+    const legacyDocument = legacyDocumentState as unknown as FullscreenDocument;
+    await exitDocumentFullscreen(legacyDocument);
+    legacyDocumentState.webkitFullscreenElement = null;
+    await requestDocumentFullscreen(legacyDocument);
+    assert.deepEqual(calls, ['request-standard', 'exit-standard', 'exit-webkit', 'request-webkit']);
   });
 
   await testAsync('syncCoordinator 锁定登录门禁、草稿挂起、刷新顺序与并发探针抑制', async () => {

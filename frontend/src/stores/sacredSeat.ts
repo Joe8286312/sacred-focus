@@ -2,6 +2,7 @@ import { defineStore } from 'pinia';
 import { ref } from 'vue';
 import type { SacredSeatConfig, FocusSessionLog, DailyFocusHeatmapItem } from '../types';
 import { sacredSeatGateway } from '../platform/browser/sacredSeat';
+import { exitDocumentFullscreen, isDocumentFullscreen, requestDocumentFullscreen } from '../platform/browser/fullscreen';
 
 export const useSacredSeatStore = defineStore('sacredSeat', () => {
   const config = ref<SacredSeatConfig>({
@@ -24,12 +25,7 @@ export const useSacredSeatStore = defineStore('sacredSeat', () => {
   // 监听浏览器全屏状态变化（如按 ESC 退出全屏时同步）
   if (typeof window !== 'undefined' && typeof document !== 'undefined') {
     const handleFullscreenChange = () => {
-      isFullscreen.value = Boolean(
-        document.fullscreenElement ||
-        (document as any).webkitFullscreenElement ||
-        (document as any).mozFullScreenElement ||
-        (document as any).msFullscreenElement
-      );
+      isFullscreen.value = isDocumentFullscreen(document);
     };
 
     document.addEventListener('fullscreenchange', handleFullscreenChange);
@@ -40,16 +36,7 @@ export const useSacredSeatStore = defineStore('sacredSeat', () => {
 
   async function enterFullscreen() {
     try {
-      const el = document.documentElement;
-      if (!document.fullscreenElement) {
-        if (el.requestFullscreen) {
-          await el.requestFullscreen();
-        } else if ((el as any).webkitRequestFullscreen) {
-          await (el as any).webkitRequestFullscreen();
-        } else if ((el as any).msRequestFullscreen) {
-          await (el as any).msRequestFullscreen();
-        }
-      }
+      await requestDocumentFullscreen(document);
     } catch (e) {
       console.warn('Fullscreen entry failed or user denied:', e);
     }
@@ -57,15 +44,7 @@ export const useSacredSeatStore = defineStore('sacredSeat', () => {
 
   async function exitFullscreen() {
     try {
-      if (document.fullscreenElement || (document as any).webkitFullscreenElement) {
-        if (document.exitFullscreen) {
-          await document.exitFullscreen();
-        } else if ((document as any).webkitExitFullscreen) {
-          await (document as any).webkitExitFullscreen();
-        } else if ((document as any).msExitFullscreen) {
-          await (document as any).msExitFullscreen();
-        }
-      }
+      await exitDocumentFullscreen(document);
     } catch (e) {
       console.warn('Exit fullscreen failed:', e);
     }
