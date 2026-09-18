@@ -2,7 +2,7 @@
 # 交付脚本共享契约：路径、Docker/Compose 前置检查、镜像标签和数据目录解析。
 
 SF_COMMON_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-SF_ROOT_DIR="$(cd "${SF_COMMON_DIR}/../.." && pwd)"
+SF_ROOT_DIR="${SF_ROOT_DIR:-$(cd "${SF_COMMON_DIR}/../.." && pwd)}"
 
 sf_log() { printf '%s\n' "$*"; }
 
@@ -45,6 +45,27 @@ sf_read_env_value() {
     line="${line#\"}"
     line="${line%\"}"
     printf '%s\n' "${line}"
+}
+
+sf_set_env_value() {
+    local env_file="$1"
+    local key="$2"
+    local value="$3"
+
+    [ -f "${env_file}" ] || return 1
+    if grep -qE "^[[:space:]]*${key}=" "${env_file}"; then
+        sed -i "s|^[[:space:]]*${key}=.*|${key}=${value}|" "${env_file}"
+    else
+        printf '%s=%s\n' "${key}" "${value}" >> "${env_file}"
+    fi
+}
+
+sf_remove_env_value() {
+    local env_file="$1"
+    local key="$2"
+
+    [ -f "${env_file}" ] || return 1
+    sed -i "/^[[:space:]]*${key}=/d" "${env_file}"
 }
 
 sf_host_data_dir() {

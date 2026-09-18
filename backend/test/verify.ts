@@ -2584,13 +2584,15 @@ async function runAllTests() {
     assert.match(nginxConfig, /server_tokens off;/);
   });
 
-  test('运维脚本锁定公共 Docker 契约、语义化标签、统一离线包与数据目录解析', () => {
+  test('运维脚本锁定公共 Docker 契约、语义化标签与可回滚更新事务边界', () => {
     const rootDir = path.resolve(__dirname, '../..');
     const scriptsDir = path.join(rootDir, 'scripts');
     const common = fs.readFileSync(path.join(scriptsDir, 'lib/docker-common.sh'), 'utf8');
     const pack = fs.readFileSync(path.join(scriptsDir, 'docker-pack.sh'), 'utf8');
     const backup = fs.readFileSync(path.join(scriptsDir, 'docker-backup.sh'), 'utf8');
     const update = fs.readFileSync(path.join(scriptsDir, 'docker-update.sh'), 'utf8');
+    const updateTransaction = fs.readFileSync(path.join(scriptsDir, 'lib/update-transaction.sh'), 'utf8');
+    const updateContract = fs.readFileSync(path.join(scriptsDir, 'test/docker-update-contract.sh'), 'utf8');
     const powershellPack = fs.readFileSync(path.join(scriptsDir, 'docker-pack.ps1'), 'utf8');
 
     assert.match(common, /sf_require_semver/);
@@ -2605,7 +2607,17 @@ async function runAllTests() {
     assert.match(pack, /--build-arg "APP_VERSION=v\$\{VERSION\}"/);
     assert.match(powershellPack, /--build-arg "APP_VERSION=v\$Version"/);
     assert.match(backup, /DATA_DIR="\$\(sf_host_data_dir\)"/);
-    assert.match(update, /DATA_DIR="\$\(sf_host_data_dir\)"/);
+    assert.match(update, /sf_backup_before_update "\$\(sf_host_data_dir\)"/);
+    assert.match(update, /source "\$\{SCRIPT_DIR\}\/lib\/update-transaction\.sh"/);
+    assert.match(update, /sf_rollback_update/);
+    assert.match(update, /sf_compose logs --tail=100 sacred-focus/);
+    assert.match(updateTransaction, /sf_restore_app_version/);
+    assert.match(updateTransaction, /sf_wait_for_health/);
+    assert.match(updateTransaction, /sf_backup_before_update/);
+    assert.match(updateContract, /pull-failure/);
+    assert.match(updateContract, /health-failure/);
+    assert.match(updateContract, /rollback-failure/);
+    assert.match(updateContract, /backup-failure/);
     assert.doesNotMatch(pack, /\.env/);
     assert.doesNotMatch(backup, /echo .*\$\{JWT_SECRET\}/);
     assert.doesNotMatch(update, /echo .*\$\{JWT_SECRET\}/);
