@@ -67,6 +67,7 @@ import { completeLogout } from '../../frontend/src/application/auth/sessionLifec
 import { createPrecedentCaseGateway } from '../../frontend/src/application/cases/precedentCaseGateway.ts';
 import { createSacredSeatGateway } from '../../frontend/src/application/sacredSeat/sacredSeatGateway.ts';
 import { createEvolutionGateway } from '../../frontend/src/application/evolution/evolutionGateway.ts';
+import { createSystemBackupGateway } from '../../frontend/src/application/systemBackup/systemBackupGateway.ts';
 import type { FocusNode, FocusSessionLog, FocusTreeData } from '../../frontend/src/types/index.ts';
 import type { PrecedentCase } from '../../frontend/src/types/index.ts';
 import type { FocusTreeData } from '../src/types.js';
@@ -2074,6 +2075,22 @@ async function runAllTests() {
       { url: '/api/evolution/rollback', method: 'POST', body: JSON.stringify({ targetSlotIndex: 2, expectedRevision: 7 }) },
       { url: '/api/evolution/export', method: undefined, body: undefined },
       { url: '/api/evolution/import', method: 'POST', body: JSON.stringify({ ...backup, expectedRevision: 7 }) }
+    ]);
+  });
+
+  await testAsync('systemBackupGateway 锁定整机镜像导入导出与 CAS HTTP 协议', async () => {
+    const calls: Array<{ url: string; options?: RequestInit }> = [];
+    const gateway = createSystemBackupGateway(async <T>(url: string, options?: RequestInit) => {
+      calls.push({ url, options });
+      if (url === '/api/system/import') return { summary: { nodes: 2 } } as T;
+      return {} as T;
+    });
+    const backup = { focusTree: { nodes: [], edges: [], groups: [], labels: [] } };
+    await gateway.exportFull();
+    assert.deepEqual(await gateway.importFull(backup, 12), { summary: { nodes: 2 } });
+    assert.deepEqual(calls.map(call => ({ url: call.url, method: call.options?.method, body: call.options?.body })), [
+      { url: '/api/system/export', method: undefined, body: undefined },
+      { url: '/api/system/import', method: 'POST', body: JSON.stringify({ ...backup, expectedRevision: 12 }) }
     ]);
   });
 

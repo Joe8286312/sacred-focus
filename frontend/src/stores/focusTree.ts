@@ -3,6 +3,7 @@ import { ref } from 'vue';
 import type { FocusNode, FocusEdge, FocusGroup, FocusLabel, EvolutionState } from '../types';
 import { apiFetch } from '../utils/api';
 import { evolutionGateway } from '../platform/browser/evolution';
+import { systemBackupGateway } from '../platform/browser/systemBackup';
 
 export const useFocusTreeStore = defineStore('focusTree', () => {
   const nodes = ref<FocusNode[]>([]);
@@ -329,7 +330,7 @@ export const useFocusTreeStore = defineStore('focusTree', () => {
   // 2. 全系统整机跨设备镜像导出
   async function exportFullSystemBackup(): Promise<boolean> {
     try {
-      const data = await apiFetch('/api/system/export');
+      const data = await systemBackupGateway.exportFull();
       const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
@@ -352,13 +353,7 @@ export const useFocusTreeStore = defineStore('focusTree', () => {
   // 全系统整机跨设备镜像导入恢复
   async function importFullSystemBackup(backupData: any): Promise<{ success: boolean; summary?: any; error?: string }> {
     try {
-      const data = await apiFetch('/api/system/import', {
-        method: 'POST',
-        body: JSON.stringify({
-          ...backupData,
-          expectedRevision: getExpectedRevision()
-        })
-      });
+      const data = await systemBackupGateway.importFull(backupData, getExpectedRevision());
       await Promise.all([
         fetchTree(),
         fetchEvolution()
