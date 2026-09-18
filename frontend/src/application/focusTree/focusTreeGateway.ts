@@ -37,6 +37,7 @@ export interface FocusTreeGateway {
   createGroup(group: FocusGroup): Promise<void>;
   updateGroup(id: string, updates: Partial<FocusGroup>): Promise<void>;
   deleteGroup(id: string): Promise<void>;
+  resetSettlementAudit(): Promise<void>;
 }
 
 /** 国策树核心 HTTP 协议的纯适配规则，store 继续管理草稿及乐观更新。 */
@@ -79,6 +80,9 @@ export function createFocusTreeGateway(request: FocusTreeApiRequest): FocusTreeG
     },
     async deleteGroup(id) {
       await request(`/api/focus-tree/groups/${id}`, { method: 'DELETE' });
+    },
+    async resetSettlementAudit() {
+      await request('/api/focus-tree/reset-settlement-audit', { method: 'POST' });
     }
   };
 }

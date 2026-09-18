@@ -7,7 +7,7 @@ import { useFocusTreeStore } from './stores/focusTree';
 import { useSacredSeatStore } from './stores/sacredSeat';
 import { useAuthStore } from './stores/auth';
 import { initSyncManager } from './utils/syncManager';
-import { apiFetch } from './utils/api';
+import { focusTreeGateway } from './platform/browser/focusTree';
 import { getTheme, toggleTheme as toggleGlobalTheme, type Theme } from './platform/browser/theme';
 
 const router = useRouter();
@@ -42,7 +42,7 @@ onMounted(() => {
 
     (window as any).__resetAndTriggerAudit = async () => {
       sessionStorage.removeItem('dismissedResetAlertDate');
-      await apiFetch('/api/focus-tree/reset-settlement-audit', { method: 'POST' });
+      await focusTreeGateway.resetSettlementAudit();
       await focusStore.fetchTree();
     };
   }

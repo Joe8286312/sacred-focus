@@ -2121,6 +2121,7 @@ async function runAllTests() {
     await gateway.createGroup(group);
     await gateway.updateGroup(group.id, { name: '更新后分组' });
     await gateway.deleteGroup(group.id);
+    await gateway.resetSettlementAudit();
     assert.deepEqual(calls.map(call => ({ url: call.url, method: call.options?.method, body: call.options?.body })), [
       { url: '/api/focus-tree', method: undefined, body: undefined },
       { url: '/api/focus-tree', method: 'PUT', body: JSON.stringify({ ...tree, expectedRevision: 5 }) },
@@ -2133,7 +2134,8 @@ async function runAllTests() {
       { url: '/api/focus-tree/edges/edge-1', method: 'DELETE', body: undefined },
       { url: '/api/focus-tree/groups', method: 'POST', body: JSON.stringify(group) },
       { url: '/api/focus-tree/groups/group-1', method: 'PUT', body: JSON.stringify({ name: '更新后分组' }) },
-      { url: '/api/focus-tree/groups/group-1', method: 'DELETE', body: undefined }
+      { url: '/api/focus-tree/groups/group-1', method: 'DELETE', body: undefined },
+      { url: '/api/focus-tree/reset-settlement-audit', method: 'POST', body: undefined }
     ]);
   });
 
