@@ -1,7 +1,6 @@
 import { defineStore } from 'pinia';
 import { ref } from 'vue';
 import type { FocusNode, FocusEdge, FocusGroup, FocusLabel, EvolutionState } from '../types';
-import { apiFetch } from '../utils/api';
 import { evolutionGateway } from '../platform/browser/evolution';
 import { systemBackupGateway } from '../platform/browser/systemBackup';
 import { focusTreeGateway } from '../platform/browser/focusTree';
@@ -356,10 +355,7 @@ export const useFocusTreeStore = defineStore('focusTree', () => {
     nodes.value.push(node);
     lastCreatedNodeId.value = node.id;
     try {
-      await apiFetch('/api/focus-tree/nodes', {
-        method: 'POST',
-        body: JSON.stringify(node)
-      });
+      await focusTreeGateway.createNode(node);
     } catch (e: any) {
       console.error('Failed to add node, rolling back optimistic state', e);
       nodes.value = nodes.value.filter(n => n.id !== node.id);
@@ -382,10 +378,7 @@ export const useFocusTreeStore = defineStore('focusTree', () => {
       nodes.value[idx] = { ...nodes.value[idx], ...updates };
     }
     try {
-      await apiFetch(`/api/focus-tree/nodes/${id}`, {
-        method: 'PUT',
-        body: JSON.stringify(updates)
-      });
+      await focusTreeGateway.updateNode(id, updates);
     } catch (e: any) {
       console.error('Failed to update node, rolling back optimistic state', e);
       if (prevNode && idx !== -1) {
@@ -425,7 +418,7 @@ export const useFocusTreeStore = defineStore('focusTree', () => {
     nodes.value = nodes.value.filter(n => n.id !== id);
     edges.value = edges.value.filter(e => e.sourceId !== id && e.targetId !== id);
     try {
-      await apiFetch(`/api/focus-tree/nodes/${id}`, { method: 'DELETE' });
+      await focusTreeGateway.deleteNode(id);
     } catch (e: any) {
       console.error('Failed to delete node, rolling back optimistic state', e);
       if (prevNode) {
@@ -442,10 +435,7 @@ export const useFocusTreeStore = defineStore('focusTree', () => {
   async function addEdge(edge: FocusEdge) {
     edges.value.push(edge);
     try {
-      await apiFetch('/api/focus-tree/edges', {
-        method: 'POST',
-        body: JSON.stringify(edge)
-      });
+      await focusTreeGateway.createEdge(edge);
     } catch (e: any) {
       console.error('Failed to add edge, rolling back optimistic state', e);
       edges.value = edges.value.filter(e => e.id !== edge.id);
@@ -458,7 +448,7 @@ export const useFocusTreeStore = defineStore('focusTree', () => {
     const prevEdge = edges.value.find(e => e.id === id);
     edges.value = edges.value.filter(e => e.id !== id);
     try {
-      await apiFetch(`/api/focus-tree/edges/${id}`, { method: 'DELETE' });
+      await focusTreeGateway.deleteEdge(id);
     } catch (e: any) {
       console.error('Failed to delete edge, rolling back optimistic state', e);
       if (prevEdge) {
@@ -476,10 +466,7 @@ export const useFocusTreeStore = defineStore('focusTree', () => {
     groups.value.push(group);
     lastCreatedGroupId.value = group.id;
     try {
-      await apiFetch('/api/focus-tree/groups', {
-        method: 'POST',
-        body: JSON.stringify(group)
-      });
+      await focusTreeGateway.createGroup(group);
     } catch (e: any) {
       console.error('Failed to add group, rolling back optimistic state', e);
       groups.value = groups.value.filter(g => g.id !== group.id);
@@ -497,10 +484,7 @@ export const useFocusTreeStore = defineStore('focusTree', () => {
       groups.value[idx] = { ...groups.value[idx], ...updates };
     }
     try {
-      await apiFetch(`/api/focus-tree/groups/${id}`, {
-        method: 'PUT',
-        body: JSON.stringify(updates)
-      });
+      await focusTreeGateway.updateGroup(id, updates);
     } catch (e: any) {
       console.error('Failed to update group, rolling back optimistic state', e);
       if (prevGroup && idx !== -1) {
@@ -524,7 +508,7 @@ export const useFocusTreeStore = defineStore('focusTree', () => {
     // 移除与该组直接相连的连线
     edges.value = edges.value.filter(e => e.sourceId !== id && e.targetId !== id);
     try {
-      await apiFetch(`/api/focus-tree/groups/${id}`, { method: 'DELETE' });
+      await focusTreeGateway.deleteGroup(id);
     } catch (e: any) {
       console.error('Failed to delete group, rolling back optimistic state', e);
       if (prevGroup) {

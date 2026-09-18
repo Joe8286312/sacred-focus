@@ -29,6 +29,14 @@ export interface FocusTreeGateway {
   saveTree(tree: FocusTreePayload, expectedRevision: number): Promise<RevisionResponse>;
   toggleNodeLit(nodeId: string): Promise<NodeLitResponse>;
   reorderNodes(nodeIds: string[]): Promise<void>;
+  createNode(node: FocusNode): Promise<void>;
+  updateNode(id: string, updates: Partial<FocusNode>): Promise<void>;
+  deleteNode(id: string): Promise<void>;
+  createEdge(edge: FocusEdge): Promise<void>;
+  deleteEdge(id: string): Promise<void>;
+  createGroup(group: FocusGroup): Promise<void>;
+  updateGroup(id: string, updates: Partial<FocusGroup>): Promise<void>;
+  deleteGroup(id: string): Promise<void>;
 }
 
 /** 国策树核心 HTTP 协议的纯适配规则，store 继续管理草稿及乐观更新。 */
@@ -47,6 +55,30 @@ export function createFocusTreeGateway(request: FocusTreeApiRequest): FocusTreeG
     },
     async reorderNodes(nodeIds) {
       await request('/api/focus-tree/nodes/reorder', { method: 'PUT', body: JSON.stringify({ nodeIds }) });
+    },
+    async createNode(node) {
+      await request('/api/focus-tree/nodes', { method: 'POST', body: JSON.stringify(node) });
+    },
+    async updateNode(id, updates) {
+      await request(`/api/focus-tree/nodes/${id}`, { method: 'PUT', body: JSON.stringify(updates) });
+    },
+    async deleteNode(id) {
+      await request(`/api/focus-tree/nodes/${id}`, { method: 'DELETE' });
+    },
+    async createEdge(edge) {
+      await request('/api/focus-tree/edges', { method: 'POST', body: JSON.stringify(edge) });
+    },
+    async deleteEdge(id) {
+      await request(`/api/focus-tree/edges/${id}`, { method: 'DELETE' });
+    },
+    async createGroup(group) {
+      await request('/api/focus-tree/groups', { method: 'POST', body: JSON.stringify(group) });
+    },
+    async updateGroup(id, updates) {
+      await request(`/api/focus-tree/groups/${id}`, { method: 'PUT', body: JSON.stringify(updates) });
+    },
+    async deleteGroup(id) {
+      await request(`/api/focus-tree/groups/${id}`, { method: 'DELETE' });
     }
   };
 }
