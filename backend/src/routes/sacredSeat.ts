@@ -162,7 +162,7 @@ router.post('/logs', (req: Request, res: Response) => {
     });
 
     res.status(saved.idempotent ? 200 : 201).json(saved);
-  } catch (err: any) {
+  } catch (err: unknown) {
     console.error('Failed to save session log:', err);
     res.status(500).json({
       error: 'LOG_SAVE_FAILED',
