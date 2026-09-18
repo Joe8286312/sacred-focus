@@ -7,7 +7,7 @@ export interface CaseImportResult {
   totalCases: number;
 }
 
-export type ApiRequest = <T = any>(url: string, options?: RequestInit) => Promise<T>;
+export type ApiRequest = <T = unknown>(url: string, options?: RequestInit) => Promise<T>;
 
 export interface PrecedentCaseGateway {
   list(filter: CaseFilter): Promise<PrecedentCase[]>;

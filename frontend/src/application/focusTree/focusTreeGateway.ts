@@ -22,7 +22,7 @@ export interface FocusTreePayload {
   labels: FocusLabel[];
 }
 
-export type FocusTreeApiRequest = <T = any>(url: string, options?: RequestInit) => Promise<T>;
+export type FocusTreeApiRequest = <T = unknown>(url: string, options?: RequestInit) => Promise<T>;
 
 export interface FocusTreeGateway {
   getTree(): Promise<FocusTreeResponse>;

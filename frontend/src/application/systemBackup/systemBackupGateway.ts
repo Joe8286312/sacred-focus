@@ -2,7 +2,7 @@ export interface SystemBackupImportResponse {
   summary?: unknown;
 }
 
-export type SystemBackupApiRequest = <T = any>(url: string, options?: RequestInit) => Promise<T>;
+export type SystemBackupApiRequest = <T = unknown>(url: string, options?: RequestInit) => Promise<T>;
 
 export interface SystemBackupGateway {
   exportFull(): Promise<unknown>;

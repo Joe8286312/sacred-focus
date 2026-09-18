@@ -11,7 +11,7 @@ export interface SacredSeatImportResult {
   totalLogs: number;
 }
 
-export type SacredSeatApiRequest = <T = any>(url: string, options?: RequestInit) => Promise<T>;
+export type SacredSeatApiRequest = <T = unknown>(url: string, options?: RequestInit) => Promise<T>;
 
 export interface SacredSeatGateway {
   getConfig(): Promise<SacredSeatConfig>;

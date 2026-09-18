@@ -9,7 +9,7 @@ export interface EvolutionRollbackResponse {
   revision?: number;
 }
 
-export type EvolutionApiRequest = <T = any>(url: string, options?: RequestInit) => Promise<T>;
+export type EvolutionApiRequest = <T = unknown>(url: string, options?: RequestInit) => Promise<T>;
 
 export interface EvolutionGateway {
   getState(): Promise<EvolutionStateResponse>;
