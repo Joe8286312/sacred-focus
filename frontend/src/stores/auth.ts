@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia';
 import { ref } from 'vue';
 import { completeLogout } from '../application/auth/sessionLifecycle';
+import { getLoginRequestFailureMessage, getLoginResponseFailureMessage } from '../application/auth/loginFailureMessage';
 import { authGateway } from '../platform/browser/auth';
 
 let logoutHandler: (() => void) | undefined;
@@ -27,15 +28,15 @@ export const useAuthStore = defineStore('auth', () => {
       const { ok, body: data } = await authGateway.login(password);
 
       if (!ok) {
-        authError.value = data.message || data.error || '密码核验失败';
+        authError.value = getLoginResponseFailureMessage(data);
         return false;
       }
 
       isAuthenticated.value = true;
       hasCheckedAuth.value = true;
       return true;
-    } catch (e: any) {
-      authError.value = e.message || '网络连接异常，请检查后端服务';
+    } catch (e: unknown) {
+      authError.value = getLoginRequestFailureMessage(e);
       return false;
     }
   }

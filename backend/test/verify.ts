@@ -71,6 +71,7 @@ import { apiFetch as apiFetchFromLegacyPath, setUnauthorizedHandler as setUnauth
 import { apiFetch, setUnauthorizedHandler } from '../../frontend/src/platform/browser/api.ts';
 import { completeLogout } from '../../frontend/src/application/auth/sessionLifecycle.ts';
 import { createAuthGateway, readAuthResponse } from '../../frontend/src/application/auth/authGateway.ts';
+import { getLoginRequestFailureMessage, getLoginResponseFailureMessage } from '../../frontend/src/application/auth/loginFailureMessage.ts';
 import { createPrecedentCaseGateway } from '../../frontend/src/application/cases/precedentCaseGateway.ts';
 import { createSacredSeatGateway } from '../../frontend/src/application/sacredSeat/sacredSeatGateway.ts';
 import { createEvolutionGateway } from '../../frontend/src/application/evolution/evolutionGateway.ts';
@@ -2211,6 +2212,15 @@ async function runAllTests() {
       onLoggedOut: () => { calls.push('navigate'); }
     });
     assert.deepEqual(calls, ['unauthenticated', 'checked', 'navigate']);
+  });
+
+  test('auth 登录失败文案锁定服务端优先级与未知异常回退', () => {
+    assert.equal(getLoginResponseFailureMessage({ message: '密码错误', error: '备用文案' }), '密码错误');
+    assert.equal(getLoginResponseFailureMessage({ message: '', error: '备用文案' }), '备用文案');
+    assert.equal(getLoginResponseFailureMessage({ error: '' }), '密码核验失败');
+    assert.equal(getLoginRequestFailureMessage(new Error('网络超时')), '网络超时');
+    assert.equal(getLoginRequestFailureMessage({ message: 503 }), '网络连接异常，请检查后端服务');
+    assert.equal(getLoginRequestFailureMessage(null), '网络连接异常，请检查后端服务');
   });
 
   await testAsync('authGateway 锁定 Cookie 会话协议及登录响应容错文案', async () => {
