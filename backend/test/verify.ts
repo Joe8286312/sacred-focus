@@ -64,6 +64,7 @@ import { applyCompoundFocusNodeSort } from '../../frontend/src/shared/sorting/fo
 import { createSyncCoordinator } from '../../frontend/src/application/sync/syncCoordinator.ts';
 import { ApiAuthenticationError, ApiHttpError, createApiClient } from '../../frontend/src/application/http/apiClient.ts';
 import { completeLogout } from '../../frontend/src/application/auth/sessionLifecycle.ts';
+import { createAuthGateway, readAuthResponse } from '../../frontend/src/application/auth/authGateway.ts';
 import { createPrecedentCaseGateway } from '../../frontend/src/application/cases/precedentCaseGateway.ts';
 import { createSacredSeatGateway } from '../../frontend/src/application/sacredSeat/sacredSeatGateway.ts';
 import { createEvolutionGateway } from '../../frontend/src/application/evolution/evolutionGateway.ts';
@@ -2149,6 +2150,33 @@ async function runAllTests() {
       onLoggedOut: () => { calls.push('navigate'); }
     });
     assert.deepEqual(calls, ['unauthenticated', 'checked', 'navigate']);
+  });
+
+  await testAsync('authGateway 锁定 Cookie 会话协议及登录响应容错文案', async () => {
+    const calls: Array<{ input: RequestInfo | URL; init?: RequestInit }> = [];
+    const responses = [
+      new Response(JSON.stringify({ message: '密码错误' }), { status: 401 }),
+      new Response('', { status: 200 }),
+      new Response(JSON.stringify({ isAuthenticated: true }), { status: 200 })
+    ];
+    const gateway = createAuthGateway(async (input, init) => {
+      calls.push({ input, init });
+      return responses.shift()!;
+    });
+    assert.deepEqual(await gateway.login('wrong'), { ok: false, body: { message: '密码错误' } });
+    await gateway.logout();
+    assert.equal(await gateway.getStatus(), true);
+    assert.deepEqual(calls.map(call => ({ input: call.input, method: call.init?.method, body: call.init?.body, credentials: call.init?.credentials })), [
+      { input: '/api/auth/login', method: 'POST', body: JSON.stringify({ password: 'wrong' }), credentials: 'include' },
+      { input: '/api/auth/logout', method: 'POST', body: undefined, credentials: 'include' },
+      { input: '/api/auth/status', method: undefined, body: undefined, credentials: 'include' }
+    ]);
+    assert.deepEqual(await readAuthResponse(new Response('', { status: 503 })), {
+      message: '登录服务返回空响应（HTTP 503）。请确认本机后端正在运行。'
+    });
+    assert.deepEqual(await readAuthResponse(new Response('<html>down</html>', { status: 502 })), {
+      message: '登录服务返回了无法识别的响应（HTTP 502）。请检查后端终端日志。'
+    });
   });
 
   function safeParseResponse(rawText: string): any {

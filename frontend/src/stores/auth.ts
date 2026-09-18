@@ -1,29 +1,13 @@
 import { defineStore } from 'pinia';
 import { ref } from 'vue';
 import { completeLogout } from '../application/auth/sessionLifecycle';
+import { authGateway } from '../platform/browser/auth';
 
 let logoutHandler: (() => void) | undefined;
 
 /** 由浏览器组合根注册登出后的导航；store 不反向依赖 Vue Router。 */
 export function setAuthLogoutHandler(handler: (() => void) | undefined) {
   logoutHandler = handler;
-}
-
-async function readAuthResponse(res: Response): Promise<Record<string, any>> {
-  const rawText = await res.text();
-  if (!rawText.trim()) {
-    return {
-      message: `登录服务返回空响应（HTTP ${res.status}）。请确认本机后端正在运行。`
-    };
-  }
-
-  try {
-    return JSON.parse(rawText) as Record<string, any>;
-  } catch {
-    return {
-      message: `登录服务返回了无法识别的响应（HTTP ${res.status}）。请检查后端终端日志。`
-    };
-  }
 }
 
 export const useAuthStore = defineStore('auth', () => {
@@ -40,16 +24,9 @@ export const useAuthStore = defineStore('auth', () => {
   async function login(password: string): Promise<boolean> {
     authError.value = null;
     try {
-      const res = await fetch('/api/auth/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ password }),
-        credentials: 'include'
-      });
+      const { ok, body: data } = await authGateway.login(password);
 
-      const data = await readAuthResponse(res);
-
-      if (!res.ok) {
+      if (!ok) {
         authError.value = data.message || data.error || '密码核验失败';
         return false;
       }
@@ -65,7 +42,7 @@ export const useAuthStore = defineStore('auth', () => {
 
   async function logout(): Promise<void> {
     try {
-      await fetch('/api/auth/logout', { method: 'POST', credentials: 'include' });
+      await authGateway.logout();
     } catch (e) {
       // 登出静默清理
     } finally {
@@ -81,12 +58,9 @@ export const useAuthStore = defineStore('auth', () => {
     if (isChecking.value) return isAuthenticated.value;
     isChecking.value = true;
     try {
-      const res = await fetch('/api/auth/status', {
-        credentials: 'include'
-      });
-      if (res.ok) {
-        const data = await res.json();
-        isAuthenticated.value = Boolean(data.isAuthenticated);
+      const authenticated = await authGateway.getStatus();
+      if (authenticated) {
+        isAuthenticated.value = true;
         hasCheckedAuth.value = true;
         return isAuthenticated.value;
       }
