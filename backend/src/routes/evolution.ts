@@ -4,6 +4,7 @@ import { validateFullBackupPayload } from '../utils/validators.js';
 import { createEvolutionRepository } from '../repositories/evolutionRepository.js';
 import { createSystemMetaRepository } from '../repositories/systemMetaRepository.js';
 import { createEvolutionService } from '../services/evolutionService.js';
+import { getErrorDetails } from '../utils/errorDetails.js';
 
 const router = Router();
 const repository = createEvolutionRepository(db);
@@ -53,7 +54,7 @@ router.post('/snapshot', (req: Request, res: Response) => {
   try {
     const result = service.createSnapshot({ expectedRevision, changelogNotes, isMajor });
     res.status(201).json({ message: 'Snapshot created', ...result });
-  } catch (e: any) {
+  } catch (e: unknown) {
     if (e instanceof RevisionPreconditionError) return sendVersionConflict(res, e.currentRevision);
     throw e;
   }
@@ -82,7 +83,7 @@ router.post('/rollback', (req: Request, res: Response) => {
       revision: restored.revision,
       liveTree: restored.liveTree
     });
-  } catch (e: any) {
+  } catch (e: unknown) {
     if (e instanceof RevisionPreconditionError) {
       return sendVersionConflict(res, e.currentRevision);
     }
@@ -94,9 +95,9 @@ router.post('/rollback', (req: Request, res: Response) => {
 router.get('/export', (_req: Request, res: Response) => {
   try {
     res.json(service.exportArchitecture());
-  } catch (e: any) {
+  } catch (e: unknown) {
     console.error('Failed to export focus tree backup', e);
-    res.status(500).json({ error: 'Failed to export focus tree backup', details: e.message });
+    res.status(500).json({ error: 'Failed to export focus tree backup', details: getErrorDetails(e) });
   }
 });
 
@@ -118,12 +119,12 @@ router.post('/import', (req: Request, res: Response) => {
   try {
     const revision = service.importArchitecture({ expectedRevision, tree, evolution });
     res.json({ message: 'Focus tree architecture successfully imported and restored', revision });
-  } catch (e: any) {
+  } catch (e: unknown) {
     if (e instanceof RevisionPreconditionError) {
       return sendVersionConflict(res, e.currentRevision);
     }
     console.error('Failed to import focus tree backup', e);
-    res.status(500).json({ error: 'Failed to import focus tree backup', details: e.message });
+    res.status(500).json({ error: 'Failed to import focus tree backup', details: getErrorDetails(e) });
   }
 });
 
