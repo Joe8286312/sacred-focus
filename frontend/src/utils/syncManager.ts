@@ -2,55 +2,29 @@ import { apiFetch } from './api';
 import { useFocusTreeStore } from '../stores/focusTree';
 import { useSacredSeatStore } from '../stores/sacredSeat';
 import { useAuthStore } from '../stores/auth';
-
-let isProbing = false;
+import { createSyncCoordinator } from '../application/sync/syncCoordinator';
 
 export function initSyncManager(): () => void {
-  async function probeAndSync() {
-    if (isProbing) return;
-    isProbing = true;
-
-    try {
-      // 只有在已登录时才发起同步探针
-      const authStore = useAuthStore();
-      if (!authStore.isAuthenticated) return;
-
-      const data = await apiFetch<{ revision: number; evolutionVersion: string; updatedAt: string }>('/api/sync/status');
+  const { probeAndSync } = createSyncCoordinator({
+    isAuthenticated: () => useAuthStore().isAuthenticated,
+    fetchRemoteStatus: () => apiFetch('/api/sync/status'),
+    getFocusTreeSyncState: () => {
       const focusTreeStore = useFocusTreeStore();
-      const sacredSeatStore = useSacredSeatStore();
-
-      // 仅记录远端观测值；绝不把它当作本地已同步的写入基线。
-      focusTreeStore.observeRemoteRevision(data.revision);
-
-      if (data.revision <= focusTreeStore.syncedRevision) {
-        return;
-      }
-
-      console.log(`[Sacred Focus Sync] 云端检测到更新: rev ${focusTreeStore.syncedRevision} -> ${data.revision}`);
-
-      // 草稿存在且远端领先时，挂起拉取；保留草稿基线让后端 CAS 返回 409。
-      if (
-        focusTreeStore.isEditing &&
-        focusTreeStore.draftBaseRevision !== null &&
-        data.revision > focusTreeStore.draftBaseRevision
-      ) {
-        return;
-      }
-
-      // 非编辑态才允许刷新。fetchTreeData 成功后会依据响应中的 revision 推进 syncedRevision。
-      if (!focusTreeStore.loading && !focusTreeStore.isEditing) {
-        await focusTreeStore.fetchTreeData();
-        await Promise.allSettled([
-          sacredSeatStore.fetchConfig(),
-          sacredSeatStore.fetchLogs()
-        ]);
-      }
-    } catch (e) {
-      // 探针静默失败不中断用户当前操作
-    } finally {
-      isProbing = false;
+      return {
+        syncedRevision: focusTreeStore.syncedRevision,
+        draftBaseRevision: focusTreeStore.draftBaseRevision,
+        isEditing: focusTreeStore.isEditing,
+        loading: focusTreeStore.loading
+      };
+    },
+    observeRemoteRevision: revision => useFocusTreeStore().observeRemoteRevision(revision),
+    refreshFocusTree: () => useFocusTreeStore().fetchTreeData(),
+    refreshSacredSeatConfig: () => useSacredSeatStore().fetchConfig(),
+    refreshSacredSeatLogs: () => useSacredSeatStore().fetchLogs(),
+    logRemoteUpdate: (fromRevision, toRevision) => {
+      console.log(`[Sacred Focus Sync] 云端检测到更新: rev ${fromRevision} -> ${toRevision}`);
     }
-  }
+  });
 
   const onVisibilityChange = () => {
     if (document.visibilityState === 'visible') {

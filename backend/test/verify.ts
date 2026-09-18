@@ -59,6 +59,7 @@ import { playChimeSound as playChimeSoundFromBrowserAdapter } from '../../fronte
 import { useListSort } from '../../frontend/src/composables/useListSort.ts';
 import { useListSort as useListSortFromComposables } from '../../frontend/src/composables/listSort/useListSort.ts';
 import { applyCompoundFocusNodeSort } from '../../frontend/src/shared/sorting/focusNodeSort.ts';
+import { createSyncCoordinator } from '../../frontend/src/application/sync/syncCoordinator.ts';
 import type { FocusNode } from '../../frontend/src/types/index.ts';
 import type { FocusTreeData } from '../src/types.js';
 
@@ -1871,6 +1872,62 @@ async function runAllTests() {
   // 5. 前端 API 安全解析器模拟测试 (api.ts F-4)
   // -----------------------------------------------------------
   console.log('\n[Suite 5] 前端 apiFetch 安全容错解析逻辑 (api.ts)');
+
+  await testAsync('syncCoordinator 锁定登录门禁、草稿挂起、刷新顺序与并发探针抑制', async () => {
+    let authenticated = false;
+    let remoteRevision = 3;
+    let state = { syncedRevision: 3, draftBaseRevision: null as number | null, isEditing: false, loading: false };
+    const calls: string[] = [];
+    const coordinator = createSyncCoordinator({
+      isAuthenticated: () => authenticated,
+      fetchRemoteStatus: async () => { calls.push('status'); return { revision: remoteRevision, evolutionVersion: 'v1.0', updatedAt: 'now' }; },
+      getFocusTreeSyncState: () => state,
+      observeRemoteRevision: revision => { calls.push(`observe:${revision}`); },
+      refreshFocusTree: async () => { calls.push('tree'); },
+      refreshSacredSeatConfig: async () => { calls.push('seat-config'); throw new Error('config refresh failed'); },
+      refreshSacredSeatLogs: async () => { calls.push('seat-logs'); },
+      logRemoteUpdate: (fromRevision, toRevision) => { calls.push(`log:${fromRevision}->${toRevision}`); }
+    });
+
+    await coordinator.probeAndSync();
+    assert.deepEqual(calls, []);
+
+    authenticated = true;
+    await coordinator.probeAndSync();
+    assert.deepEqual(calls, ['status', 'observe:3']);
+
+    calls.length = 0;
+    remoteRevision = 5;
+    state = { syncedRevision: 3, draftBaseRevision: 4, isEditing: true, loading: false };
+    await coordinator.probeAndSync();
+    assert.deepEqual(calls, ['status', 'observe:5', 'log:3->5']);
+
+    calls.length = 0;
+    remoteRevision = 6;
+    state = { syncedRevision: 3, draftBaseRevision: null, isEditing: false, loading: false };
+    await coordinator.probeAndSync();
+    assert.deepEqual(calls, ['status', 'observe:6', 'log:3->6', 'tree', 'seat-config', 'seat-logs']);
+
+    let resolveStatus: ((value: { revision: number; evolutionVersion: string; updatedAt: string }) => void) | undefined;
+    let statusRequests = 0;
+    const concurrentCoordinator = createSyncCoordinator({
+      isAuthenticated: () => true,
+      fetchRemoteStatus: () => {
+        statusRequests++;
+        return new Promise(resolve => { resolveStatus = resolve; });
+      },
+      getFocusTreeSyncState: () => ({ syncedRevision: 1, draftBaseRevision: null, isEditing: false, loading: true }),
+      observeRemoteRevision: () => undefined,
+      refreshFocusTree: async () => undefined,
+      refreshSacredSeatConfig: async () => undefined,
+      refreshSacredSeatLogs: async () => undefined
+    });
+    const firstProbe = concurrentCoordinator.probeAndSync();
+    const secondProbe = concurrentCoordinator.probeAndSync();
+    assert.equal(statusRequests, 1);
+    resolveStatus?.({ revision: 1, evolutionVersion: 'v1.0', updatedAt: 'now' });
+    await Promise.all([firstProbe, secondProbe]);
+  });
 
   function safeParseResponse(rawText: string): any {
     const trimmed = rawText.trim();
