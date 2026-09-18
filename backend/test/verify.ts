@@ -1668,6 +1668,13 @@ async function runAllTests() {
       assert.ok(fs.existsSync(result.backupFile));
       assert.equal(result.prunedCount, 2);
       assert.deepEqual(fs.readdirSync(backupDir).filter(name => /^app_pre_import_.*\.db$/i.test(name)), [path.basename(result.backupFile)]);
+      const service = createSystemBackupService({
+        systemBackupRepository: {
+          exportFullBackup: () => { throw new Error('export should not be called'); },
+          createPreImportBackup: async () => result
+        }
+      });
+      assert.equal(await service.createPreImportBackup(), result);
     } finally {
       backupDb.close();
       fs.rmSync(backupDir, { recursive: true, force: true });

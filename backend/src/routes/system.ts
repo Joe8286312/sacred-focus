@@ -71,7 +71,7 @@ router.post('/import', importLimiter, async (req: Request, res: Response) => {
 
   // 导入前自动热备当前 SQLite 数据库快照 (P1-002: 热备失败必须终止导入，严禁破坏性覆写)
   try {
-    const result = await repository.createPreImportBackup();
+    const result = await service.createPreImportBackup();
     console.log(`[Sacred Focus System] 预导入安全热备已生成: ${result.backupFile}`);
     if (result.prunedCount > 0) {
       console.log(`[Sacred Focus System] 已淘汰 ${result.prunedCount} 个过期预导入热备`);
