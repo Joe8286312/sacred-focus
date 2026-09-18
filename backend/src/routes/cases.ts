@@ -3,6 +3,7 @@ import { db } from '../db.js';
 import { createPrecedentCaseRepository } from '../repositories/precedentCaseRepository.js';
 import { createSystemMetaRepository } from '../repositories/systemMetaRepository.js';
 import { createPrecedentCaseService } from '../services/precedentCaseService.js';
+import { getErrorDetails } from '../utils/errorDetails.js';
 
 const router = Router();
 const service = createPrecedentCaseService({
@@ -36,9 +37,9 @@ router.post('/import', (req: Request, res: Response) => {
       success: true,
       ...summary
     });
-  } catch (err: any) {
+  } catch (err: unknown) {
     console.error('Failed to import precedent cases', err);
-    res.status(500).json({ error: 'Failed to import cases: ' + err.message });
+    res.status(500).json({ error: 'Failed to import cases: ' + getErrorDetails(err) });
   }
 });
 
