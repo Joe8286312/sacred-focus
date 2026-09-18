@@ -66,7 +66,8 @@ import { ApiAuthenticationError, ApiHttpError, createApiClient } from '../../fro
 import { completeLogout } from '../../frontend/src/application/auth/sessionLifecycle.ts';
 import { createPrecedentCaseGateway } from '../../frontend/src/application/cases/precedentCaseGateway.ts';
 import { createSacredSeatGateway } from '../../frontend/src/application/sacredSeat/sacredSeatGateway.ts';
-import type { FocusNode, FocusSessionLog } from '../../frontend/src/types/index.ts';
+import { createEvolutionGateway } from '../../frontend/src/application/evolution/evolutionGateway.ts';
+import type { FocusNode, FocusSessionLog, FocusTreeData } from '../../frontend/src/types/index.ts';
 import type { PrecedentCase } from '../../frontend/src/types/index.ts';
 import type { FocusTreeData } from '../src/types.js';
 
@@ -2050,6 +2051,29 @@ async function runAllTests() {
       { url: '/api/sacred-seat/logs', method: 'POST', body: JSON.stringify(session) },
       { url: '/api/sacred-seat/logs/export', method: undefined, body: undefined },
       { url: '/api/sacred-seat/logs/import', method: 'POST', body: JSON.stringify([session]) }
+    ]);
+  });
+
+  await testAsync('evolutionGateway 锁定版本读取、快照、回滚和架构迁移 HTTP 协议', async () => {
+    const calls: Array<{ url: string; options?: RequestInit }> = [];
+    const liveTree = { nodes: [], edges: [], groups: [], labels: [] } as FocusTreeData;
+    const gateway = createEvolutionGateway(async <T>(url: string, options?: RequestInit) => {
+      calls.push({ url, options });
+      if (url === '/api/evolution/rollback') return { liveTree, revision: 8 } as T;
+      return {} as T;
+    });
+    const backup = { focusTree: liveTree, snapshots: [] };
+    await gateway.getState();
+    await gateway.createSnapshot('保存架构', true, 7);
+    assert.deepEqual(await gateway.rollback(2, 7), { liveTree, revision: 8 });
+    await gateway.exportArchitecture();
+    await gateway.importArchitecture(backup, 7);
+    assert.deepEqual(calls.map(call => ({ url: call.url, method: call.options?.method, body: call.options?.body })), [
+      { url: '/api/evolution', method: undefined, body: undefined },
+      { url: '/api/evolution/snapshot', method: 'POST', body: JSON.stringify({ changelogNotes: '保存架构', isMajor: true, expectedRevision: 7 }) },
+      { url: '/api/evolution/rollback', method: 'POST', body: JSON.stringify({ targetSlotIndex: 2, expectedRevision: 7 }) },
+      { url: '/api/evolution/export', method: undefined, body: undefined },
+      { url: '/api/evolution/import', method: 'POST', body: JSON.stringify({ ...backup, expectedRevision: 7 }) }
     ]);
   });
 

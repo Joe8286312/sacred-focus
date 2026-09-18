@@ -2,6 +2,7 @@ import { defineStore } from 'pinia';
 import { ref } from 'vue';
 import type { FocusNode, FocusEdge, FocusGroup, FocusLabel, EvolutionState } from '../types';
 import { apiFetch } from '../utils/api';
+import { evolutionGateway } from '../platform/browser/evolution';
 
 export const useFocusTreeStore = defineStore('focusTree', () => {
   const nodes = ref<FocusNode[]>([]);
@@ -250,7 +251,7 @@ export const useFocusTreeStore = defineStore('focusTree', () => {
 
   async function fetchEvolution() {
     try {
-      const data = await apiFetch('/api/evolution');
+      const data = await evolutionGateway.getState();
       evolution.value = data;
       if (typeof data.revision === 'number') {
         markSyncedRevision(data.revision);
@@ -262,14 +263,7 @@ export const useFocusTreeStore = defineStore('focusTree', () => {
 
   async function createSnapshot(changelogNotes: string, isMajor: boolean) {
     try {
-      await apiFetch('/api/evolution/snapshot', {
-        method: 'POST',
-        body: JSON.stringify({
-          changelogNotes,
-          isMajor,
-          expectedRevision: getExpectedRevision()
-        })
-      });
+      await evolutionGateway.createSnapshot(changelogNotes, isMajor, getExpectedRevision());
       await fetchEvolution();
       return true;
     } catch (e) {
@@ -280,13 +274,7 @@ export const useFocusTreeStore = defineStore('focusTree', () => {
 
   async function rollbackToSlot(targetSlotIndex: number) {
     try {
-      const data = await apiFetch('/api/evolution/rollback', {
-        method: 'POST',
-        body: JSON.stringify({
-          targetSlotIndex,
-          expectedRevision: getExpectedRevision()
-        })
-      });
+      const data = await evolutionGateway.rollback(targetSlotIndex, getExpectedRevision());
       nodes.value = data.liveTree.nodes;
       edges.value = data.liveTree.edges;
       groups.value = data.liveTree.groups;
@@ -305,7 +293,7 @@ export const useFocusTreeStore = defineStore('focusTree', () => {
   // 1. 仅导出国策架构数据（节点、分组、连线、版本快照）
   async function exportSystemBackup() {
     try {
-      const data = await apiFetch('/api/evolution/export');
+      const data = await evolutionGateway.exportArchitecture();
       const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
@@ -328,13 +316,7 @@ export const useFocusTreeStore = defineStore('focusTree', () => {
   // 仅导入国策架构数据（不触碰专注记录和判例法典）
   async function importSystemBackup(backupData: any) {
     try {
-      await apiFetch('/api/evolution/import', {
-        method: 'POST',
-        body: JSON.stringify({
-          ...backupData,
-          expectedRevision: getExpectedRevision()
-        })
-      });
+      await evolutionGateway.importArchitecture(backupData, getExpectedRevision());
       await fetchTree();
       await fetchEvolution();
       return true;
