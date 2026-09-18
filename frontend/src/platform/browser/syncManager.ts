@@ -1,4 +1,4 @@
-import { apiFetch } from '../../utils/api';
+import { apiFetch } from './api';
 import { useFocusTreeStore } from '../../stores/focusTree';
 import { useSacredSeatStore } from '../../stores/sacredSeat';
 import { useAuthStore } from '../../stores/auth';

@@ -65,6 +65,8 @@ import { createSyncCoordinator } from '../../frontend/src/application/sync/syncC
 import { initSyncManager as initSyncManagerFromLegacyPath } from '../../frontend/src/utils/syncManager.ts';
 import { initSyncManager } from '../../frontend/src/platform/browser/syncManager.ts';
 import { ApiAuthenticationError, ApiHttpError, createApiClient } from '../../frontend/src/application/http/apiClient.ts';
+import { apiFetch as apiFetchFromLegacyPath, setUnauthorizedHandler as setUnauthorizedHandlerFromLegacyPath } from '../../frontend/src/utils/api.ts';
+import { apiFetch, setUnauthorizedHandler } from '../../frontend/src/platform/browser/api.ts';
 import { completeLogout } from '../../frontend/src/application/auth/sessionLifecycle.ts';
 import { createAuthGateway, readAuthResponse } from '../../frontend/src/application/auth/authGateway.ts';
 import { createPrecedentCaseGateway } from '../../frontend/src/application/cases/precedentCaseGateway.ts';
@@ -1916,6 +1918,11 @@ async function runAllTests() {
 
   test('旧 syncManager 入口仍转出浏览器组合层的同一初始化函数', () => {
     assert.equal(initSyncManagerFromLegacyPath, initSyncManager);
+  });
+
+  test('旧 api 入口仍转出浏览器组合层的同一 client 与未授权回调注册函数', () => {
+    assert.equal(apiFetchFromLegacyPath, apiFetch);
+    assert.equal(setUnauthorizedHandlerFromLegacyPath, setUnauthorizedHandler);
   });
 
   await testAsync('syncCoordinator 锁定登录门禁、草稿挂起、刷新顺序与并发探针抑制', async () => {
