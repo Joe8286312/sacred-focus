@@ -10,6 +10,7 @@ import {
   RevisionPreconditionError
 } from '../repositories/maintenanceRepository.js';
 import { createSystemBackupService, SystemBackupImportError } from '../services/systemBackupService.js';
+import { getErrorDetails } from '../utils/errorDetails.js';
 
 const router = Router();
 const maintenanceRepository = createMaintenanceRepository(db);
@@ -20,9 +21,9 @@ const service = createSystemBackupService({ systemBackupRepository: repository, 
 router.get('/export', exportLimiter, (_req: Request, res: Response) => {
   try {
     res.json(service.exportFullBackup());
-  } catch (e: any) {
+  } catch (e: unknown) {
     console.error('Failed to export full system backup', e);
-    res.status(500).json({ error: 'Failed to export full system backup', details: e.message });
+    res.status(500).json({ error: 'Failed to export full system backup', details: getErrorDetails(e) });
   }
 });
 
@@ -66,7 +67,7 @@ router.post('/import', importLimiter, async (req: Request, res: Response) => {
       message: '全系统备份已彻底还原写入',
       summary: result.summary
     });
-  } catch (e: any) {
+  } catch (e: unknown) {
     if (!(e instanceof SystemBackupImportError)) throw e;
     const cause = e.cause;
     if (e.phase === 'acquire' && cause instanceof RevisionPreconditionError) {
