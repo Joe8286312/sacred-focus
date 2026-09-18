@@ -10,7 +10,7 @@ export interface ValidationResult<T> {
   details?: string[];
 }
 
-import { isObject, VALID_LOG_STATUSES, VALID_LOG_TYPES, VALID_VERDICTS } from '../domain/backupValidation/shared.js';
+import { isObject, isOneOf, VALID_LOG_STATUSES, VALID_LOG_TYPES, VALID_VERDICTS } from '../domain/backupValidation/shared.js';
 import {
   validateEdgeItem,
   validateGroupItem,
@@ -224,7 +224,7 @@ export function validateFullBackupPayload(body: unknown): ValidationResult<Valid
         id: String(c.id).slice(0, 64),
         date: String(c.date || new Date().toISOString().slice(0, 10)).slice(0, 32),
         behavior: String(c.behavior).slice(0, 512),
-        verdict: VALID_VERDICTS.includes(c.verdict) ? c.verdict : 'ALLOW',
+        verdict: isOneOf(c.verdict, VALID_VERDICTS) ? c.verdict : 'ALLOW',
         boundaryCondition: String(c.boundaryCondition || '').slice(0, 2048),
         createdAt: String(c.createdAt || new Date().toISOString())
       });
@@ -234,7 +234,7 @@ export function validateFullBackupPayload(body: unknown): ValidationResult<Valid
   // 7. 演化快照与指针校验
   let validatedEvolution: ValidatedEvolution | null = null;
   if (body.evolution && isObject(body.evolution)) {
-    const rawState = body.evolution.state;
+    const rawState = isObject(body.evolution.state) ? body.evolution.state : undefined;
     const rawSnaps = Array.isArray(body.evolution.snapshots) ? body.evolution.snapshots : [];
     validatedEvolution = {
       state: {
@@ -263,12 +263,12 @@ export function validateFullBackupPayload(body: unknown): ValidationResult<Valid
       if (!isObject(l) || !l.id || !l.startTime) continue;
       validatedSessionLogs.push({
         id: String(l.id).slice(0, 64),
-        type: VALID_LOG_TYPES.includes(l.type) ? l.type : 'FOCUS',
+        type: isOneOf(l.type, VALID_LOG_TYPES) ? l.type : 'FOCUS',
         startTime: String(l.startTime).slice(0, 64),
         endTime: String(l.endTime || l.startTime).slice(0, 64),
         targetDurationMinutes: Math.max(0, Math.min(Number(l.targetDurationMinutes || 0), 1440)),
         actualDurationSeconds: Math.max(0, Math.min(Number(l.actualDurationSeconds || 0), 86400)),
-        status: VALID_LOG_STATUSES.includes(l.status) ? l.status : 'SUCCESS',
+        status: isOneOf(l.status, VALID_LOG_STATUSES) ? l.status : 'SUCCESS',
         focusContent: l.focusContent ? String(l.focusContent).slice(0, 512) : null,
         failureReason: l.failureReason ? String(l.failureReason).slice(0, 512) : null,
         note: l.note ? String(l.note).slice(0, 1024) : null
