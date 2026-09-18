@@ -3,6 +3,7 @@ import { db } from '../db.js';
 import { createSacredSeatRepository } from '../repositories/sacredSeatRepository.js';
 import { createSystemMetaRepository } from '../repositories/systemMetaRepository.js';
 import { createSacredSeatService } from '../services/sacredSeatService.js';
+import { getErrorDetails } from '../utils/errorDetails.js';
 
 const router = Router();
 const service = createSacredSeatService({
@@ -116,9 +117,9 @@ router.post('/logs/import', (req: Request, res: Response) => {
       success: true,
       ...summary
     });
-  } catch (err: any) {
+  } catch (err: unknown) {
     console.error('Failed to import focus session logs', err);
-    res.status(500).json({ error: 'Failed to import logs: ' + err.message });
+    res.status(500).json({ error: 'Failed to import logs: ' + getErrorDetails(err) });
   }
 });
 
@@ -166,7 +167,7 @@ router.post('/logs', (req: Request, res: Response) => {
     res.status(500).json({
       error: 'LOG_SAVE_FAILED',
       message: '专注会话日志保存失败',
-      details: err?.message || String(err)
+      details: getErrorDetails(err)
     });
   }
 });

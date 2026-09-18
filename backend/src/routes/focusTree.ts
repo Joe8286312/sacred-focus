@@ -5,6 +5,7 @@ import { createFocusTreeRepository } from '../repositories/focusTreeRepository.j
 import { createSystemMetaRepository } from '../repositories/systemMetaRepository.js';
 import { createFocusTreeService } from '../services/focusTreeService.js';
 import { RevisionPreconditionError } from '../repositories/maintenanceRepository.js';
+import { getErrorDetails } from '../utils/errorDetails.js';
 
 const router = Router();
 const focusTreeService = createFocusTreeService({
@@ -53,7 +54,7 @@ router.put('/', (req: Request, res: Response) => {
       tree: { nodes, edges, groups, labels }
     });
     res.json({ message: 'Focus tree synchronized successfully', ...synchronized });
-  } catch (err: any) {
+  } catch (err: unknown) {
     if (err instanceof RevisionPreconditionError) {
       return res.status(409).json({
         error: 'VERSION_CONFLICT',
@@ -65,7 +66,7 @@ router.put('/', (req: Request, res: Response) => {
     res.status(500).json({
       error: 'SYNC_TRANSACTION_FAILED',
       message: '国策树同步事务执行失败，数据库约束或数据格式异常',
-      details: err?.message || String(err)
+      details: getErrorDetails(err)
     });
   }
 });

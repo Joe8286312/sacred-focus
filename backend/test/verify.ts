@@ -40,6 +40,7 @@ import { createFocusTreeService } from '../src/services/focusTreeService.js';
 import { createEvolutionService } from '../src/services/evolutionService.js';
 import { createSystemBackupService, SystemBackupImportError } from '../src/services/systemBackupService.js';
 import { createApp } from '../src/app.js';
+import { getErrorDetails } from '../src/utils/errorDetails.js';
 import {
   createMaintenanceRepository,
   MaintenanceInProgressError,
@@ -1936,6 +1937,15 @@ async function runAllTests() {
     assert.equal(getErrorMessage({ message: 409 }), undefined);
     assert.equal(getErrorMessage('网络异常'), undefined);
     assert.equal(getErrorMessage(null), undefined);
+  });
+
+  test('errorDetails 锁定后端 details 的 message 优先与 String 回退规则', () => {
+    assert.equal(getErrorDetails(new Error('数据库异常')), '数据库异常');
+    assert.equal(getErrorDetails({ message: '结构化异常' }), '结构化异常');
+    assert.equal(getErrorDetails({ message: 503 }), 503);
+    assert.equal(getErrorDetails({ message: '' }), '[object Object]');
+    assert.equal(getErrorDetails('连接断开'), '连接断开');
+    assert.equal(getErrorDetails(null), 'null');
   });
 
   await testAsync('fullscreen adapter 锁定标准 API 优先、历史前缀回退与已激活短路', async () => {
