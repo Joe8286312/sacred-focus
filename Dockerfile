@@ -5,6 +5,9 @@
 # Stage 3: 轻量安全运行时 (非 root 用户 + 健康检查)
 # ========================================================
 
+ARG APP_VERSION=dev
+ARG VCS_REF=unknown
+
 # --------------------------------------------------------
 # 阶段 1：构建器 (编译前端 Vue 3 + Vite 和 后端 TypeScript)
 # --------------------------------------------------------
@@ -33,6 +36,8 @@ RUN npm ci \
 # 复制工程源代码与构建验证所依赖的脚本资源
 COPY backend/ ./backend/
 COPY frontend/ ./frontend/
+# 后端 TypeScript 通过 paths 引用共享领域契约；它是构建输入但不会进入 runner。
+COPY contracts/ ./contracts/
 COPY scripts/ ./scripts/
 # 自动化验证会检查证书生成脚本；私钥与证书已由 .dockerignore 排除。
 COPY nginx/ssl/ ./nginx/ssl/
@@ -68,6 +73,14 @@ FROM node:22-bookworm-slim AS runner
 
 WORKDIR /app
 
+# OCI 元数据与应用健康检查共用同一版本来源，交付产物可被镜像仓库和运行时同时追溯。
+ARG APP_VERSION
+ARG VCS_REF
+LABEL org.opencontainers.image.title="Sacred Focus" \
+      org.opencontainers.image.description="Sacred Focus production runtime" \
+      org.opencontainers.image.version="${APP_VERSION}" \
+      org.opencontainers.image.revision="${VCS_REF}"
+
 # 安装 curl 用于健康状态探测，安装 tzdata 支持业务日时区精确对齐 (P2-004)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
@@ -76,6 +89,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 # 生产级默认环境变量
 ENV NODE_ENV=production \
+    APP_VERSION=${APP_VERSION} \
     TZ=Asia/Shanghai \
     PORT=3000 \
     HOST=0.0.0.0 \

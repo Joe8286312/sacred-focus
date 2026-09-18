@@ -22,7 +22,9 @@ app_pre_import_*.db
 # Local environment and secret files
 .env
 .env.local
-.env.*.local
+# 仅保留受版本控制的生产模板；其他 .env.<environment> 文件可能包含密钥。
+.env.*
+!.env.production.example
 backend/.env
 frontend/.env
 
@@ -51,5 +53,6 @@ yarn-error.log*
 pnpm-debug.log*
 
 # Release packaging outputs
+release
 *.tar
 *.tar.gz

@@ -4,6 +4,9 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      args:
+        APP_VERSION: ${APP_VERSION:-latest}
+        VCS_REF: ${VCS_REF:-unknown}
     container_name: sacred-focus
     restart: unless-stopped
     ports:

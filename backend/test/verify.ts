@@ -2517,6 +2517,8 @@ async function runAllTests() {
 
   test('部署 Compose 契约锁定本地回环、生产密钥、版本传播与 Nginx 覆盖边界', () => {
     const rootDir = path.resolve(__dirname, '../..');
+    // Docker builder 只复制应用构建输入；根部交付配置由宿主 CI 单独静态校验。
+    if (!fs.existsSync(path.join(rootDir, '.env.production.example'))) return;
     const envTemplate = fs.readFileSync(path.join(rootDir, '.env.production.example'), 'utf8');
     const baseCompose = fs.readFileSync(path.join(rootDir, 'docker-compose.yml'), 'utf8');
     const nginxCompose = fs.readFileSync(path.join(rootDir, 'docker-compose.nginx.yml'), 'utf8');
@@ -2532,6 +2534,33 @@ async function runAllTests() {
     assert.match(nginxCompose, /ports: !override \[\]/);
     assert.match(nginxCompose, /TRUST_PROXY: "1"/);
     assert.match(nginxCompose, /NGINX_SSL_DIR:\?Set NGINX_SSL_DIR/);
+  });
+
+  test('Docker 运行时镜像锁定 OCI 追溯元数据、非 root 运行与最小交付物边界', () => {
+    const rootDir = path.resolve(__dirname, '../..');
+    // Dockerfile/.dockerignore 不能作为镜像内应用运行时输入复制，故仅在宿主仓库校验。
+    if (!fs.existsSync(path.join(rootDir, 'Dockerfile'))) return;
+    const dockerfile = fs.readFileSync(path.join(rootDir, 'Dockerfile'), 'utf8');
+    const dockerignore = fs.readFileSync(path.join(rootDir, '.dockerignore'), 'utf8');
+    const baseCompose = fs.readFileSync(path.join(rootDir, 'docker-compose.yml'), 'utf8');
+
+    assert.match(dockerfile, /^ARG APP_VERSION=dev$/m);
+    assert.match(dockerfile, /^ARG VCS_REF=unknown$/m);
+    assert.match(dockerfile, /org\.opencontainers\.image\.version="\$\{APP_VERSION\}"/);
+    assert.match(dockerfile, /org\.opencontainers\.image\.revision="\$\{VCS_REF\}"/);
+    assert.match(dockerfile, /APP_VERSION=\$\{APP_VERSION\}/);
+    assert.match(dockerfile, /COPY --from=builder \/app\/backend\/dist \.\/backend\/dist/);
+    assert.match(dockerfile, /COPY --from=builder \/app\/frontend\/dist \.\/frontend\/dist/);
+    assert.match(dockerfile, /COPY contracts\/ \.\/contracts\//);
+    assert.match(dockerfile, /^USER node$/m);
+    assert.match(dockerfile, /^EXPOSE 3000$/m);
+    assert.match(dockerfile, /HEALTHCHECK --interval=30s/);
+    assert.match(dockerignore, /^\.env\.\*$/m);
+    assert.match(dockerignore, /^!\.env\.production\.example$/m);
+    assert.match(dockerignore, /^release$/m);
+    assert.match(dockerignore, /^nginx\/ssl\/\*\.key$/m);
+    assert.match(baseCompose, /APP_VERSION: \$\{APP_VERSION:-latest\}/);
+    assert.match(baseCompose, /VCS_REF: \$\{VCS_REF:-unknown\}/);
   });
 
   // -----------------------------------------------------------
