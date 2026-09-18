@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import { isLocalOrTrusted, getClientIp } from './ipRules.js';
 import { db } from '../db.js';
+import { createSecurityBanRepository } from '../repositories/securityBanRepository.js';
 
 const HONEYPOT_PATHS = [
   '/.env',
@@ -20,13 +21,13 @@ const BANNED_UA_PATTERNS = [
 
 // 内存级临时封禁高速缓存 (IP -> 解封时间戳)
 const ipBlacklist = new Map<string, number>();
+const securityBanRepository = createSecurityBanRepository(db);
 
 function banIp(ip: string, durationMs: number) {
   const unbanTime = Date.now() + durationMs;
   ipBlacklist.set(ip, unbanTime);
   try {
-    db.prepare("INSERT OR REPLACE INTO system_meta (key, value) VALUES (?, ?)")
-      .run(`ip_ban:${ip}`, String(unbanTime));
+    securityBanRepository.setBanValue(ip, String(unbanTime));
   } catch (e) {
     console.error('[Sacred Focus Security] Failed to persist IP ban:', e);
   }
@@ -41,15 +42,14 @@ function isIpBanned(ip: string): boolean {
   }
 
   try {
-    const row = db.prepare("SELECT value FROM system_meta WHERE key = ?")
-      .get(`ip_ban:${ip}`) as { value: string } | undefined;
-    if (row && row.value) {
-      const dbUnban = parseInt(row.value, 10);
+    const persistedValue = securityBanRepository.getBanValue(ip);
+    if (persistedValue) {
+      const dbUnban = parseInt(persistedValue, 10);
       if (!isNaN(dbUnban) && now < dbUnban) {
         ipBlacklist.set(ip, dbUnban);
         return true;
       } else {
-        db.prepare("DELETE FROM system_meta WHERE key = ?").run(`ip_ban:${ip}`);
+        securityBanRepository.deleteBan(ip);
       }
     }
   } catch (e) {

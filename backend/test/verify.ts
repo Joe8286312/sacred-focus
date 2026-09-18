@@ -32,6 +32,7 @@ import { createPrecedentCaseRepository } from '../src/repositories/precedentCase
 import { createEvolutionRepository } from '../src/repositories/evolutionRepository.js';
 import { createSystemBackupRepository } from '../src/repositories/systemBackupRepository.js';
 import { createAuthRepository } from '../src/repositories/authRepository.js';
+import { createSecurityBanRepository } from '../src/repositories/securityBanRepository.js';
 import { createSyncStatusService } from '../src/services/syncStatusService.js';
 import { createAuthService } from '../src/services/authService.js';
 import { createSacredSeatService } from '../src/services/sacredSeatService.js';
@@ -1258,6 +1259,19 @@ async function runAllTests() {
     } finally {
       authDb.close();
     }
+  });
+
+  test('securityBan repository 锁定 IP 封禁键的读写覆盖与删除语义', () => {
+    const repository = createSecurityBanRepository(testDb);
+    const ip = '198.51.100.42';
+    assert.equal(repository.getBanValue(ip), undefined);
+    repository.setBanValue(ip, '1000');
+    assert.equal(repository.getBanValue(ip), '1000');
+    repository.setBanValue(ip, '2000');
+    assert.equal(repository.getBanValue(ip), '2000');
+    assert.equal(repository.deleteBan(ip), true);
+    assert.equal(repository.getBanValue(ip), undefined);
+    assert.equal(repository.deleteBan(ip), false);
   });
 
   await testAsync('authService 锁定登录、会话状态、吊销原因与登出回退过期时间', async () => {
