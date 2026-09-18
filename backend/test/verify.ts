@@ -41,6 +41,7 @@ import { createFocusTreeService } from '../src/services/focusTreeService.js';
 import { createEvolutionService } from '../src/services/evolutionService.js';
 import { createSystemBackupService, SystemBackupImportError } from '../src/services/systemBackupService.js';
 import { createApp } from '../src/app.js';
+import { startServer, type ServerLifecycleRuntime } from '../src/server.js';
 import { getErrorDetails } from '../src/utils/errorDetails.js';
 import { isSqliteLockError } from '../src/utils/sqliteErrors.js';
 import { getSystemImportFailureResponse } from '../src/routes/systemImportFailure.js';
@@ -1957,6 +1958,72 @@ async function runAllTests() {
     } finally {
       await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve()));
     }
+  });
+
+  test('startServer 锁定可注入生命周期、WAL checkpoint、信号关闭与超时退出语义', () => {
+    const signalHandlers = new Map<string, () => void>();
+    const timerCallbacks: Array<() => void> = [];
+    const intervalDelays: number[] = [];
+    const clearedTimers: unknown[] = [];
+    const unrefCalls: string[] = [];
+    const runtime: ServerLifecycleRuntime = {
+      setInterval(callback, delay) {
+        timerCallbacks.push(callback);
+        intervalDelays.push(delay);
+        return { unref: () => { unrefCalls.push('interval'); } };
+      },
+      clearInterval(timer) {
+        clearedTimers.push(timer);
+      },
+      setTimeout(callback) {
+        timerCallbacks.push(callback);
+        return { unref: () => { unrefCalls.push('timeout'); } };
+      }
+    };
+    const events: string[] = [];
+    const exits: number[] = [];
+
+    startServer({
+      initializeDatabase: () => { events.push('initialize'); },
+      purgeExpiredRevokedJtis: () => { events.push('purge'); },
+      appFactory: () => ({
+        listen(port: number, host: string, onListening: () => void) {
+          events.push(`listen:${host}:${port}`);
+          onListening();
+          return {
+            close(callback: () => void) {
+              events.push('server.close');
+              callback();
+            }
+          };
+        }
+      }),
+      database: {
+        pragma(statement: string) { events.push(statement); },
+        close() { events.push('db.close'); }
+      },
+      serverConfig: { port: 4321, host: '127.0.0.1', isProduction: false, dbPath: '/tmp/sacred-focus.db' },
+      runtime,
+      processRef: {
+        on(signal: 'SIGTERM' | 'SIGINT', listener: () => void) { signalHandlers.set(signal, listener); },
+        exit(code: number) { exits.push(code); }
+      },
+      logger: { log: () => undefined, warn: () => undefined, error: () => undefined }
+    });
+
+    assert.deepEqual(events, ['initialize', 'purge', 'listen:127.0.0.1:4321']);
+    assert.deepEqual(intervalDelays, [30 * 60 * 1000]);
+    assert.deepEqual(unrefCalls, ['interval']);
+    timerCallbacks[0]();
+    assert.deepEqual(events.slice(-2), ['wal_checkpoint(PASSIVE)', 'purge']);
+
+    signalHandlers.get('SIGTERM')?.();
+    assert.equal(clearedTimers.length, 1);
+    assert.deepEqual(events.slice(-3), ['server.close', 'wal_checkpoint(TRUNCATE)', 'db.close']);
+    assert.deepEqual(exits, [0]);
+    assert.deepEqual(unrefCalls, ['interval', 'timeout']);
+    timerCallbacks[1]();
+    assert.deepEqual(exits, [0, 1]);
   });
 
   testDb.close();
