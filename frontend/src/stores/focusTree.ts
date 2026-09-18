@@ -4,6 +4,7 @@ import type { FocusNode, FocusEdge, FocusGroup, FocusLabel, EvolutionState } fro
 import { apiFetch } from '../utils/api';
 import { evolutionGateway } from '../platform/browser/evolution';
 import { systemBackupGateway } from '../platform/browser/systemBackup';
+import { focusTreeGateway } from '../platform/browser/focusTree';
 
 export const useFocusTreeStore = defineStore('focusTree', () => {
   const nodes = ref<FocusNode[]>([]);
@@ -133,7 +134,7 @@ export const useFocusTreeStore = defineStore('focusTree', () => {
   async function fetchTree() {
     loading.value = true;
     try {
-      const data = await apiFetch('/api/focus-tree');
+      const data = await focusTreeGateway.getTree();
       nodes.value = data.nodes || [];
       edges.value = data.edges || [];
       groups.value = data.groups || [];
@@ -157,16 +158,9 @@ export const useFocusTreeStore = defineStore('focusTree', () => {
   async function syncTree() {
     try {
       const currentRev = getExpectedRevision();
-      const res = await apiFetch('/api/focus-tree', {
-        method: 'PUT',
-        body: JSON.stringify({
-          nodes: nodes.value,
-          edges: edges.value,
-          groups: groups.value,
-          labels: labels.value,
-          expectedRevision: currentRev
-        })
-      });
+      const res = await focusTreeGateway.saveTree({
+        nodes: nodes.value, edges: edges.value, groups: groups.value, labels: labels.value
+      }, currentRev);
       if (res && res.revision) {
         markSyncedRevision(res.revision);
       }
@@ -185,16 +179,9 @@ export const useFocusTreeStore = defineStore('focusTree', () => {
   async function saveWholeTree(tree: { nodes: FocusNode[]; groups: FocusGroup[]; edges: FocusEdge[]; labels?: FocusLabel[] }) {
     try {
       const currentRev = getExpectedRevision();
-      const res = await apiFetch('/api/focus-tree', {
-        method: 'PUT',
-        body: JSON.stringify({
-          nodes: tree.nodes,
-          edges: tree.edges,
-          groups: tree.groups,
-          labels: tree.labels || [],
-          expectedRevision: currentRev
-        })
-      });
+      const res = await focusTreeGateway.saveTree({
+        nodes: tree.nodes, edges: tree.edges, groups: tree.groups, labels: tree.labels || []
+      }, currentRev);
       if (res && res.revision) {
         markSyncedRevision(res.revision);
       }
@@ -224,7 +211,7 @@ export const useFocusTreeStore = defineStore('focusTree', () => {
     const prevLastLitDate = node.lastLitDate;
 
     try {
-      const updated = await apiFetch(`/api/focus-tree/nodes/${nodeId}/toggle-lit`, { method: 'PATCH' });
+      const updated = await focusTreeGateway.toggleNodeLit(nodeId);
       node.isLit = updated.isLit;
       node.level = updated.level;
       node.maxLevel = updated.maxLevel;
@@ -240,10 +227,7 @@ export const useFocusTreeStore = defineStore('focusTree', () => {
 
   async function reorderNodes(nodeIds: string[]) {
     try {
-      await apiFetch('/api/focus-tree/nodes/reorder', {
-        method: 'PUT',
-        body: JSON.stringify({ nodeIds })
-      });
+      await focusTreeGateway.reorderNodes(nodeIds);
     } catch (e) {
       console.error('Failed to reorder nodes', e);
       throw e;

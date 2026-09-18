@@ -68,6 +68,7 @@ import { createPrecedentCaseGateway } from '../../frontend/src/application/cases
 import { createSacredSeatGateway } from '../../frontend/src/application/sacredSeat/sacredSeatGateway.ts';
 import { createEvolutionGateway } from '../../frontend/src/application/evolution/evolutionGateway.ts';
 import { createSystemBackupGateway } from '../../frontend/src/application/systemBackup/systemBackupGateway.ts';
+import { createFocusTreeGateway } from '../../frontend/src/application/focusTree/focusTreeGateway.ts';
 import type { FocusNode, FocusSessionLog, FocusTreeData } from '../../frontend/src/types/index.ts';
 import type { PrecedentCase } from '../../frontend/src/types/index.ts';
 import type { FocusTreeData } from '../src/types.js';
@@ -2091,6 +2092,26 @@ async function runAllTests() {
     assert.deepEqual(calls.map(call => ({ url: call.url, method: call.options?.method, body: call.options?.body })), [
       { url: '/api/system/export', method: undefined, body: undefined },
       { url: '/api/system/import', method: 'POST', body: JSON.stringify({ ...backup, expectedRevision: 12 }) }
+    ]);
+  });
+
+  await testAsync('focusTreeGateway 锁定树快照、CAS 保存、点亮与排序 HTTP 协议', async () => {
+    const calls: Array<{ url: string; options?: RequestInit }> = [];
+    const gateway = createFocusTreeGateway(async <T>(url: string, options?: RequestInit) => {
+      calls.push({ url, options });
+      if (url.endsWith('/toggle-lit')) return { isLit: true, level: 2, maxLevel: 5, lastLitDate: '2026-09-18' } as T;
+      return {} as T;
+    });
+    const tree = { nodes: [], edges: [], groups: [], labels: [] } as FocusTreeData;
+    await gateway.getTree();
+    await gateway.saveTree(tree, 5);
+    assert.deepEqual(await gateway.toggleNodeLit('node-1'), { isLit: true, level: 2, maxLevel: 5, lastLitDate: '2026-09-18' });
+    await gateway.reorderNodes(['node-2', 'node-1']);
+    assert.deepEqual(calls.map(call => ({ url: call.url, method: call.options?.method, body: call.options?.body })), [
+      { url: '/api/focus-tree', method: undefined, body: undefined },
+      { url: '/api/focus-tree', method: 'PUT', body: JSON.stringify({ ...tree, expectedRevision: 5 }) },
+      { url: '/api/focus-tree/nodes/node-1/toggle-lit', method: 'PATCH', body: undefined },
+      { url: '/api/focus-tree/nodes/reorder', method: 'PUT', body: JSON.stringify({ nodeIds: ['node-2', 'node-1'] }) }
     ]);
   });
 
