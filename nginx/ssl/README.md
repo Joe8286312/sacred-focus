@@ -15,6 +15,8 @@
 ./nginx/ssl/generate-cert.sh [域名或IP，默认 localhost]
 ```
 
+传入 IPv4 地址时，脚本会把它写入证书的 `IP` Subject Alternative Name，可用于 VMware 局域网演练；浏览器仍会提示“自签名证书不受信任”，这是预期行为。
+
 ### 2. 使用自签名证书的 Windows/PowerShell 生成方式
 ```powershell
 openssl req -x509 -nodes -days 3650 -newkey rsa:2048 `

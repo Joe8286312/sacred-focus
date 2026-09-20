@@ -109,4 +109,5 @@ npm start                # 启动已构建的生产后端
 - [模块说明](docs/modules.md)：各前后端与交付模块的职责和位置。
 - [API 与数据模型](docs/api-and-data.md)：路由、共享对象、SQLite 表和导入约束。
 - [开发与验证](docs/development.md)：本地开发、测试、构建与文档维护规则。
+- [部署新手指南](docs/deployment-beginner-guide.md)：从 VMware 局域网演练到云服务器和域名上线。
 - [部署与运维手册](scripts/README.md)：Docker、TLS、备份、恢复和更新回滚。

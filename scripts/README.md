@@ -2,6 +2,14 @@
 
 本手册只覆盖镜像、Compose、Nginx、数据卷和运维脚本。它不要求了解应用的领域目录或内部实现。所有命令都应在包含 `docker-compose.yml`、`scripts/` 和 `.env` 的发布目录执行。
 
+使用 Nginx TLS overlay 时，每个新的 shell 会话先执行：
+
+```bash
+export COMPOSE_FILE=docker-compose.yml:docker-compose.nginx.yml
+```
+
+这样 `docker compose` 与 `scripts/docker-*.sh` 会管理同一组应用和网关容器；特别是执行更新脚本前必须保留该变量，避免 `--remove-orphans` 将网关视为未声明服务。
+
 ## 1. 发布前预检
 
 需要 Docker Engine/Compose v2；TLS 模式还需要一对由受信任 CA 签发的 `server.crt`、`server.key`。先执行无需 Docker daemon 的静态预检：
