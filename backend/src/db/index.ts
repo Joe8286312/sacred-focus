@@ -1,12 +1,12 @@
 import { db } from './connection.js';
 import { createTables } from './schema.js';
 import { migrateDatabase } from './migrations.js';
-import { seedDefaultData } from './seed.js';
+import { initializeMinimalState } from './seed.js';
 
 export function initDatabase() {
   createTables(db);
   migrateDatabase(db);
-  seedDefaultData(db);
+  initializeMinimalState(db);
 }
 
 export * from './connection.js';

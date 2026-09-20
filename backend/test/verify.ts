@@ -26,6 +26,7 @@ import {
 } from '../src/db/dateUtils.js';
 import { safeCompare } from '../src/middleware/auth.js';
 import { createTables } from '../src/db/schema.js';
+import { initializeMinimalState } from '../src/db/seed.js';
 import { createSystemMetaRepository } from '../src/repositories/systemMetaRepository.js';
 import { createFocusTreeRepository, type NodeLitState, type NodeUpdateState } from '../src/repositories/focusTreeRepository.js';
 import { createSacredSeatRepository } from '../src/repositories/sacredSeatRepository.js';
@@ -733,6 +734,21 @@ async function runAllTests() {
     assert.ok(idxNames.includes('idx_nodes_group'));
     assert.ok(idxNames.includes('idx_edges_source'));
     assert.ok(idxNames.includes('idx_edges_target'));
+  });
+
+  test('首次初始化只创建神圣座位最小配置，国策画布与演化数据必须保持空白', () => {
+    const cleanDb = new Database(':memory:');
+    createTables(cleanDb);
+    initializeMinimalState(cleanDb);
+
+    assert.equal((cleanDb.prepare('SELECT COUNT(*) AS count FROM sacred_seat_config').get() as { count: number }).count, 1);
+    for (const table of ['focus_groups', 'focus_nodes', 'focus_edges', 'focus_labels', 'evolution_snapshots']) {
+      assert.equal((cleanDb.prepare(`SELECT COUNT(*) AS count FROM ${table}`).get() as { count: number }).count, 0, `${table} 应为空`);
+    }
+
+    initializeMinimalState(cleanDb);
+    assert.equal((cleanDb.prepare('SELECT COUNT(*) AS count FROM sacred_seat_config').get() as { count: number }).count, 1);
+    cleanDb.close();
   });
 
   test('system_meta repository 仅依赖注入的 SQLite 端口，并锁定 revision 与同步时间原子更新', () => {

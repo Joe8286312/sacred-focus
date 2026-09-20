@@ -19,7 +19,7 @@ Sacred Focus 容器（网页与 API）
 宿主机数据目录（SQLite app.db、backup/）
 ```
 
-数据存放在 `HOST_DATA_DIR` 指定的宿主机目录，而不是容器内部。基础 Compose 只监听服务器本机；叠加 Nginx Compose 后才公开 80/443。
+数据存放在 `HOST_DATA_DIR` 指定的宿主机目录，而不是容器内部。基础 Compose 只监听服务器本机；叠加 Nginx Compose 后才公开 80/443。全新部署只创建神圣座位的最小配置；国策画布、分组、节点、连线与演化快照均为空，需由你自行新建或导入备份。
 
 使用 Nginx 模式时，在每个新的 SSH 会话进入发布目录后先执行：
 
@@ -51,8 +51,12 @@ VMware 网络选择很关键：
 sudo apt update
 sudo apt upgrade -y
 sudo apt install -y openssh-server curl ca-certificates openssl nano
+sudo timedatectl set-timezone Asia/Shanghai
+timedatectl status
 hostname -I
 ```
+
+`TZ=Asia/Shanghai` 会传入应用容器，但不会自动修改 Ubuntu 宿主机时区；上述命令会将虚拟机系统日志、备份文件名与计划任务统一为中国标准时间（UTC+08:00）。
 
 记下类似 `192.168.1.50` 的地址，下文用 `VM_IP` 表示。宿主机先测试 SSH：
 
@@ -187,6 +191,21 @@ openssl rand -base64 32
 ```
 
 `HOST_DATA_DIR` 是数据库、WAL 文件和备份的唯一持久化位置，绝不能随意删除。
+
+### 已误部署演示数据时，如何回到空白画布
+
+新版本不会再写入演示国策；但它也不会擅自删除已有数据库。若这是刚完成的测试部署、确认里面只有演示内容，可先备份再显式重置一次：
+
+```bash
+cd /opt/sacred-focus
+export COMPOSE_FILE=docker-compose.yml:docker-compose.nginx.yml
+./scripts/docker-backup.sh
+docker compose --env-file .env down
+sudo rm -f /srv/sacred-focus/data/app.db /srv/sacred-focus/data/app.db-wal /srv/sacred-focus/data/app.db-shm
+docker compose --env-file .env up -d
+```
+
+只在确认不需要保留当前数据时执行最后的删除命令；已开始记录个人数据时，应通过网页整机备份导出后再决定如何迁移，而不是清空数据库。
 
 ## 7. 启动、检查与手机访问
 
