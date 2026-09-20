@@ -14,41 +14,41 @@
   --radius-full: 9999px;
 }
 
-/* 暮蓝深色模式：保留沉浸感，但避免 OLED 纯黑吞没文字、边框与层级。 */
+/* 标准中性深灰：接近 Windows、Chrome 与 Edge 的深色界面层级。 */
 :root[data-theme="dark"],
 :root {
-  --bg-primary: #182434;
-  --bg-secondary: #202f42;
-  --bg-tertiary: #2a3b50;
-  --bg-surface: #24364b;
-  --bg-card: rgba(32, 47, 66, 0.94);
-  --bg-card-hover: #30445c;
-  --bg-canvas: #142033;
+  --bg-primary: #202124;
+  --bg-secondary: #292a2d;
+  --bg-tertiary: #35363a;
+  --bg-surface: #2d2f33;
+  --bg-card: rgba(41, 42, 45, 0.96);
+  --bg-card-hover: #3c4043;
+  --bg-canvas: #202124;
 
-  --border-color: #435a73;
-  --border-focus: #718aa6;
-  --border-lit: #38bdf8;
+  --border-color: #5f6368;
+  --border-focus: #80868b;
+  --border-lit: #8ab4f8;
 
-  --text-primary: #f4f8fc;
-  --text-secondary: #c4d1df;
-  --text-muted: #91a5ba;
+  --text-primary: #e8eaed;
+  --text-secondary: #bdc1c6;
+  --text-muted: #9aa0a6;
 
-  --color-lit: #38bdf8;          /* 清晰但不过曝的天蓝 */
-  --color-lit-glow: rgba(56, 189, 248, 0.22);
-  --color-gold: #fbbf24;         /* 温暖的强调色 */
-  --color-unlit: #71839a;
-  --color-frozen: #7dd3fc;
-  --color-danger: #fb7185;
-  --color-success: #34d399;
+  --color-lit: #8ab4f8;          /* 仅用于焦点、选中和可操作状态 */
+  --color-lit-glow: rgba(138, 180, 248, 0.18);
+  --color-gold: #fdd663;
+  --color-unlit: #80868b;
+  --color-frozen: #8ab4f8;
+  --color-danger: #f28b82;
+  --color-success: #81c995;
 
-  --shadow-sm: 0 1px 3px rgba(9, 18, 32, 0.28);
-  --shadow-md: 0 8px 24px rgba(9, 18, 32, 0.32);
-  --shadow-glow: 0 0 18px rgba(56, 189, 248, 0.16);
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.24);
+  --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.28);
+  --shadow-glow: 0 0 18px rgba(138, 180, 248, 0.14);
 
-  /* 暮蓝画布上的连线应比卡片边框更亮，确保拓扑阅读性。 */
-  --edge-stroke: #c2d0df;
-  --edge-stroke-dashed: #93a8bd;
-  --edge-stroke-selected: #7dd3fc;
+  /* 画布连线使用浅灰，选中状态才使用系统式蓝色。 */
+  --edge-stroke: #c4c7c5;
+  --edge-stroke-dashed: #9aa0a6;
+  --edge-stroke-selected: #8ab4f8;
 }
 
 /* 日光浅色模式（极简纸感浅灰与高对比墨黑） */
