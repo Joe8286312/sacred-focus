@@ -1199,7 +1199,7 @@ onUnmounted(() => {
   flex-direction: column;
   position: relative;
   overflow: hidden;
-  background-color: var(--bg-primary);
+  background-color: var(--bg-canvas);
 }
 
 /* 顶部极简毛玻璃控制条：严格 1fr auto 1fr 三列栅格，保证中间模式开关绝对居中 */
@@ -1490,7 +1490,7 @@ onUnmounted(() => {
   width: 100%;
   height: calc(100% - 54px);
   position: relative;
-  background-color: var(--bg-primary);
+  background-color: var(--bg-canvas);
   background-image: radial-gradient(var(--border-color) 1px, transparent 1px);
   background-size: 24px 24px;
 }

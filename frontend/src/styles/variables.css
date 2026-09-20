@@ -14,38 +14,41 @@
   --radius-full: 9999px;
 }
 
-/* 极夜深色模式（默认 OLED 纯黑与科技微光） */
+/* 暮蓝深色模式：保留沉浸感，但避免 OLED 纯黑吞没文字、边框与层级。 */
 :root[data-theme="dark"],
 :root {
-  --bg-primary: #0A0A0C;
-  --bg-secondary: #121216;
-  --bg-tertiary: #1A1A20;
-  --bg-card: rgba(18, 18, 22, 0.85);
-  --bg-card-hover: rgba(26, 26, 32, 0.95);
+  --bg-primary: #182434;
+  --bg-secondary: #202f42;
+  --bg-tertiary: #2a3b50;
+  --bg-surface: #24364b;
+  --bg-card: rgba(32, 47, 66, 0.94);
+  --bg-card-hover: #30445c;
+  --bg-canvas: #142033;
 
-  --border-color: #26262F;
-  --border-focus: #3F3F4E;
+  --border-color: #435a73;
+  --border-focus: #718aa6;
+  --border-lit: #38bdf8;
 
-  --text-primary: #EDEDED;
-  --text-secondary: #94949E;
-  --text-muted: #5E5E6B;
+  --text-primary: #f4f8fc;
+  --text-secondary: #c4d1df;
+  --text-muted: #91a5ba;
 
-  --color-lit: #00F0FF;          /* 天青科技微光 */
-  --color-lit-glow: rgba(0, 240, 255, 0.25);
-  --color-gold: #F59E0B;         /* 胜利金黄 */
-  --color-unlit: #3A3A45;        /* 待命暗灰 */
-  --color-frozen: #38BDF8;       /* 冰蓝冻结态 */
-  --color-danger: #F43F5E;       /* 警示猩红 */
-  --color-success: #10B981;      /* 纯净翠绿 */
+  --color-lit: #38bdf8;          /* 清晰但不过曝的天蓝 */
+  --color-lit-glow: rgba(56, 189, 248, 0.22);
+  --color-gold: #fbbf24;         /* 温暖的强调色 */
+  --color-unlit: #71839a;
+  --color-frozen: #7dd3fc;
+  --color-danger: #fb7185;
+  --color-success: #34d399;
 
-  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.6);
-  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.7);
-  --shadow-glow: 0 0 18px rgba(0, 240, 255, 0.2);
+  --shadow-sm: 0 1px 3px rgba(9, 18, 32, 0.28);
+  --shadow-md: 0 8px 24px rgba(9, 18, 32, 0.32);
+  --shadow-glow: 0 0 18px rgba(56, 189, 248, 0.16);
 
-  /* 拓扑连线高对比色彩（深色模式下浅亮、清晰可见） */
-  --edge-stroke: #A1A1AA;
-  --edge-stroke-dashed: #71717A;
-  --edge-stroke-selected: #38BDF8;
+  /* 暮蓝画布上的连线应比卡片边框更亮，确保拓扑阅读性。 */
+  --edge-stroke: #c2d0df;
+  --edge-stroke-dashed: #93a8bd;
+  --edge-stroke-selected: #7dd3fc;
 }
 
 /* 日光浅色模式（极简纸感浅灰与高对比墨黑） */
@@ -53,11 +56,14 @@
   --bg-primary: #F8F9FA;
   --bg-secondary: #FFFFFF;
   --bg-tertiary: #EEF0F2;
+  --bg-surface: #F3F6F9;
   --bg-card: #FFFFFF;
   --bg-card-hover: #F1F3F5;
+  --bg-canvas: #F8F9FA;
 
   --border-color: #E2E4E8;
   --border-focus: #CBD0D8;
+  --border-lit: #0284C7;
 
   --text-primary: #111827;
   --text-secondary: #4B5563;
