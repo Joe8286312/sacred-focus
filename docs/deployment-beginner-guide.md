@@ -283,6 +283,10 @@ curl -kfsS https://VM_IP/api/health
 
    输出必须是该云服务器公网 IP。
 
+   新注册域名即使已实名通过，仍可能处于 `serverHold` 暂停解析状态；等待状态恢复为 `OK` 后再申请证书，腾讯云说明通常需 1–2 个工作日。[查看说明](https://cloud.tencent.com/document/product/242/54080)
+
+   若服务器位于中国大陆，域名正式公开访问前还需完成 ICP 备案；未备案域名会被拦截。香港和其他境外服务器通常无需该步骤。[腾讯云 ICP 备案说明](https://cloud.tencent.com/document/product/243/39038)
+
 随后重复第 3、4、6、7 节。正式 `.env` 改为：
 
 ```dotenv
