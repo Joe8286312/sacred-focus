@@ -9,6 +9,13 @@ services:
         VCS_REF: ${VCS_REF:-unknown}
     container_name: sacred-focus
     restart: unless-stopped
+    # 多项目共用宿主机时的运行时资源边界；可在 .env 中按服务器规格调整。
+    # 512 MB 足以覆盖当前 Node + SQLite 的常规负载，保留余量给宿主机和其他服务。
+    mem_limit: ${APP_MEMORY_LIMIT:-512m}
+    mem_reservation: ${APP_MEMORY_RESERVATION:-128m}
+    memswap_limit: ${APP_MEMORY_SWAP_LIMIT:-512m}
+    cpus: ${APP_CPU_LIMIT:-0.75}
+    pids_limit: ${APP_PIDS_LIMIT:-200}
     ports:
       # 默认仅供宿主机本地维护；生产公网流量必须经过 docker-compose.nginx.yml。
       - "127.0.0.1:${PORT:-3000}:3000"
@@ -20,6 +27,8 @@ services:
       HOST: 0.0.0.0
       DATA_DIR: /app/data
       TZ: ${TZ:-Asia/Shanghai}
+      # V8 堆小于容器硬上限，为原生 SQLite 模块和系统内存预留空间。
+      NODE_OPTIONS: "--max-old-space-size=${NODE_HEAP_LIMIT_MB:-384}"
       # 生产密钥必须由 .env 提供；Compose 在启动前失败，不允许以空值运行。
       JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET in .env}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:?Set ADMIN_PASSWORD in .env}

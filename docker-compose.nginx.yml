@@ -18,6 +18,12 @@ services:
     image: nginx:1.27-alpine
     container_name: sacred-focus-gateway
     restart: unless-stopped
+    # 网关仅处理静态文件与反向代理，维持更小的资源配额。
+    mem_limit: ${NGINX_MEMORY_LIMIT:-128m}
+    mem_reservation: ${NGINX_MEMORY_RESERVATION:-32m}
+    memswap_limit: ${NGINX_MEMORY_SWAP_LIMIT:-128m}
+    cpus: ${NGINX_CPU_LIMIT:-0.25}
+    pids_limit: ${NGINX_PIDS_LIMIT:-100}
     ports:
       - "80:80"
       - "443:443"

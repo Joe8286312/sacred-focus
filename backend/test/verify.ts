@@ -2546,10 +2546,16 @@ async function runAllTests() {
     assert.match(baseCompose, /127\.0\.0\.1:\$\{PORT:-3000\}:3000/);
     assert.match(baseCompose, /JWT_SECRET: \$\{JWT_SECRET:\?Set JWT_SECRET in \.env\}/);
     assert.match(baseCompose, /ADMIN_PASSWORD: \$\{ADMIN_PASSWORD:\?Set ADMIN_PASSWORD in \.env\}/);
+    assert.match(baseCompose, /mem_limit: \$\{APP_MEMORY_LIMIT:-512m\}/);
+    assert.match(baseCompose, /cpus: \$\{APP_CPU_LIMIT:-0\.75\}/);
+    assert.match(baseCompose, /pids_limit: \$\{APP_PIDS_LIMIT:-200\}/);
+    assert.match(baseCompose, /NODE_OPTIONS: "--max-old-space-size=\$\{NODE_HEAP_LIMIT_MB:-384\}"/);
     assert.match(baseCompose, /TRUST_PROXY: "false"/);
     assert.match(nginxCompose, /ports: !override \[\]/);
     assert.match(nginxCompose, /TRUST_PROXY: "1"/);
     assert.match(nginxCompose, /NGINX_SSL_DIR:\?Set NGINX_SSL_DIR/);
+    assert.match(nginxCompose, /mem_limit: \$\{NGINX_MEMORY_LIMIT:-128m\}/);
+    assert.match(nginxCompose, /cpus: \$\{NGINX_CPU_LIMIT:-0\.25\}/);
   });
 
   test('Docker 运行时镜像锁定 OCI 追溯元数据、非 root 运行与最小交付物边界', () => {

@@ -2,7 +2,7 @@
 
 本指南面向首次部署服务器的 Sacred Focus 使用者。路线分为两段：先在本地 VMware 中完成低风险演练，再把同一发布物迁移到云服务器、域名和可信 HTTPS。
 
-> 示例系统为 Ubuntu Server 24.04 LTS、Docker Compose v2。云厂商的控制台不同，但 Linux 内的部署步骤相同。
+> 示例系统为 Ubuntu Server 22.04 LTS 或 24.04 LTS、Docker Compose v2。两者均可部署本项目；从零新建、希望获得更长标准支持周期时优先选择 24.04 LTS。
 
 ## 1. 你最终会得到什么
 
@@ -37,7 +37,7 @@ export COMPOSE_FILE=docker-compose.yml:docker-compose.nginx.yml
 
 ## 2. 阶段 A：创建 VMware 虚拟机
 
-建议起点：Ubuntu Server 24.04 LTS、2 vCPU、2 GB 内存、25 GB 磁盘。构建镜像时 4 GB 内存会更从容。
+建议起点：Ubuntu Server 22.04 LTS 或 24.04 LTS、2 vCPU、2 GB 内存、25 GB 磁盘。构建镜像时 4 GB 内存会更从容。
 
 VMware 网络选择很关键：
 
@@ -156,8 +156,8 @@ cd /opt/sacred-focus
 chmod +x nginx/ssl/generate-cert.sh scripts/*.sh scripts/lib/*.sh
 ./nginx/ssl/generate-cert.sh VM_IP
 
-install -m 600 nginx/ssl/server.key /etc/sacred-focus/tls/server.key
-install -m 644 nginx/ssl/server.crt /etc/sacred-focus/tls/server.crt
+sudo install -m 600 nginx/ssl/server.key /etc/sacred-focus/tls/server.key
+sudo install -m 644 nginx/ssl/server.crt /etc/sacred-focus/tls/server.crt
 ```
 
 请把 `VM_IP` 换成真实 IP。证书脚本会把 IPv4 写入证书 SAN，避免浏览器出现“访问 IP 与证书域名不匹配”的错误。只有确认这是自己的局域网虚拟机时，才能在手机浏览器中继续访问该自签名证书。
@@ -272,7 +272,7 @@ curl -kfsS https://VM_IP/api/health
 
 在云厂商控制台完成：
 
-1. 创建 Ubuntu 24.04 LTS 实例并记录公网 IP。
+1. 创建 Ubuntu 22.04 LTS 或 24.04 LTS 实例并记录公网 IP；新建长期实例可优先选 24.04。
 2. 安全组只开放 22（尽量限制你的 IP）、80、443。
 3. 购买域名后，在 DNS 创建 A 记录：`focus.example.com → 云服务器公网 IPv4`。
 4. 在服务器确认解析：
