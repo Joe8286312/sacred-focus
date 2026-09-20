@@ -10,8 +10,8 @@ build/
 
 # Local environment variables
 .env
-.env.local
-.env.*.local
+.env.*
+!.env.production.example
 
 # TLS private keys and certificates must be provisioned outside the repository.
 nginx/ssl/*.key
@@ -58,3 +58,6 @@ Thumbs.db
 .tmp/
 temp/
 scratch/
+
+# Local Docker release artifacts are rebuilt from source and can be large.
+release/
