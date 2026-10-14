@@ -14,7 +14,7 @@
 | 模块 | 主要位置 | 责任 |
 |---|---|---|
 | 应用组合根 | `main.ts`、`App.vue`、`router/` | Vue/Pinia/router 装配、主题、导航、全局同步和受保护页面守卫。 |
-| 认证 | `stores/auth.ts`、`application/auth/`、`platform/browser/auth.ts` | 登录、Cookie 会话检查、登出和登录失败提示。 |
+| 认证 | `stores/auth.ts`、`application/auth/`、`platform/browser/auth.ts`、`accountSession.ts` | 公用入口、个人登录、Cookie 检查、请求与浏览器存储隔离、跨标签页账号切换。 |
 | 神圣座位 | `views/SacredSeatView.vue`、`stores/sacredSeat.ts`、`components/seat/` | 专注会话、配置、连胜、历史、热力图、日志导入导出和全屏体验。 |
 | 国策树 | `views/FocusCanvasView.vue`、`views/FocusListView.vue`、`stores/focusTree.ts`、`components/canvas/` | 树画布、列表、节点/组/边/标签编辑、日结反馈、同步冲突与演化快照。 |
 | 判例库 | `views/CaseLawView.vue`、`components/case/` | 判例的查询、编辑、导入和导出。 |
@@ -36,6 +36,7 @@
 | 同步与认证服务 | `services/syncStatusService.ts`、`authService.ts` | 跨端同步状态、会话和 JTI 吊销用例。 |
 | Repositories | `repositories/` | 按领域封装 SQLite 查询、写入、事务与数据变换。 |
 | SQLite 基础设施 | `db/` | 连接、表/索引、迁移、种子、兼容门面和维护工具。 |
+| 服务器账号管理 | `cli/accounts.ts`、`repositories/accountRepository.ts` | 创建、列出、停用、启用与重置个人密码，控制数量并吊销旧会话。 |
 
 ## 交付模块
 

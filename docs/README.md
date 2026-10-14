@@ -8,6 +8,7 @@
 | [模块说明](modules.md) | 前端、后端、数据、共享契约和交付模块的职责与物理位置。 |
 | [API 与数据模型](api-and-data.md) | HTTP 路由、共享领域对象、SQLite 表和并发/导入约束。 |
 | [开发与验证](development.md) | 本地启动、测试、构建、配置和文档维护规则。 |
+| [多人使用指南](multiuser.md) | 公用体验、服务器创建个人账号、旧数据升级与容量控制。 |
 | [部署新手指南](deployment-beginner-guide.md) | 从 VMware 局域网演练到云服务器、域名与可信 HTTPS 上线。 |
 | [云服务器正式部署清单](cloud-production-deployment.md) | 域名、可信证书、Docker 上线与多项目资源隔离。 |
 | [部署与运维手册](../scripts/README.md) | 镜像、Compose、TLS、备份、恢复和更新回滚。 |

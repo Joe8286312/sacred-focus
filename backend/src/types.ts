@@ -1,5 +1,6 @@
 /** 后端兼容入口：跨端领域契约的唯一来源位于 contracts/domain.d.ts。 */
 export type {
+  AccountIdentity,
   CaseVerdict,
   DailyFocusHeatmapItem,
   EvolutionSnapshot,
@@ -15,6 +16,7 @@ export type {
   ResetNodeItem,
   SacredSeatConfig
 } from '@sacred-focus/contracts';
+import type { AccountIdentity } from '@sacred-focus/contracts';
 
 // 严密数据库行类型定义：仅后端持久化层使用，不属于跨端 API 契约。
 export interface SacredSeatConfigRow {
@@ -133,9 +135,14 @@ export interface SystemMetaRow {
 }
 
 export interface AuthJwtPayload {
-  role: string;
+  role: 'admin' | 'user' | 'public';
+  id?: string;
+  username?: string;
+  sessionVersion?: number;
   jti?: string;
   staticToken?: boolean;
   iat?: number;
   exp?: number;
 }
+
+export type AuthUser = AuthJwtPayload & AccountIdentity;

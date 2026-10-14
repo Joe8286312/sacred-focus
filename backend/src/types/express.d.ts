@@ -1,15 +1,10 @@
 import 'express';
+import type { AuthUser } from '../types.js';
 
 declare global {
   namespace Express {
     interface Request {
-      user?: {
-        role: string;
-        jti?: string;
-        staticToken?: boolean;
-        exp?: number;
-        [key: string]: any;
-      };
+      user?: AuthUser;
     }
   }
 }

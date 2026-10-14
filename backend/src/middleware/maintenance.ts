@@ -5,7 +5,7 @@ const WRITE_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 
 // 整机恢复热备与覆写期间，拒绝所有外部写入，避免恢复点之后的写操作被静默抹掉。
 export function maintenanceGuard(req: Request, res: Response, next: NextFunction) {
-  if (!WRITE_METHODS.has(req.method)) {
+  if (!WRITE_METHODS.has(req.method) || req.path.toLowerCase().startsWith('/auth/')) {
     return next();
   }
 

@@ -5,6 +5,7 @@ import { evolutionGateway } from '../platform/browser/evolution';
 import { systemBackupGateway } from '../platform/browser/systemBackup';
 import { focusTreeGateway } from '../platform/browser/focusTree';
 import { getErrorMessage } from '../shared/errors/errorMessage';
+import { accountStorageKey } from '../platform/browser/accountSession';
 
 export const useFocusTreeStore = defineStore('focusTree', () => {
   const nodes = ref<FocusNode[]>([]);
@@ -126,7 +127,7 @@ export const useFocusTreeStore = defineStore('focusTree', () => {
 
   function dismissResetAlert() {
     if (pendingResetSummary.value) {
-      sessionStorage.setItem('dismissedResetAlertDate', pendingResetSummary.value.settlementDate);
+      sessionStorage.setItem(accountStorageKey('dismissedResetAlertDate'), pendingResetSummary.value.settlementDate);
       pendingResetSummary.value = null;
     }
   }
@@ -143,7 +144,7 @@ export const useFocusTreeStore = defineStore('focusTree', () => {
         markSyncedRevision(data.revision);
       }
       if (data.resetSummary && data.resetSummary.resetNodes && data.resetSummary.resetNodes.length > 0) {
-        const dismissed = sessionStorage.getItem('dismissedResetAlertDate');
+        const dismissed = sessionStorage.getItem(accountStorageKey('dismissedResetAlertDate'));
         if (dismissed !== data.resetSummary.settlementDate) {
           pendingResetSummary.value = data.resetSummary;
         }

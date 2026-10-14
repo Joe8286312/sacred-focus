@@ -1302,10 +1302,10 @@ async function runAllTests() {
         decodeToken: token => token === 'logout' ? { jti: 'logout' } : null
       });
 
-      assert.deepEqual(await service.login('correct'), { token: 'signed:generated-jti:1000', initializedPasswordHash: true });
+      assert.deepEqual(await service.login('correct'), { token: 'signed:generated-jti:1000', initializedPasswordHash: true, user: { id: 'admin', username: 'admin', role: 'admin' } });
       assert.equal(await service.login('wrong'), undefined);
-      assert.deepEqual(await service.login('correct'), { token: 'signed:generated-jti:1000', initializedPasswordHash: false });
-      assert.deepEqual(service.getSessionStatus('valid'), { isAuthenticated: true, user: { role: 'admin', jti: 'valid' } });
+      assert.deepEqual(await service.login('correct'), { token: 'signed:generated-jti:1000', initializedPasswordHash: false, user: { id: 'admin', username: 'admin', role: 'admin' } });
+      assert.deepEqual(service.getSessionStatus('valid'), { isAuthenticated: true, user: { role: 'admin', jti: 'valid', id: 'admin', username: 'admin' } });
       repository.revokeJti('revoked', 2_000);
       assert.deepEqual(service.getSessionStatus('revoked'), { isAuthenticated: false, isRevoked: true });
       assert.deepEqual(service.getSessionStatus('invalid'), { isAuthenticated: false });

@@ -67,8 +67,8 @@ router.beforeEach(async (to, _from, next) => {
     });
   }
 
-  if (authStore.isAuthenticated && to.path === '/login') {
-    // 已登录访问登录页，直接跳转回神圣座位
+  if (authStore.isPersonalAccount && to.path === '/login') {
+    // 公用账号可以主动打开登录页；个人账号无需再次登录。
     return next('/seat');
   }
 

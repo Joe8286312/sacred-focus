@@ -72,12 +72,11 @@ export function createFocusTreeRepository(
   db: SqliteDatabasePort,
   { now = () => new Date() }: FocusTreeRepositoryOptions = {}
 ): FocusTreeRepository {
-  let upsertFocusNodeStatement: Statement | null = null;
   const systemMeta = createSystemMetaRepository(db);
 
   function getUpsertFocusNodeStatement(): Statement {
-    if (!upsertFocusNodeStatement) {
-      upsertFocusNodeStatement = db.prepare(`
+    // 连接随账号请求切换，Statement 必须在本次调用的数据库上创建。
+    return db.prepare(`
         INSERT OR REPLACE INTO focus_nodes (
           id, code, name, groupId, triggerTime, triggerScene, hasExactTime, timeValueMinutes,
           level, maxLevel, isLit, isFrozen, lastLitDate, previousLevel, previousLastLitDate, positionX, positionY,
@@ -88,8 +87,6 @@ export function createFocusTreeRepository(
           @specInstruction, @specFailCondition, @specBenefitMechanism, @specNotes, @sortOrder
         )
       `);
-    }
-    return upsertFocusNodeStatement;
   }
 
   function upsertFocusNode(node: FocusNode, sortOrder?: number): FocusNode {

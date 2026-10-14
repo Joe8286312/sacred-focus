@@ -56,7 +56,7 @@ export interface SystemBackupRepository {
 
 export interface SystemBackupRepositoryOptions {
   maintenanceRepository?: MaintenanceRepository;
-  dataDir?: string;
+  dataDir?: string | (() => string);
   preImportBackupRetention?: number;
   now?: () => Date;
 }
@@ -104,16 +104,17 @@ export function createSystemBackupRepository(
       throw new Error('PRE_IMPORT_BACKUP_UNSUPPORTED');
     }
 
+    const backupDir = typeof dataDir === 'function' ? dataDir() : dataDir;
     const timestamp = now().toISOString().replace(/[:.]/g, '-');
-    const backupFile = path.join(dataDir, `app_pre_import_${timestamp}.db`);
+    const backupFile = path.join(backupDir, `app_pre_import_${timestamp}.db`);
     await (db as BackupCapableSqliteDatabasePort).backup(backupFile);
 
     try {
-      const entries = await fs.readdir(dataDir, { withFileTypes: true });
+      const entries = await fs.readdir(backupDir, { withFileTypes: true });
       const backupFiles = await Promise.all(entries
         .filter(entry => entry.isFile() && /^app_pre_import_.*\.db$/i.test(entry.name))
         .map(async entry => {
-          const filePath = path.join(dataDir, entry.name);
+          const filePath = path.join(backupDir, entry.name);
           const stat = await fs.stat(filePath);
           return { filePath, modifiedAt: stat.mtimeMs };
         }));

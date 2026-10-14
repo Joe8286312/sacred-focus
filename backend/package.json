@@ -5,8 +5,9 @@
   "main": "dist/server.js",
   "scripts": {
     "dev": "tsx watch src/server.ts",
-    "build": "tsc && tsx test/verify.ts",
-    "test": "tsx test/verify.ts",
+    "build": "tsc && npm test",
+    "test": "tsx test/verify.ts && tsx test/multiuser.ts && tsx test/accountSession.ts",
+    "accounts": "tsx src/cli/accounts.ts",
     "start": "node dist/server.js"
   },
   "dependencies": {

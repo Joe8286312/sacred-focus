@@ -3,16 +3,19 @@ import { ref, onMounted } from 'vue';
 import { useRouter, useRoute } from 'vue-router';
 import { useAuthStore } from '../stores/auth';
 import { getTheme, toggleTheme as toggleGlobalTheme, type Theme } from '../platform/browser/theme';
+import { reloadAccountSession } from '../platform/browser/accountSession';
 
 const router = useRouter();
 const route = useRoute();
 const authStore = useAuthStore();
 
 const password = ref('');
+const username = ref('');
 const loading = ref(false);
 const isErrorShake = ref(false);
 const showPassword = ref(false);
 const passwordInputRef = ref<HTMLInputElement | null>(null);
+const usernameInputRef = ref<HTMLInputElement | null>(null);
 const currentTheme = ref<Theme>(getTheme());
 
 function toggleTheme() {
@@ -20,22 +23,22 @@ function toggleTheme() {
 }
 
 onMounted(() => {
-  // 自动聚焦密码框
-  passwordInputRef.value?.focus();
+  usernameInputRef.value?.focus();
 });
 
 async function handleLogin() {
-  if (!password.value.trim() || loading.value) return;
+  if (!username.value.trim() || !password.value || loading.value) return;
 
   loading.value = true;
   isErrorShake.value = false;
 
-  const success = await authStore.login(password.value);
+  const success = await authStore.login(password.value, username.value);
   loading.value = false;
 
   if (success) {
-    const redirect = (route.query.redirect as string) || '/seat';
-    router.replace(redirect);
+    const candidate = typeof route.query.redirect === 'string' ? route.query.redirect : '/seat';
+    const redirect = /^\/(seat|tree|list|cases)([?#].*)?$/.test(candidate) ? candidate : '/seat';
+    reloadAccountSession(redirect);
   } else {
     // 触发错误弹性震颤动效
     isErrorShake.value = true;
@@ -81,10 +84,25 @@ async function handleLogin() {
 
       <div class="card-header">
         <h1 class="system-title">SACRED FOCUS</h1>
-        <p class="system-subtitle">神 圣 契 约 访 问 核 验</p>
+        <p class="system-subtitle">登录个人账号</p>
       </div>
 
       <form class="login-form" @submit.prevent="handleLogin">
+        <div class="input-wrapper" :class="{ 'has-error': authStore.authError }">
+          <input
+            ref="usernameInputRef"
+            v-model="username"
+            type="text"
+            class="password-input username-input"
+            placeholder="账号名称"
+            aria-label="账号名称"
+            autocomplete="username"
+            autocapitalize="none"
+            spellcheck="false"
+            required
+            :disabled="loading"
+          />
+        </div>
         <div class="input-wrapper" :class="{ 'has-error': authStore.authError }">
           <svg class="input-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
             <path d="M21 2l-2 2m-1.5 1.5L14 9m-4.5 4.5L2 21l3 1 1-3 1 1 3-1-1-3 1 1 3-1-1-3 4.5-4.5" />
@@ -96,7 +114,9 @@ async function handleLogin() {
             v-model="password"
             :type="showPassword ? 'text' : 'password'"
             class="password-input"
-            placeholder="输入管理员安全密码"
+            placeholder="账号密码"
+            aria-label="账号密码"
+            required
             autocomplete="current-password"
             :disabled="loading"
           />
@@ -122,14 +142,15 @@ async function handleLogin() {
           {{ authStore.authError }}
         </div>
 
-        <button type="submit" class="submit-btn" :disabled="loading || !password.trim()">
-          <span v-if="!loading">进 入 自 控 中 枢</span>
+        <button type="submit" class="submit-btn" :disabled="loading || !username.trim() || !password">
+          <span v-if="!loading">登录</span>
           <span v-else class="loading-dots">核 验 中...</span>
         </button>
       </form>
 
       <div class="card-footer">
-        <span class="security-tag">SINGLE-ADMIN PRIVATE REALM</span>
+        <p class="account-guidance">个人账号由服务器管理员创建，请联系管理员获取账号。管理员使用 admin 登录。</p>
+        <button v-if="authStore.isPublicAccount" type="button" class="guest-link" @click="router.replace('/seat')">继续体验公用账号</button>
       </div>
     </div>
   </div>
@@ -295,6 +316,24 @@ async function handleLogin() {
   color: var(--text-primary);
   outline: none;
   font-family: inherit;
+  min-width: 0;
+}
+
+.username-input {
+  padding-left: 1rem;
+}
+
+.account-guidance {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  line-height: 1.7;
+  margin: 0 0 0.75rem;
+}
+
+.guest-link {
+  font-size: 0.82rem;
+  color: var(--color-lit);
+  padding: 0.4rem;
 }
 
 .password-input::placeholder {

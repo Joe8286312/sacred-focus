@@ -1,5 +1,5 @@
 import { config } from './config.js';
-import { db, initDatabase } from './db.js';
+import { db, initDatabase, checkpointAllDatabases, closeAllDatabases } from './db.js';
 import { purgeExpiredRevokedJtis } from './middleware/auth.js';
 import { createApp } from './app.js';
 
@@ -42,7 +42,10 @@ export function startServer(dependencies: StartServerDependencies = {}): ServerI
   const initializeDatabase = dependencies.initializeDatabase ?? initDatabase;
   const purgeExpiredJtis = dependencies.purgeExpiredRevokedJtis ?? purgeExpiredRevokedJtis;
   const appFactory = dependencies.appFactory ?? createApp;
-  const database = dependencies.database ?? db;
+  const database = dependencies.database ?? {
+    pragma: (statement: string) => checkpointAllDatabases(statement.includes('TRUNCATE') ? 'TRUNCATE' : 'PASSIVE'),
+    close: closeAllDatabases
+  };
   const serverConfig = dependencies.serverConfig ?? config;
   const runtime = dependencies.runtime ?? {
     setInterval: (callback: () => void, delay: number) => setInterval(callback, delay),

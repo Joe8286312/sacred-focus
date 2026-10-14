@@ -9,6 +9,7 @@ import { useAuthStore } from './stores/auth';
 import { initSyncManager } from './platform/browser/syncManager';
 import { focusTreeGateway } from './platform/browser/focusTree';
 import { getTheme, toggleTheme as toggleGlobalTheme, type Theme } from './platform/browser/theme';
+import { accountStorageKey, ACCOUNT_TRANSITION_EVENT, isAccountTransitioning } from './platform/browser/accountSession';
 
 const router = useRouter();
 const route = useRoute();
@@ -18,19 +19,25 @@ const focusStore = useFocusTreeStore();
 const seatStore = useSacredSeatStore();
 const authStore = useAuthStore();
 const cleanupSync = ref<(() => void) | null>(null);
+const isChangingAccount = ref(isAccountTransitioning());
+
+function handleAccountTransition(event: Event) {
+  isChangingAccount.value = Boolean((event as CustomEvent<boolean>).detail);
+}
 
 function toggleTheme() {
   currentTheme.value = toggleGlobalTheme(currentTheme.value);
 }
 
 onMounted(() => {
+  window.addEventListener(ACCOUNT_TRANSITION_EVENT, handleAccountTransition);
   // 启动多端唤醒静默自动同步管理器
   cleanupSync.value = initSyncManager();
 
   // 仅在开发模式下暴露调试辅助函数，生产环境坚决不挂载全局危险方法
   if (import.meta.env.DEV) {
     (window as any).__triggerResetModal = (mockData?: any) => {
-      sessionStorage.removeItem('dismissedResetAlertDate');
+      sessionStorage.removeItem(accountStorageKey('dismissedResetAlertDate'));
       focusStore.pendingResetSummary = mockData || {
         settlementDate: new Date().toISOString().slice(0, 10),
         resetNodes: [
@@ -41,7 +48,7 @@ onMounted(() => {
     };
 
     (window as any).__resetAndTriggerAudit = async () => {
-      sessionStorage.removeItem('dismissedResetAlertDate');
+      sessionStorage.removeItem(accountStorageKey('dismissedResetAlertDate'));
       await focusTreeGateway.resetSettlementAudit();
       await focusStore.fetchTree();
     };
@@ -50,12 +57,14 @@ onMounted(() => {
 
 onUnmounted(() => {
   cleanupSync.value?.();
+  window.removeEventListener(ACCOUNT_TRANSITION_EVENT, handleAccountTransition);
 });
 
 </script>
 
 <template>
-  <div class="app-container">
+  <div v-if="isChangingAccount" class="account-transition-screen" role="status">正在切换账号…</div>
+  <div v-show="!isChangingAccount" class="app-container">
     <!-- 顶部全局极简导航（专注时隐藏导航链接，仅保留深浅切换与全屏；登录页隐藏整个顶栏） -->
     <header v-if="route.path !== '/login'" class="app-header" :class="{ 'is-focus-mode': seatStore.isFocusMode }">
       <div 
@@ -106,6 +115,9 @@ onUnmounted(() => {
       </nav>
 
       <div class="header-right">
+        <span v-if="!seatStore.isFocusMode" class="account-badge" :title="authStore.isPublicAccount ? '公用账号：所有访客共享数据' : authStore.user?.username">
+          {{ authStore.isPublicAccount ? '公用账号' : authStore.user?.username }}
+        </span>
         <!-- 专注时提供全屏快捷控制按钮 -->
         <button 
           v-if="seatStore.isFocusMode"
@@ -126,7 +138,7 @@ onUnmounted(() => {
           v-if="!seatStore.isFocusMode"
           class="theme-toggle-btn" 
           @click="isMigrationModalOpen = true" 
-          title="跨设备数据迁移与整机备份"
+          title="当前账号的数据迁移与备份"
         >
           <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path>
@@ -137,10 +149,10 @@ onUnmounted(() => {
 
         <!-- 安全登出按钮 (非专注模式且已认证时展示) -->
         <button 
-          v-if="!seatStore.isFocusMode && authStore.isAuthenticated"
+          v-if="!seatStore.isFocusMode && authStore.isPersonalAccount"
           class="theme-toggle-btn" 
           @click="authStore.logout" 
-          title="安全登出"
+          title="退出个人账号，返回公用账号"
         >
           <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
@@ -168,6 +180,12 @@ onUnmounted(() => {
         </button>
       </div>
     </header>
+
+    <aside v-if="route.path !== '/login' && authStore.isPublicAccount && !seatStore.isFocusMode" class="public-account-notice">
+      <span>当前使用公用账号，数据与其他访客共享。</span>
+      <button type="button" @click="router.push({ path: '/login', query: { redirect: route.fullPath } })">登录个人账号</button>
+    </aside>
+    <div v-if="route.path !== '/login' && authStore.authError" class="account-error" role="alert">{{ authStore.authError }}</div>
 
     <!-- 视图主区域 -->
     <main class="app-main">
@@ -240,6 +258,53 @@ onUnmounted(() => {
 </template>
 
 <style scoped>
+.account-transition-screen {
+  display: grid;
+  place-items: center;
+  width: 100vw;
+  height: 100vh;
+  background: var(--bg-primary);
+  color: var(--text-secondary);
+  font-size: 14px;
+}
+
+.account-badge {
+  max-width: 110px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.public-account-notice {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  padding: 7px 12px;
+  background: var(--bg-secondary);
+  border-bottom: 1px solid var(--border-color);
+  color: var(--text-secondary);
+  font-size: 12px;
+  flex-shrink: 0;
+}
+
+.public-account-notice button {
+  color: var(--color-lit);
+  font-weight: 600;
+  padding: 2px 0;
+}
+
+.account-error {
+  padding: 8px 12px;
+  background: var(--bg-secondary);
+  color: var(--color-danger);
+  text-align: center;
+  font-size: 12px;
+}
+
 .app-container {
   display: flex;
   flex-direction: column;
@@ -493,6 +558,16 @@ onUnmounted(() => {
 
   .tab-btn.active .tab-label {
     font-weight: 700;
+  }
+}
+
+@media (max-width: 480px) {
+  .brand-title {
+    display: none;
+  }
+
+  .account-badge {
+    max-width: 90px;
   }
 }
 </style>

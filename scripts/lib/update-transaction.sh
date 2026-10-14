@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # 更新事务辅助：只处理版本切换、备份、健康检查与回滚，不包含镜像获取策略。
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/database-backup.sh"
 
 sf_normalize_app_version() {
     local version="$1"
@@ -12,7 +13,7 @@ sf_normalize_app_version() {
 
 sf_backup_before_update() {
     local data_dir="$1"
-    local backup_dir backup_file timestamp backup_done=0 paused=0 check_result
+    local backup_dir backup_file timestamp
 
     [ -f "${data_dir}/app.db" ] || return 0
 
@@ -22,48 +23,7 @@ sf_backup_before_update() {
     backup_file="${backup_dir}/app_pre_update_${timestamp}.db"
     sf_log "🛡️ 正在执行升级前数据库原子热备 -> ${backup_file} ..."
 
-    if command -v sqlite3 >/dev/null 2>&1; then
-        if sqlite3 "${data_dir}/app.db" ".backup '${backup_file}'"; then
-            backup_done=1
-        fi
-    fi
-
-    if [ "${backup_done}" -eq 0 ] && sf_compose ps -q sacred-focus >/dev/null 2>&1 && [ -n "$(sf_compose ps -q sacred-focus 2>/dev/null)" ]; then
-        sf_log "   - 使用容器运行时 better-sqlite3 执行在线热备..."
-        if sf_compose exec -T sacred-focus node -e "const Database = require('better-sqlite3'); const db = new Database('/app/data/app.db'); db.backup('/app/data/backup/app_pre_update_${timestamp}.db');" >/dev/null 2>&1; then
-            backup_done=1
-        fi
-    fi
-
-    if [ "${backup_done}" -eq 0 ] && command -v python3 >/dev/null 2>&1; then
-        sf_log "   - 使用 Python3 原生 sqlite3 在线备份 API..."
-        if python3 -c "import sqlite3; src = sqlite3.connect('${data_dir}/app.db'); dst = sqlite3.connect('${backup_file}'); src.backup(dst); dst.close(); src.close()" >/dev/null 2>&1; then
-            backup_done=1
-        fi
-    fi
-
-    if [ "${backup_done}" -eq 0 ]; then
-        sf_log "⚠️ 警告: 在线热备不可用，正在暂停容器后进行快照冷备..."
-        if sf_compose pause sacred-focus >/dev/null 2>&1; then
-            paused=1
-        fi
-        if ! cp "${data_dir}/app.db" "${backup_file}"; then
-            [ "${paused}" -eq 0 ] || sf_compose unpause sacred-focus >/dev/null 2>&1 || true
-            return 1
-        fi
-        if [ -f "${data_dir}/app.db-wal" ] && ! cp "${data_dir}/app.db-wal" "${backup_dir}/app_pre_update_${timestamp}.db-wal"; then
-            [ "${paused}" -eq 0 ] || sf_compose unpause sacred-focus >/dev/null 2>&1 || true
-            return 1
-        fi
-        [ "${paused}" -eq 0 ] || sf_compose unpause sacred-focus >/dev/null 2>&1 || true
-        backup_done=1
-    fi
-
-    [ "${backup_done}" -eq 1 ] || return 1
-    if command -v sqlite3 >/dev/null 2>&1; then
-        check_result="$(sqlite3 "${backup_file}" "PRAGMA quick_check;" 2>/dev/null || true)"
-        [ "${check_result}" = "ok" ] || return 1
-    fi
+    sf_backup_databases "${data_dir}" "$(basename "${backup_file}")" || return 1
     sf_log "✓ 数据原子备份完毕，完整性校验通过。"
 }
 

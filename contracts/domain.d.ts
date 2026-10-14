@@ -5,6 +5,13 @@
  * Express 请求对象、JWT 载荷、Vue 响应式对象或任何运行时代码。
  */
 
+/** 网页工作区身份；不包含密码、JWT 或服务器账号行。 */
+export interface AccountIdentity {
+  id: string;
+  username: string;
+  role: 'public' | 'admin' | 'user';
+}
+
 export interface SacredSeatConfig {
   sacredToken: string;
   reservationSignal: string;

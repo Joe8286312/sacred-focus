@@ -17,7 +17,7 @@ export const loginLimiter = rateLimit({
 // 2. 通用业务 API 限流器 (已认证 1000 次/分钟，未认证 60 次/分钟，本机/内网完全豁免)
 export const apiGeneralLimiter = rateLimit({
   windowMs: 60 * 1000,
-  max: (req) => (req.user ? 1000 : 60),
+  max: (req) => (req.user && req.user.role !== 'public' ? 1000 : 60),
   skip: (req) => isLocalOrTrusted(req),
 
   message: {

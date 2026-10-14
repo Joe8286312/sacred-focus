@@ -12,6 +12,8 @@ type Assert<Value extends true> = Value;
 
 /** 仅类型级断言：两端兼容入口必须与唯一领域契约保持等价。 */
 export type ContractCompatibilityAssertions = [
+  Assert<Equal<Backend.AccountIdentity, Contract.AccountIdentity>>,
+  Assert<Equal<Frontend.AccountIdentity, Contract.AccountIdentity>>,
   Assert<Equal<Backend.SacredSeatConfig, Contract.SacredSeatConfig>>,
   Assert<Equal<Frontend.SacredSeatConfig, Contract.SacredSeatConfig>>,
   Assert<Equal<Backend.FocusSessionLog, Contract.FocusSessionLog>>,

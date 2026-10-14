@@ -12,7 +12,8 @@ flowchart TD
   App --> Routes[Routes：HTTP 校验与响应映射]
   Routes --> Services[Services：用例与事务编排]
   Services --> Repositories[Repositories：SQLite 数据访问]
-  Repositories --> SQLite[(DATA_DIR/app.db)]
+  Repositories --> Scope[AsyncLocalStorage：已核验账号]
+  Scope --> SQLite[(账号独立 SQLite)]
   Contracts[contracts/domain.d.ts] -.共享类型.-> Browser
   Contracts -.共享类型.-> Services
 ```
@@ -35,10 +36,12 @@ flowchart TD
 ## 启动与请求流程
 
 1. `backend/src/server.ts` 调用 `initDatabase()`，清理过期的已吊销 JWT，再用 `createApp()` 创建监听实例。
-2. `backend/src/app.ts` 依次装配 Helmet、CORS、Cookie、15 MB JSON body、安全过滤、认证、维护写保护、通用限流和业务路由。
+2. `backend/src/app.ts` 依次装配 Helmet、CORS、Cookie、15 MB JSON body、安全过滤、账号身份与数据库上下文、维护写保护、通用限流、账号容量限制和业务路由。
 3. 前端 `main.ts` 恢复主题，安装 Pinia 和 router，注册未授权跳转与登出导航适配器。
 4. router 首次进入受保护页面时由 auth store 校验 Cookie 会话；页面/Pinia 通过领域 gateway 发起 API 调用。
 5. route 完成输入与 HTTP 映射，service 编排用例，repository 读取或写入 SQLite。
+
+`db/connection.ts` 将原数据库保留为管理员工作区和账号注册表；公用及个人工作区按服务器生成的身份使用独立数据库。业务 repository 注入的 `db` 在每次方法调用时绑定到 AsyncLocalStorage 的连接，不能跨请求缓存 Statement。认证与封禁使用固定的 `rootDb`。连接池只保留最多 8 个空闲工作区连接，异步恢复持有连接至完成。
 
 ## 关键一致性边界
 
@@ -50,7 +53,9 @@ flowchart TD
 
 ## 安全边界
 
-- 管理员会话存储在 HttpOnly Cookie；前端不持久化 JWT。
+- 管理员及个人会话存储在 HttpOnly Cookie；前端不持久化 JWT。无凭据使用共享公用账号。
+- 服务器 CLI 控制账号创建与数量，停用和重置密码增加 sessionVersion，立即使旧个人会话失效。
+- 前端页面固定账号身份，业务请求校验账号标识；切换时取消旧请求并重载，浏览器计时与提示按账号保存。
 - Helmet、CORS、IP/UA 安全过滤、认证、写维护锁和不同粒度的限流在 `/api` 边界执行。
 - 生产环境中未知异常响应经过脱敏；详细异常只进入服务端日志。
 - 基础 Compose 仅绑定回环地址；Nginx overlay 才公开 80/443 并显式设置 `TRUST_PROXY=1`。

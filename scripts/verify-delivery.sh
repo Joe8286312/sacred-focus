@@ -9,7 +9,7 @@ fail() { printf '❌ 交付预检失败：%s\n' "$*" >&2; exit 1; }
 require_file() { [ -f "${ROOT_DIR}/$1" ] || fail "缺少 $1"; }
 require_text() { grep -q -- "$2" "${ROOT_DIR}/$1" || fail "$1 缺少契约：$2"; }
 
-for file in Dockerfile .dockerignore docker-compose.yml docker-compose.nginx.yml .env.production.example scripts/docker-update.sh scripts/lib/update-transaction.sh scripts/docker-backup.sh scripts/README.md; do
+for file in Dockerfile .dockerignore docker-compose.yml docker-compose.nginx.yml .env.production.example scripts/docker-update.sh scripts/lib/update-transaction.sh scripts/docker-backup.sh scripts/lib/database-backup.sh scripts/lib/backup-databases.py scripts/lib/backup-databases.cjs scripts/README.md; do
     require_file "${file}"
 done
 
@@ -18,6 +18,8 @@ require_text docker-compose.yml 'JWT_SECRET:?Set JWT_SECRET'
 require_text docker-compose.yml 'ADMIN_PASSWORD:?Set ADMIN_PASSWORD'
 require_text docker-compose.yml 'APP_MEMORY_LIMIT:-512m'
 require_text docker-compose.yml 'NODE_HEAP_LIMIT_MB:-384'
+require_text docker-compose.yml 'MAX_PERSONAL_ACCOUNTS:-20'
+require_text docker-compose.yml 'PUBLIC_DATA_LIMIT_MB:-50'
 require_text docker-compose.nginx.yml 'NGINX_SSL_DIR:?Set NGINX_SSL_DIR'
 require_text docker-compose.nginx.yml 'TRUST_PROXY: "1"'
 require_text docker-compose.nginx.yml 'NGINX_MEMORY_LIMIT:-128m'

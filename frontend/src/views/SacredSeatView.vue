@@ -10,6 +10,7 @@ import FocusHistoryModal from '../components/seat/FocusHistoryModal.vue';
 import { playChimeSound } from '../platform/browser/audio';
 import { formatCompactDuration } from '../shared/formatters/duration';
 import type { FocusSessionLog } from '../types';
+import { accountStorageKey, getBrowserAccountId, isAccountTransitioning } from '../platform/browser/accountSession';
 
 const store = useSacredSeatStore();
 
@@ -42,7 +43,15 @@ function openHistoryModal(tab: 'LOGS' | 'HEATMAP' = 'LOGS') {
 const regretNotice = ref('');
 const pendingFailedLog = ref<FocusSessionLog | null>(null);
 const saveErrorMsg = ref('');
-const ACTIVE_SESSION_KEY = 'sacred_focus_active_session';
+// 访客计时只在当前标签页保存；个人账号的计时按账号和标签页隔离。
+const activeSessionStorage = getBrowserAccountId() === 'public' ? sessionStorage : localStorage;
+const TAB_ID_KEY = 'sacred_focus_tab_id';
+let activeTabId = sessionStorage.getItem(TAB_ID_KEY);
+if (!activeTabId) {
+  activeTabId = `${Date.now()}:${Math.random()}`;
+  sessionStorage.setItem(TAB_ID_KEY, activeTabId);
+}
+const ACTIVE_SESSION_KEY = `${accountStorageKey('sacred_focus_active_session')}:${activeTabId}`;
 
 async function retrySaveFailedLog() {
   if (!pendingFailedLog.value) return;
@@ -140,7 +149,7 @@ function startFocus(minutes?: number) {
   sessionStartTime.value = new Date();
   currentState.value = 'FOCUSING';
 
-  localStorage.setItem(ACTIVE_SESSION_KEY, JSON.stringify({
+  activeSessionStorage.setItem(ACTIVE_SESSION_KEY, JSON.stringify({
     id: generateLogId(),
     startTime: sessionStartTime.value.toISOString(),
     targetDurationMinutes: mins,
@@ -221,7 +230,7 @@ function handleGiveUpClick() {
 // 触发后悔药免责退出（0ms 乐观更新，非阻塞异步上报）
 function triggerRegretExit() {
   clearTimer();
-  localStorage.removeItem(ACTIVE_SESSION_KEY);
+  activeSessionStorage.removeItem(ACTIVE_SESSION_KEY);
   const actualSec = calculateActualSeconds();
   const startIso = sessionStartTime.value ? sessionStartTime.value.toISOString() : new Date().toISOString();
   const targetMins = Math.round(targetDurationSeconds.value / 60);
@@ -258,7 +267,7 @@ function triggerRegretExit() {
 function handleConfirmReset(payload: { focusContent: string; failureReason: string }) {
   isWarningModalOpen.value = false;
   clearTimer();
-  localStorage.removeItem(ACTIVE_SESSION_KEY);
+  activeSessionStorage.removeItem(ACTIVE_SESSION_KEY);
   const actualSec = calculateActualSeconds();
   const startIso = sessionStartTime.value ? sessionStartTime.value.toISOString() : new Date().toISOString();
   const targetMins = Math.round(targetDurationSeconds.value / 60);
@@ -295,7 +304,7 @@ function handleConfirmReset(payload: { focusContent: string; failureReason: stri
 async function handleCompleteSession(withCase: boolean, completedContent: string) {
   isCaseModalOpen.value = false;
   clearTimer();
-  localStorage.removeItem(ACTIVE_SESSION_KEY);
+  activeSessionStorage.removeItem(ACTIVE_SESSION_KEY);
   const actualSec = actualCollectionSeconds.value > 0 ? actualCollectionSeconds.value : calculateActualSeconds();
   const startIso = sessionStartTime.value ? sessionStartTime.value.toISOString() : new Date().toISOString();
   const targetMins = Math.round(targetDurationSeconds.value / 60);
@@ -408,6 +417,7 @@ onBeforeRouteLeave((_to, _from, next) => {
 
 // 浏览器关闭或刷新防误触拦截与防逃逸结算 (P2-005)
 function handleBeforeUnload(e: BeforeUnloadEvent) {
+  if (isAccountTransitioning()) return;
   if (currentState.value === 'FOCUSING' || currentState.value === 'OVER_FOCUS') {
     e.preventDefault();
     e.returnValue = '';
@@ -415,8 +425,10 @@ function handleBeforeUnload(e: BeforeUnloadEvent) {
 }
 
 function handleUnloadSession() {
+  // Cookie 已切换时禁止用旧页面的计时内容给新账号补记。
+  if (isAccountTransitioning()) return;
   if (currentState.value === 'FOCUSING' || currentState.value === 'OVER_FOCUS') {
-    const raw = localStorage.getItem(ACTIVE_SESSION_KEY);
+    const raw = activeSessionStorage.getItem(ACTIVE_SESSION_KEY);
     if (raw) {
       try {
         const data = JSON.parse(raw);
@@ -434,7 +446,7 @@ function handleUnloadSession() {
           note: '页面被意外关闭或刷新，触发防逃逸失败记录并清零连胜'
         };
         sacredSeatGateway.recordSessionOnUnload(payload).catch(() => {});
-        localStorage.removeItem(ACTIVE_SESSION_KEY);
+        activeSessionStorage.removeItem(ACTIVE_SESSION_KEY);
       } catch (err) {
         console.error('Failed to send unload beacon', err);
       }
@@ -450,11 +462,11 @@ onMounted(() => {
   window.addEventListener('pagehide', handleUnloadSession);
 
   // 检测并恢复/结算上一次未完成的孤儿会话 (Orphan Session Recovery)
-  const savedSession = localStorage.getItem(ACTIVE_SESSION_KEY);
+  const savedSession = activeSessionStorage.getItem(ACTIVE_SESSION_KEY);
   if (savedSession) {
     try {
       const s = JSON.parse(savedSession);
-      localStorage.removeItem(ACTIVE_SESSION_KEY);
+      activeSessionStorage.removeItem(ACTIVE_SESSION_KEY);
       const failLog: FocusSessionLog = {
         id: s.id || generateLogId(),
         type: 'FOCUS',
@@ -469,7 +481,7 @@ onMounted(() => {
       };
       store.recordSession(failLog).catch(e => console.warn('Failed to recover abandoned session', e));
     } catch (e) {
-      localStorage.removeItem(ACTIVE_SESSION_KEY);
+      activeSessionStorage.removeItem(ACTIVE_SESSION_KEY);
     }
   }
 });

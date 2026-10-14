@@ -1,5 +1,6 @@
 /** 前端兼容入口：跨端领域契约的唯一来源位于 contracts/domain.d.ts。 */
 export type {
+  AccountIdentity,
   CaseVerdict,
   DailyFocusHeatmapItem,
   EvolutionSnapshot,

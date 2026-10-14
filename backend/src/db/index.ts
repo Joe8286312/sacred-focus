@@ -1,12 +1,14 @@
-import { db } from './connection.js';
+import { rootDb } from './connection.js';
 import { createTables } from './schema.js';
 import { migrateDatabase } from './migrations.js';
 import { initializeMinimalState } from './seed.js';
+import { createAccountTables } from '../repositories/accountRepository.js';
 
 export function initDatabase() {
-  createTables(db);
-  migrateDatabase(db);
-  initializeMinimalState(db);
+  createTables(rootDb);
+  migrateDatabase(rootDb);
+  initializeMinimalState(rootDb);
+  createAccountTables(rootDb);
 }
 
 export * from './connection.js';

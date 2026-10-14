@@ -85,25 +85,51 @@ curl --fail --show-error https://your-domain.example/api/health
 
 ## 5. 备份与恢复演练
 
-先做备份；脚本优先采用 SQLite 在线备份，必要时短暂停顿容器冷备，并保留最近 14 天的日常备份：
+先做备份；脚本优先采用 Python 或容器 SQLite 在线备份，每个数据库独立取得一致快照。没有在线运行时时，只在容器成功暂停后冷备并复制必要 WAL。脚本备份管理员、公用与所有已有个人数据库，并保留最近 14 天的日常备份：
 
 ```bash
 ./scripts/docker-backup.sh
 ls -lh "${HOST_DATA_DIR:-./data}/backup"
 ```
 
-恢复是有停机窗口的人工操作。仅使用已校验的 `.db` 备份，先另存现有数据库，再停止应用并替换数据文件：
+一次完整备份由以下文件组成，转移备份时必须一并保存：
+
+```text
+app_backup_YYYYMMDD_HHMMSS.db                # 管理员数据与账号注册表
+app_backup_YYYYMMDD_HHMMSS.db.manifest.json  # 方法、源路径与快照清单
+app_backup_YYYYMMDD_HHMMSS_accounts/         # public 与各 UUID 的数据库
+```
+
+清单中的 `consistency: per-database` 表示逐库一致快照；业务没有跨账号事务，备份期间应避免执行账号创建或其他服务器维护。冷备清单为 `paused-copy-with-wal`，可能额外包含根数据库的 `.db-wal` 和各账号数据库的 WAL。根 `.db` 文件发布完成才表示整次备份成功；任一已有账号数据库备份失败都会使脚本失败。
+
+恢复是有停机窗口的人工操作。下面示例用于清单 `method` 为 `python-sqlite-online` 或 `better-sqlite-online` 的在线快照，先另存现有数据，再停止应用并同时还原注册表和账号目录：
 
 ```bash
 ./scripts/docker-backup.sh
 docker compose stop sacred-focus
-cp "${HOST_DATA_DIR:-./data}/backup/app_backup_YYYYMMDD_HHMMSS.db" "${HOST_DATA_DIR:-./data}/app.db"
-rm -f "${HOST_DATA_DIR:-./data}/app.db-wal" "${HOST_DATA_DIR:-./data}/app.db-shm"
+RESTORE_DATA_DIR="${HOST_DATA_DIR:-./data}"
+RESTORE_SNAPSHOT="${RESTORE_DATA_DIR}/backup/app_backup_YYYYMMDD_HHMMSS.db"
+RESTORE_ACCOUNTS="${RESTORE_SNAPSHOT%.db}_accounts"
+cat "${RESTORE_SNAPSHOT}.manifest.json"
+# 确认使用的是已校验的在线快照；将现有账号目录另存，以免混用旧 WAL。
+if [ -d "${RESTORE_DATA_DIR}/accounts" ]; then
+    mv "${RESTORE_DATA_DIR}/accounts" "${RESTORE_DATA_DIR}/accounts_before_restore_$(date +%Y%m%d_%H%M%S)"
+fi
+mkdir -p "${RESTORE_DATA_DIR}/accounts"
+if [ -d "${RESTORE_ACCOUNTS}" ]; then
+    cp -a "${RESTORE_ACCOUNTS}/." "${RESTORE_DATA_DIR}/accounts/"
+fi
+cp "${RESTORE_SNAPSHOT}" "${RESTORE_DATA_DIR}/app.db"
+rm -f "${RESTORE_DATA_DIR}/app.db-wal" "${RESTORE_DATA_DIR}/app.db-shm"
+# 备份为 0600；还原后重新赋予容器 node 用户读取和写入权限。
+docker compose run --rm --no-deps --user 0 --entrypoint sh sacred-focus -c 'chown -R node:node /app/data/accounts /app/data/app.db'
 docker compose up -d sacred-focus
 curl -fsS http://127.0.0.1:${PORT:-3000}/api/health
 ```
 
-将 `YYYYMMDD_HHMMSS` 替换为实际备份名。`rm -f` 仅应在已确认用一致性 `.db` 快照覆盖主库后执行，用于清除不属于该快照的旧 WAL/SHM；恢复后应检查业务数据并记录结果。
+将 `YYYYMMDD_HHMMSS` 替换为实际备份名。`rm -f` 只清理不属于新快照的旧 WAL/SHM。若清单是 `cold-copy`，必须在清理旧 WAL 后，将备份的根 `.db-wal` 复制为 `app.db-wal`，并保留账号目录中对应的 WAL；不能只恢复 `.db` 后丢弃配套 WAL。恢复后检查管理员和个人账号的数据并记录结果。
+
+个人网页“完整备份”只包含当前账号的业务内容，不能代替服务器注册表与全部账号备份。服务器创建、停用和重置个人账号的操作见 [多人使用指南](../docs/multiuser.md)。
 
 ## 6. 更新与自动回滚
 

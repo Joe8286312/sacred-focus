@@ -1,6 +1,5 @@
 import { Router, Request, Response } from 'express';
-import { config } from '../config.js';
-import { db } from '../db.js';
+import { db, getAccountDataDir, retainAccountDatabase } from '../db.js';
 import { exportLimiter, importLimiter } from '../middleware/rateLimiter.js';
 import { validateFullBackupPayload } from '../utils/validators.js';
 import { createSystemBackupRepository } from '../repositories/systemBackupRepository.js';
@@ -11,7 +10,7 @@ import { getSystemImportFailureResponse } from './systemImportFailure.js';
 
 const router = Router();
 const maintenanceRepository = createMaintenanceRepository(db);
-const repository = createSystemBackupRepository(db, { dataDir: config.dataDir, maintenanceRepository });
+const repository = createSystemBackupRepository(db, { dataDir: getAccountDataDir, maintenanceRepository });
 const service = createSystemBackupService({ systemBackupRepository: repository, maintenanceRepository });
 
 // 全量导出系统整机镜像（跨设备全量迁移与灾难恢复，15次/10分钟限流保护）
@@ -34,6 +33,7 @@ router.post('/import', importLimiter, async (req: Request, res: Response) => {
       details: validation.details
     });
   }
+  const data = validation.data;
 
   const expectedRevision = req.body?.expectedRevision;
   if (typeof expectedRevision !== 'number' || !Number.isInteger(expectedRevision) || expectedRevision < 1) {
@@ -44,14 +44,14 @@ router.post('/import', importLimiter, async (req: Request, res: Response) => {
   }
 
   try {
-    const result = await service.importFullBackup({
+    const result = await retainAccountDatabase(() => service.importFullBackup({
       expectedRevision,
-      tree: validation.data.tree,
-      sacredSeatConfig: validation.data.sacredSeatConfig,
-      precedentCases: validation.data.precedentCases,
-      evolution: validation.data.evolution,
-      sessionLogs: validation.data.sessionLogs
-    });
+      tree: data.tree,
+      sacredSeatConfig: data.sacredSeatConfig,
+      precedentCases: data.precedentCases,
+      evolution: data.evolution,
+      sessionLogs: data.sessionLogs
+    }));
     console.log(`[Sacred Focus System] 预导入安全热备已生成: ${result.preImportBackup.backupFile}`);
     if (result.preImportBackup.prunedCount > 0) {
       console.log(`[Sacred Focus System] 已淘汰 ${result.preImportBackup.prunedCount} 个过期预导入热备`);

@@ -2,6 +2,7 @@
 import { ref } from 'vue';
 import { useFocusTreeStore } from '../../stores/focusTree';
 import { useSacredSeatStore } from '../../stores/sacredSeat';
+import { useAuthStore } from '../../stores/auth';
 import { precedentCaseGateway } from '../../platform/browser/precedentCases';
 import { isSystemBackupPayload, type SystemBackupPayload } from '../../application/systemBackup/backupPayload';
 
@@ -15,6 +16,7 @@ const emit = defineEmits<{
 
 const focusStore = useFocusTreeStore();
 const seatStore = useSacredSeatStore();
+const authStore = useAuthStore();
 
 // 状态反馈
 const toastNotice = ref<{ text: string; isError?: boolean } | null>(null);
@@ -53,6 +55,7 @@ async function handleExportFull() {
 }
 
 function triggerFullImportFile() {
+  if (authStore.isPublicAccount) return;
   if (fullFileInputRef.value) {
     fullFileInputRef.value.value = '';
     fullFileInputRef.value.click();
@@ -60,6 +63,7 @@ function triggerFullImportFile() {
 }
 
 function onFullFileSelected(e: Event) {
+  if (authStore.isPublicAccount) return;
   const input = e.target as HTMLInputElement;
   const file = input.files?.[0];
   if (!file) return;
@@ -82,6 +86,7 @@ function onFullFileSelected(e: Event) {
 }
 
 async function executeFullImport() {
+  if (authStore.isPublicAccount) return;
   if (!pendingFullBackup.value) return;
   isImportingFull.value = true;
   try {
@@ -276,7 +281,7 @@ async function onCasesFileSelected(e: Event) {
               <div class="title-wrap">
                 <h3 class="modal-title">系统数据中枢 · 跨设备迁移</h3>
                 <span class="modal-subtitle font-mono">
-                  全量整机迁移镜像与领域数据独立归档控制台
+                  当前账号的数据迁移与模块归档
                 </span>
               </div>
             </div>
@@ -307,11 +312,11 @@ async function onCasesFileSelected(e: Event) {
                     <line x1="8" y1="21" x2="16" y2="21"></line>
                     <line x1="12" y1="17" x2="12" y2="21"></line>
                   </svg>
-                  <span class="section-title">全系统整机跨设备搬家</span>
+                  <span class="section-title">当前账号的完整备份与恢复</span>
                   <span class="badge-accent font-mono">全量快照镜像</span>
                 </div>
                 <span class="section-desc">
-                  一键完整打包或整机还原国策树、演化版本快照、专注流水记录与判罚宝典。
+                  打包或还原当前账号的国策树、演化版本快照、专注记录与判例。
                 </span>
               </div>
 
@@ -319,7 +324,7 @@ async function onCasesFileSelected(e: Event) {
               <div v-if="isConfirmingFullImport" class="full-import-confirm-box">
                 <div class="confirm-head">
                   <span class="danger-dot"></span>
-                  <strong>警告：整机恢复将彻底清空并重构全库所有数据！</strong>
+                  <strong>警告：恢复将覆盖当前账号的全部项目数据！</strong>
                 </div>
                 <div class="confirm-stats-grid font-mono">
                   <div class="stat-pill">
@@ -348,7 +353,7 @@ async function onCasesFileSelected(e: Event) {
                   </div>
                 </div>
                 <p class="confirm-desc">
-                  已解析完整镜像备份。点击确认将以备份文件全面覆盖当前设备所有数据，该操作不可逆。
+                  已解析完整备份。点击确认将以备份文件覆盖当前账号的数据，请先导出现有备份。
                 </p>
                 <div class="confirm-btn-row">
                   <button class="btn-danger-confirm font-mono" :disabled="isImportingFull" @click="executeFullImport">
@@ -363,8 +368,8 @@ async function onCasesFileSelected(e: Event) {
               <!-- 全量操作按钮卡片 -->
               <div v-else class="full-actions-card">
                 <div class="full-info">
-                  <span class="full-main-text">一键生成全系统整机 JSON 归档</span>
-                  <span class="full-sub-text">适用于换机搬迁、云端冷备与系统灾备重建</span>
+                  <span class="full-main-text">一键生成当前账号的 JSON 归档</span>
+                  <span class="full-sub-text">{{ authStore.isPublicAccount ? '公用账号不支持全量恢复，请登录个人账号。' : '用于备份、恢复或向其他设备迁移账号数据' }}</span>
                 </div>
                 <div class="full-btn-group">
                   <button 
@@ -382,7 +387,7 @@ async function onCasesFileSelected(e: Event) {
 
                   <button 
                     class="btn-full-import font-mono" 
-                    :disabled="isImportingFull" 
+                    :disabled="isImportingFull || authStore.isPublicAccount"
                     @click="triggerFullImportFile"
                   >
                     <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">

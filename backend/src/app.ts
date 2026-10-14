@@ -9,6 +9,7 @@ import { securityFilter } from './middleware/security.js';
 import { apiGeneralLimiter } from './middleware/rateLimiter.js';
 import { authMiddleware } from './middleware/auth.js';
 import { maintenanceGuard } from './middleware/maintenance.js';
+import { accountLimits } from './middleware/accountLimits.js';
 import authRouter from './routes/auth.js';
 import syncRouter from './routes/sync.js';
 import sacredSeatRouter from './routes/sacredSeat.js';
@@ -64,9 +65,14 @@ export function createApp({
   app.use(cookieParser());
   app.use(express.json({ limit: '15mb' }));
   app.use(securityFilter);
+  app.use('/api', (_req, res, next) => {
+    res.setHeader('Cache-Control', 'no-store');
+    next();
+  });
   app.use('/api', authMiddleware);
   app.use('/api', maintenanceGuard);
   app.use('/api', apiGeneralLimiter);
+  app.use('/api', accountLimits);
 
   app.get('/api/health', (_req: Request, res: Response) => {
     res.json({ status: 'ok', version: process.env.APP_VERSION || '1.0.0', timestamp: new Date().toISOString(), service: 'sacred-focus-backend' });

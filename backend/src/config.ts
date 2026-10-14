@@ -52,6 +52,14 @@ function isWeakOrPlaceholderPassword(pwd: string): boolean {
 const rawAdminPassword = process.env.ADMIN_PASSWORD;
 const rawAdminPasswordHash = process.env.ADMIN_PASSWORD_HASH;
 
+function positiveInteger(name: string, fallback: number): number {
+  const value = process.env[name];
+  if (value === undefined || value === '') return fallback;
+  const parsed = Number(value);
+  if (!Number.isSafeInteger(parsed) || parsed < 1) throw new Error(`${name} 必须是正整数`);
+  return parsed;
+}
+
 // 生产环境下强制校验 JWT 密钥与管理员初始密码强度，杜绝默认弱口令与公开预设密钥 (P0-001)
 if (isProduction) {
   if (!rawJwtSecret || isWeakOrPlaceholderSecret(rawJwtSecret)) {
@@ -73,6 +81,9 @@ export const config = {
   jwtSecret: rawJwtSecret || 'sacred_focus_default_jwt_secret_change_in_production_2026',
   adminPasswordHash: process.env.ADMIN_PASSWORD_HASH || '',
   initialAdminPassword: process.env.ADMIN_PASSWORD || 'admin123456',
+  maxPersonalAccounts: positiveInteger('MAX_PERSONAL_ACCOUNTS', 20),
+  publicDataLimitMb: positiveInteger('PUBLIC_DATA_LIMIT_MB', 50),
+  personalDataLimitMb: positiveInteger('PERSONAL_DATA_LIMIT_MB', 256),
   trustedIps: (process.env.TRUSTED_IPS || '').split(',').map(s => s.trim()).filter(Boolean),
   allowedOrigins: (process.env.ALLOWED_ORIGINS || 'http://localhost:5173,http://localhost:5180,http://127.0.0.1:5173,http://127.0.0.1:5180')
     .split(',')

@@ -1,6 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import { isLocalOrTrusted, getClientIp } from './ipRules.js';
-import { db } from '../db.js';
+import { rootDb } from '../db.js';
 import { createSecurityBanRepository } from '../repositories/securityBanRepository.js';
 
 const HONEYPOT_PATHS = [
@@ -21,7 +21,7 @@ const BANNED_UA_PATTERNS = [
 
 // 内存级临时封禁高速缓存 (IP -> 解封时间戳)
 const ipBlacklist = new Map<string, number>();
-const securityBanRepository = createSecurityBanRepository(db);
+const securityBanRepository = createSecurityBanRepository(rootDb);
 
 function banIp(ip: string, durationMs: number) {
   const unbanTime = Date.now() + durationMs;
