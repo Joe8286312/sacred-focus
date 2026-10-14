@@ -29,8 +29,8 @@ watch(() => props.isOpen, (open) => {
 
 function handleSave() {
   emit('save', {
-    sacredToken: sacredToken.value.trim() || '主力机开启专注模式',
-    reservationSignal: reservationSignal.value.trim() || '反手拍手轻声说换人',
+    sacredToken: sacredToken.value.trim() || '图书馆坐上特定座位',
+    reservationSignal: reservationSignal.value.trim() || '打响指',
     defaultFocusDuration: Number(defaultFocusDuration.value) || 60,
     regretWindowSeconds: Number(regretWindowSeconds.value) || 30
   });
@@ -53,7 +53,7 @@ function handleSave() {
                 神圣信物
                 <span class="hint">物理隔离锚点，专注时随身佩戴或状态切换</span>
               </label>
-              <input v-model="sacredToken" type="text" placeholder="例：主力机开启专注模式 / 戴上专属棒球帽" />
+              <input v-model="sacredToken" type="text" placeholder="例：图书馆坐上特定座位 / 戴上专属棒球帽" />
             </div>
 
             <div class="form-group">
@@ -61,7 +61,7 @@ function handleSave() {
                 预约启动信号
                 <span class="hint">前额叶点火动作，倒计时结束时触发执行</span>
               </label>
-              <input v-model="reservationSignal" type="text" placeholder="例：反手拍手轻声说换人 / 打响指" />
+              <input v-model="reservationSignal" type="text" placeholder="例：打响指 / 深呼吸一次" />
             </div>
 
             <div class="form-row">

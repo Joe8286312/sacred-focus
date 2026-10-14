@@ -72,7 +72,7 @@ async function retrySaveFailedLog() {
 }
 
 // 专注目标与内容
-const currentFocusContent = ref('');
+const currentFocusContent = ref('精听一份英语听力');
 
 // 计时器变量
 let timerInterval: number | null = null;
@@ -556,7 +556,7 @@ onUnmounted(() => {
           <input 
             v-model="currentFocusContent" 
             type="text" 
-            placeholder="输入本次心流目标（例如：重构专注历史面板）"
+            placeholder="输入本次心流目标（例如：精听一份英语听力）"
             class="focus-target-input"
             maxlength="60"
           />

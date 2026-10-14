@@ -201,8 +201,8 @@ export function validateFullBackupPayload(body: unknown): ValidationResult<Valid
   if (body.sacredSeatConfig && isObject(body.sacredSeatConfig)) {
     const c = body.sacredSeatConfig;
     validatedSeatConfig = {
-      sacredToken: String(c.sacredToken || '主力机开启专注模式').slice(0, 128),
-      reservationSignal: String(c.reservationSignal || '反手拍手轻声说换人').slice(0, 128),
+      sacredToken: String(c.sacredToken || '图书馆坐上特定座位').slice(0, 128),
+      reservationSignal: String(c.reservationSignal || '打响指').slice(0, 128),
       defaultFocusDuration: Math.max(1, Math.min(typeof c.defaultFocusDuration === 'number' ? c.defaultFocusDuration : 60, 1440)),
       regretWindowSeconds: Math.max(5, Math.min(typeof c.regretWindowSeconds === 'number' ? c.regretWindowSeconds : 30, 300)),
       currentStreak: Math.max(0, typeof c.currentStreak === 'number' ? c.currentStreak : 0),

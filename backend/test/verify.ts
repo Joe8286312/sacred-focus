@@ -27,6 +27,7 @@ import {
 import { safeCompare } from '../src/middleware/auth.js';
 import { createTables } from '../src/db/schema.js';
 import { initializeMinimalState } from '../src/db/seed.js';
+import { migrateDatabase } from '../src/db/migrations.js';
 import { createSystemMetaRepository } from '../src/repositories/systemMetaRepository.js';
 import { createFocusTreeRepository, type NodeLitState, type NodeUpdateState } from '../src/repositories/focusTreeRepository.js';
 import { createSacredSeatRepository } from '../src/repositories/sacredSeatRepository.js';
@@ -687,7 +688,7 @@ async function runAllTests() {
 
     assert.equal(result.success, true);
     assert.equal(result.data?.sacredSeatConfig?.sacredToken.length, 128);
-    assert.equal(result.data?.sacredSeatConfig?.reservationSignal, '反手拍手轻声说换人');
+    assert.equal(result.data?.sacredSeatConfig?.reservationSignal, '打响指');
     assert.equal(result.data?.sacredSeatConfig?.defaultFocusDuration, 1440);
     assert.equal(result.data?.sacredSeatConfig?.regretWindowSeconds, 5);
     assert.equal(result.data?.sacredSeatConfig?.currentStreak, 0);
@@ -749,6 +750,41 @@ async function runAllTests() {
     initializeMinimalState(cleanDb);
     assert.equal((cleanDb.prepare('SELECT COUNT(*) AS count FROM sacred_seat_config').get() as { count: number }).count, 1);
     cleanDb.close();
+  });
+
+  test('座位默认文案升级只替换旧默认值，保留个人设置、连胜并且不会重复覆写', () => {
+    const examples = [
+      ['开始专注', '轻拍双手，切换状态', '图书馆坐上特定座位', '打响指'],
+      ['主力机开启专注模式', '反手拍手轻声说换人', '图书馆坐上特定座位', '打响指'],
+      ['我的专属座位', '反手拍手轻声说换人', '我的专属座位', '打响指'],
+      ['开始专注', '戴上耳机', '图书馆坐上特定座位', '戴上耳机'],
+      ['我的专属座位', '戴上耳机', '我的专属座位', '戴上耳机']
+    ];
+    for (const [token, signal, expectedToken, expectedSignal] of examples) {
+      const migrationDb = new Database(':memory:');
+      try {
+        createTables(migrationDb);
+        initializeMinimalState(migrationDb);
+        migrationDb.prepare(`UPDATE sacred_seat_config SET sacredToken = ?, reservationSignal = ?,
+          defaultFocusDuration = 25, regretWindowSeconds = 45, currentStreak = 7, maxStreak = 9 WHERE id = 1`).run(token, signal);
+        const metadata = createSystemMetaRepository(migrationDb);
+        const repository = createSacredSeatRepository(migrationDb);
+        migrateDatabase(migrationDb);
+        assert.deepEqual(repository.getConfig(), {
+          sacredToken: expectedToken, reservationSignal: expectedSignal,
+          defaultFocusDuration: 25, regretWindowSeconds: 45, currentStreak: 7, maxStreak: 9
+        });
+        const migratedRevision = metadata.getSystemRevision();
+        assert.equal(migratedRevision, token !== expectedToken || signal !== expectedSignal ? 2 : 1);
+        // 升级完成后，即使用户主动设置为旧文案，再次启动也不应覆盖该选择。
+        migrationDb.prepare('UPDATE sacred_seat_config SET sacredToken = ?, reservationSignal = ? WHERE id = 1').run(token, signal);
+        migrateDatabase(migrationDb);
+        initializeMinimalState(migrationDb);
+        assert.equal(repository.getConfig()?.sacredToken, token);
+        assert.equal(repository.getConfig()?.reservationSignal, signal);
+        assert.equal(metadata.getSystemRevision(), migratedRevision);
+      } finally { migrationDb.close(); }
+    }
   });
 
   test('system_meta repository 仅依赖注入的 SQLite 端口，并锁定 revision 与同步时间原子更新', () => {

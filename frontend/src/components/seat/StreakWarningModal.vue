@@ -69,7 +69,7 @@ function handleConfirm() {
               <input 
                 v-model="focusContent" 
                 type="text" 
-                placeholder="例如：重构专注历史面板" 
+                placeholder="例如：精听一份英语听力"
                 class="form-input"
               />
             </div>

@@ -13,6 +13,6 @@ export function initializeMinimalState(db: DatabaseType) {
 
   db.prepare(`
     INSERT INTO sacred_seat_config (id, sacredToken, reservationSignal, defaultFocusDuration, regretWindowSeconds, currentStreak, maxStreak, updatedAt)
-    VALUES (1, '开始专注', '轻拍双手，切换状态', 60, 30, 0, 0, datetime('now'))
+    VALUES (1, '图书馆坐上特定座位', '打响指', 60, 30, 0, 0, datetime('now'))
   `).run();
 }

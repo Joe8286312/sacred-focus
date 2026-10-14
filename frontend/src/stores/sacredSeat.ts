@@ -11,8 +11,8 @@ import {
 
 export const useSacredSeatStore = defineStore('sacredSeat', () => {
   const config = ref<SacredSeatConfig>({
-    sacredToken: '主力机开启专注模式',
-    reservationSignal: '反手拍手轻声说换人',
+    sacredToken: '图书馆坐上特定座位',
+    reservationSignal: '打响指',
     defaultFocusDuration: 60,
     regretWindowSeconds: 30,
     currentStreak: 0,

@@ -1,4 +1,5 @@
 import type { Database as DatabaseType } from 'better-sqlite3';
+import { createSystemMetaRepository } from '../repositories/systemMetaRepository.js';
 
 export function migrateDatabase(db: DatabaseType) {
   // 数据库平滑迁移：为 focus_nodes 增加 lastLitDate、previousLevel 与 triggerScene 字段
@@ -51,4 +52,28 @@ export function migrateDatabase(db: DatabaseType) {
     });
     runMigrationTx();
   }
+
+  migrateSacredSeatDefaults(db);
+}
+
+/** 只升级已知旧默认文案；保留个人设置、时长、连胜和其他业务数据。 */
+function migrateSacredSeatDefaults(db: DatabaseType): void {
+  const migrationKey = 'migration:sacred_seat_defaults_v1';
+  const systemMeta = createSystemMetaRepository(db);
+  if (systemMeta.getValue(migrationKey)) return;
+  db.transaction(() => {
+    if (systemMeta.getValue(migrationKey)) return;
+    const current = db.prepare('SELECT sacredToken, reservationSignal FROM sacred_seat_config WHERE id = 1')
+      .get() as { sacredToken: string; reservationSignal: string } | undefined;
+    if (current) {
+      const sacredToken = ['开始专注', '主力机开启专注模式'].includes(current.sacredToken) ? '图书馆坐上特定座位' : current.sacredToken;
+      const reservationSignal = ['轻拍双手，切换状态', '反手拍手轻声说换人'].includes(current.reservationSignal) ? '打响指' : current.reservationSignal;
+      if (sacredToken !== current.sacredToken || reservationSignal !== current.reservationSignal) {
+        db.prepare("UPDATE sacred_seat_config SET sacredToken = ?, reservationSignal = ?, updatedAt = datetime('now') WHERE id = 1")
+          .run(sacredToken, reservationSignal);
+        systemMeta.incrementSystemRevision(new Date().toISOString());
+      }
+    }
+    systemMeta.setValue(migrationKey, 'done');
+  }).immediate();
 }
