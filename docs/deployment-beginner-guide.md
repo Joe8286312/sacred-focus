@@ -1,8 +1,8 @@
 # 从 VMware 演练到云服务器上线
 
-本指南面向首次部署服务器的 Sacred Focus 使用者。路线分为两段：先在本地 VMware 中完成低风险演练，再把同一发布物迁移到云服务器、域名和可信 HTTPS。
+本指南面向首次部署服务器的 Sacred Focus 使用者，重点是 VMware 局域网演练。正式上线见 [云服务器首次部署清单](cloud-production-deployment.md)，已上线服务器升级见 [云服务器项目更新步骤](cloud-server-update.md)，完整备份与恢复见 [交付与运维手册](../scripts/README.md)。
 
-> 示例系统为 Ubuntu Server 22.04 LTS 或 24.04 LTS、Docker Compose v2。两者均可部署本项目；从零新建、希望获得更长标准支持周期时优先选择 24.04 LTS。
+> 示例系统为 Ubuntu Server 22.04 LTS 或 24.04 LTS、Docker Compose 2.24.4 或以上。TLS overlay 使用 `!override` 清除应用端口映射，旧版 Compose 不支持该语法。[Docker 合并规则](https://docs.docker.com/reference/compose-file/merge/)
 
 ## 1. 你最终会得到什么
 
@@ -16,10 +16,10 @@ Nginx 容器（TLS 与 HTTP → HTTPS）
 Sacred Focus 容器（网页与 API）
         │
         ▼
-宿主机数据目录（SQLite app.db、backup/）
+宿主机数据目录（app.db、accounts/、backup/）
 ```
 
-数据存放在 `HOST_DATA_DIR` 指定的宿主机目录，而不是容器内部。基础 Compose 只监听服务器本机；叠加 Nginx Compose 后才公开 80/443。全新部署只创建神圣座位的最小配置；国策画布、分组、节点、连线与演化快照均为空，需由你自行新建或导入备份。
+数据存放在 `HOST_DATA_DIR` 指定的宿主机目录。基础 Compose 只监听服务器本机；叠加 Nginx Compose 后才公开 80/443。全新部署只创建神圣座位的最小配置，画布为空。默认访客进入公用账号；管理员和服务器创建的个人账号分别拥有独立工作区。账号操作见 [多人使用指南](multiuser.md)。
 
 使用 Nginx 模式时，在每个新的 SSH 会话进入发布目录后先执行：
 
@@ -37,7 +37,7 @@ export COMPOSE_FILE=docker-compose.yml:docker-compose.nginx.yml
 
 ## 2. 阶段 A：创建 VMware 虚拟机
 
-建议起点：Ubuntu Server 22.04 LTS 或 24.04 LTS、2 vCPU、2 GB 内存、25 GB 磁盘。构建镜像时 4 GB 内存会更从容。
+可从 Ubuntu Server 22.04 LTS 或 24.04 LTS、2 vCPU、2 GB 内存的虚拟机开始演练。磁盘应同时容纳镜像、tar、数据库和备份；构建镜像优先在开发机执行，实际资源按负载调整。
 
 VMware 网络选择很关键：
 
@@ -120,21 +120,22 @@ docker compose version
 Windows 开发机中确认 Docker Desktop 已运行，在项目根目录执行：
 
 ```powershell
-.\scripts\docker-pack.ps1 -Version 1.0.0
+.\scripts\docker-pack.ps1 -Version 1.0.2 -VcsRef (git rev-parse --short HEAD)
 ```
 
-得到 `release/sacred-focus-v1.0.0.tar`。把下列内容上传到虚拟机的 `/opt/sacred-focus/`；可使用 WinSCP 图形界面或 PowerShell 的 `scp`：
+得到 `release/sacred-focus-v1.0.2.tar`。版本仅是贯穿本指南的示例，不代表最新发布；请选择未使用过的版本，镜像标签、tar 文件名和 `.env` 必须一致。把下列内容上传到虚拟机的 `/opt/sacred-focus/`；可使用 WinSCP 或 PowerShell 的 `scp`：
 
 ```text
 docker-compose.yml
 docker-compose.nginx.yml
 .env.production.example
-nginx/
-scripts/
-release/sacred-focus-v1.0.0.tar
+nginx/conf.d/
+nginx/ssl/generate-cert.sh
+scripts/（包含 lib/）
+release/sacred-focus-v1.0.2.tar
 ```
 
-不要上传本机的 `.env`、`data/`、SQLite 数据库或私钥。
+不要上传本机的 `.env`、`data/`、SQLite 数据库或私钥。应用 tar 不包含 `nginx:1.27-alpine`；目标机器须能拉取网关镜像，完全离线环境还需单独导出并加载该镜像。
 
 虚拟机上创建目录：
 
@@ -142,12 +143,15 @@ release/sacred-focus-v1.0.0.tar
 sudo mkdir -p /opt/sacred-focus/release
 sudo mkdir -p /srv/sacred-focus/data
 sudo mkdir -p /etc/sacred-focus/tls
-sudo chown -R "$USER":"$USER" /opt/sacred-focus /srv/sacred-focus
+sudo chown -R "$USER":"$USER" /opt/sacred-focus
 cd /opt/sacred-focus
 ls docker-compose.yml scripts/docker-update.sh release/
+find scripts nginx/ssl -type f -name '*.sh' -exec sed -i 's/\r$//' {} +
 ```
 
 ## 5. 阶段 A：局域网自签名 HTTPS
+
+从 Windows 上传的 shell 脚本先统一为 LF 换行；上一节的 `find` 命令仅处理 `.sh` 文件，不改证书或配置。
 
 自签名证书仅用于 VMware 测试。它会加密传输，但手机会显示“不受信任”警告，这是预期行为。
 
@@ -174,7 +178,8 @@ nano .env
 VMware 演练可按下面填写；尖括号内容必须替换：
 
 ```dotenv
-APP_VERSION=v1.0.0
+APP_VERSION=v1.0.2
+PORT=80
 TZ=Asia/Shanghai
 JWT_SECRET=<执行 openssl rand -base64 32 后填入结果>
 ADMIN_PASSWORD=<至少12字符的强密码>
@@ -190,33 +195,24 @@ TRUSTED_IPS=
 openssl rand -base64 32
 ```
 
-`HOST_DATA_DIR` 是数据库、WAL 文件和备份的唯一持久化位置，绝不能随意删除。
+`HOST_DATA_DIR` 保存管理员数据库与账号注册表、各工作区数据库、WAL 和备份。`PORT=80` 供当前更新脚本探测宿主机 Nginx；TLS overlay 下应用端口不公开，容器仍监听 3000。仅基础 Compose 模式时则使用本机应用映射端口（默认 3000）。
 
-### 已误部署演示数据时，如何回到空白画布
-
-新版本不会再写入演示国策；但它也不会擅自删除已有数据库。若这是刚完成的测试部署、确认里面只有演示内容，可先备份再显式重置一次：
-
-```bash
-cd /opt/sacred-focus
-export COMPOSE_FILE=docker-compose.yml:docker-compose.nginx.yml
-./scripts/docker-backup.sh
-docker compose --env-file .env down
-sudo rm -f /srv/sacred-focus/data/app.db /srv/sacred-focus/data/app.db-wal /srv/sacred-focus/data/app.db-shm
-docker compose --env-file .env up -d
-```
-
-只在确认不需要保留当前数据时执行最后的删除命令；已开始记录个人数据时，应通过网页整机备份导出后再决定如何迁移，而不是清空数据库。
+已有数据不会因更新被清空。多人部署不要只删除根 `app.db` 来“重置”：它还包含账号注册表，会与 `accounts/` 脱节。若要重做空白演练，应停止测试环境后将完整旧数据目录另存，改用新的 `HOST_DATA_DIR`，重新初始化权限；实际使用中的数据按备份恢复流程处理。
 
 ## 7. 启动、检查与手机访问
 
 ```bash
 cd /opt/sacred-focus
-docker load -i release/sacred-focus-v1.0.0.tar
+docker load -i release/sacred-focus-v1.0.2.tar
 
 export COMPOSE_FILE=docker-compose.yml:docker-compose.nginx.yml
 
 docker compose --env-file .env \
   config --quiet
+
+# node 用户需要拥有宿主机绑定数据目录的读写权限。
+docker compose --env-file .env run --rm --no-deps --user 0 --entrypoint sh sacred-focus \
+  -c 'chown -R node:node /app/data'
 
 docker compose --env-file .env \
   up -d
@@ -231,7 +227,7 @@ curl -kfsS https://VM_IP/api/health
 docker compose logs --tail=100 sacred-focus
 ```
 
-手机地址是 `https://VM_IP`。若打不开，依次检查：
+手机地址是 `https://VM_IP`。原部署记录中的 `43.142.96.124` 是云服务器公网地址，应作为 `CLOUD_IP` 使用；它不代替本节的虚拟机局域网 `VM_IP`。正式云端验收使用可信域名 HTTPS，不加 `-k`。若局域网访问打不开，依次检查：
 
 ```bash
 hostname -I
@@ -247,98 +243,46 @@ docker compose logs --tail=100 sacred-focus
 
 ```bash
 cd /opt/sacred-focus
-./scripts/docker-backup.sh
-ls -lh /srv/sacred-focus/data/backup
+sudo env COMPOSE_FILE="$COMPOSE_FILE" ./scripts/docker-backup.sh
+sudo ls -lh /srv/sacred-focus/data/backup
 ```
 
 ### 更新
 
-在开发机打包 `1.0.1`，上传 tar 后执行：
+在开发机选择下一个未使用的版本（例如 `1.0.3`），上传 tar 后执行：
 
 ```bash
-./scripts/docker-update.sh release/sacred-focus-v1.0.1.tar
+sudo env COMPOSE_FILE="$COMPOSE_FILE" ./scripts/docker-update.sh release/sacred-focus-v1.0.3.tar
+# sudo 更新脚本可能重建 .env；成功或失败后均恢复运维用户的权限。
+sudo chown "$USER":"$USER" .env
+chmod 600 .env
 curl -kfsS https://VM_IP/api/health
 ```
 
-更新脚本会先备份；若新容器健康检查失败，会恢复旧 `APP_VERSION` 并重新启动旧容器。不要通过删除旧镜像或数据库来“修复”更新。
+更新脚本会先备份；若新容器健康检查失败，会恢复旧 `APP_VERSION` 并重新启动旧容器，但不自动恢复数据库或运行配置。更新前必须确认 `PORT=80` 和正确的 `COMPOSE_FILE`；具体过程、失败处理和人工回滚见 [云服务器项目更新步骤](cloud-server-update.md)。
 
 ### 数据迁移
 
-从网页右上角“跨设备数据迁移与整机备份”入口导出整机 JSON；再在新的测试环境导入它，确认树、座位配置、判例、日志和演化快照都能恢复。VMware 快照不能替代应用备份：它和运行中的 SQLite/WAL 未必构成一致的数据快照。
+从网页右上角“跨设备数据迁移与整机备份”入口导出当前账号 JSON；再在新的测试工作区导入，确认树、座位配置、判例、日志和演化快照能恢复。该导出不包含其他账号或注册表；全服务器恢复使用脚本生成的 `.db`、manifest 和 `_accounts/` 完整套件，见 [交付手册](../scripts/README.md)。VMware 快照不能替代应用一致性备份。
 
-## 9. 阶段 B：云服务器与域名
+## 9. 阶段 B：云服务器上线
 
-完成 VMware 演练后再购买云服务器。入门规格可从 1–2 vCPU、2 GB 内存、25 GB SSD 的 Ubuntu 实例开始；如果要在服务器构建镜像或长期保留大量备份，请增加内存和磁盘。
+完成局域网演练后，按 [云服务器首次部署清单](cloud-production-deployment.md) 配置安全组、域名解析、备案（按服务器地域和接入商要求）、可信证书及正式生产密钥。云端不要直接复制虚拟机的 `.env` 或私钥。
 
-在云厂商控制台完成：
+当前 Nginx 配置在启动时就需要证书；首次正式部署应先用 Certbot standalone 申请证书，再启动 TLS overlay。后续 standalone 续期同样需要释放 80 端口，成功后重新复制证书并恢复网关。云部署清单提供完整顺序和续期说明，避免在此维护两套命令。
 
-1. 创建 Ubuntu 22.04 LTS 或 24.04 LTS 实例并记录公网 IP；新建长期实例可优先选 24.04。
-2. 安全组只开放 22（尽量限制你的 IP）、80、443。
-3. 购买域名后，在 DNS 创建 A 记录：`focus.example.com → 云服务器公网 IPv4`。
-4. 在服务器确认解析：
+正式云端验收使用 `curl --fail --show-error https://你的域名/api/health`，不使用跳过证书校验的 `-k`。单账号业务迁移可以网页导入 JSON；多人全服务器迁移必须同时恢复账号注册表和全部工作区数据库。
 
-   ```bash
-   getent hosts focus.example.com
-   ```
+## 10. 日常运维入口
 
-   输出必须是该云服务器公网 IP。
-
-   新注册域名即使已实名通过，仍可能处于 `serverHold` 暂停解析状态；等待状态恢复为 `OK` 后再申请证书，腾讯云说明通常需 1–2 个工作日。[查看说明](https://cloud.tencent.com/document/product/242/54080)
-
-   若服务器位于中国大陆，域名正式公开访问前还需完成 ICP 备案；未备案域名会被拦截。香港和其他境外服务器通常无需该步骤。[腾讯云 ICP 备案说明](https://cloud.tencent.com/document/product/243/39038)
-
-随后重复第 3、4、6、7 节。正式 `.env` 改为：
-
-```dotenv
-HOST_DATA_DIR=/srv/sacred-focus/data
-NGINX_SSL_DIR=/etc/sacred-focus/tls
-ALLOWED_ORIGINS=https://focus.example.com
-```
-
-## 10. 获取可信 HTTPS 证书
-
-推荐 Let’s Encrypt。申请前，域名必须已解析到服务器、80 端口必须可从公网访问，且没有其他程序占用 80。Certbot 的安装命令会随系统变化，请在 [Certbot 官方指引](https://certbot.eff.org/instructions) 中选择 Ubuntu 和你的实际 Web 服务方式。
-
-申请成功后，证书通常在 `/etc/letsencrypt/live/focus.example.com/`。复制到项目使用的独立目录：
-
-```bash
-sudo install -d -m 700 /etc/sacred-focus/tls
-sudo install -m 644 /etc/letsencrypt/live/focus.example.com/fullchain.pem /etc/sacred-focus/tls/server.crt
-sudo install -m 600 /etc/letsencrypt/live/focus.example.com/privkey.pem /etc/sacred-focus/tls/server.key
-```
-
-不要使用跨目录的绝对符号链接：容器只能读取被挂载的 `/etc/sacred-focus/tls`。证书续期后，重新复制两个文件并重启网关：
-
-```bash
-cd /opt/sacred-focus
-export COMPOSE_FILE=docker-compose.yml:docker-compose.nginx.yml
-docker compose --env-file .env restart nginx
-curl --fail --show-error https://focus.example.com/api/health
-```
-
-在熟悉手动续期并成功完成 `certbot renew --dry-run` 后，再按 Certbot 文档配置 deploy hook 自动复制证书和重启 Nginx。
-
-## 11. 将 VMware 数据迁移到云服务器
-
-推荐使用网页整机 JSON 导入导出：
-
-1. VMware 页面导出整机备份，并离线保存该 JSON。
-2. 云服务器部署完成后，用新管理员密码登录。
-3. 在云服务器网页导入 JSON；系统会先创建预导入热备。
-4. 核对树、座位设置、判例、日志和演化快照，再让手机改用域名。
-
-不要在应用运行时直接复制 `app.db`。对新手而言，整机 JSON 导入比文件级 SQLite 迁移安全。
-
-## 12. 日常运维速查
-
-| 事项 | 命令 |
+| 事项 | 文档或命令 |
 |---|---|
-| 查看状态 | `export COMPOSE_FILE=docker-compose.yml:docker-compose.nginx.yml` 后执行 `docker compose ps` |
-| 应用日志 | `docker compose logs --tail=100 sacred-focus` |
-| 网关日志 | `docker compose logs --tail=100 nginx` |
-| 数据库备份 | `./scripts/docker-backup.sh` |
-| 离线更新 | `./scripts/docker-update.sh release/sacred-focus-vX.Y.Z.tar` |
-| 配置预检 | `bash ./scripts/verify-delivery.sh` |
-| 健康检查 | `curl --fail https://你的域名/api/health` |
+| 新 SSH 会话选择网关编排 | `cd /opt/sacred-focus` 后设置 `export COMPOSE_FILE=docker-compose.yml:docker-compose.nginx.yml` |
+| 应用与网关状态 | `docker compose ps` |
+| 应用 / 网关日志 | `docker compose logs --tail=100 sacred-focus` / `docker compose logs --tail=100 nginx` |
+| 公用与个人账号管理 | [多人使用指南](multiuser.md) |
+| 备份与恢复 | [交付与运维手册](../scripts/README.md) |
+| 已上线项目更新、验收、回滚 | [云服务器项目更新步骤](cloud-server-update.md) |
+| 首次云服务器部署、证书续期 | [云服务器首次部署清单](cloud-production-deployment.md) |
 
-每次更新前先备份，并将 `/srv/sacred-focus/data/backup/` 定期复制到另一台设备或可信对象存储。同一块磁盘上的备份不能抵抗整块磁盘损坏。
+把全套备份定期复制到服务器外的可信位置；同一块磁盘上的备份无法抵抗整块磁盘损坏。镜像更新和数据库恢复是不同操作，不要用删除数据库解决更新失败。
