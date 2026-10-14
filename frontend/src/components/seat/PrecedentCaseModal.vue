@@ -156,7 +156,7 @@ function handleStartRecordMode() {
               <input 
                 v-model="focusContent" 
                 type="text" 
-                placeholder="例如：精听一份英语听力"
+                placeholder="例如：学习红黑树"
                 class="form-input"
                 :class="{ 'has-error': !!errorMessage }"
               />
